@@ -10,9 +10,11 @@ export default function MeetingForm() {
   const signatureRef = useRef()
   
   const [loading, setLoading] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [projects, setProjects] = useState([])
   const [leaders, setLeaders] = useState([])
   const [users, setUsers] = useState([])
+  const [involvedPersons, setInvolvedPersons] = useState([])
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -32,14 +34,37 @@ export default function MeetingForm() {
   const [showNewLeader, setShowNewLeader] = useState(false)
 
   useEffect(() => {
+    checkAdminAndLoadData()
+  }, [id])
+
+  const checkAdminAndLoadData = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      setIsAdmin(data?.is_admin || false)
+      
+      // If editing and not admin, redirect
+      if (id && !data?.is_admin) {
+        alert('Only administrators can edit meetings')
+        navigate('/meetings')
+        return
+      }
+    }
+    
     fetchProjects()
     fetchLeaders()
     fetchUsers()
+    fetchInvolvedPersons()
     
     if (id) {
       fetchMeeting()
     }
-  }, [id])
+  }
 
   useEffect(() => {
     // Get user's location
@@ -96,6 +121,14 @@ export default function MeetingForm() {
   const fetchUsers = async () => {
     // Users will be fetched from auth if needed
     setUsers([])
+  }
+
+  const fetchInvolvedPersons = async () => {
+    const { data } = await supabase
+      .from('involved_persons')
+      .select('id, name, company:companies(name)')
+      .order('name')
+    if (data) setInvolvedPersons(data)
   }
 
   const fetchMeeting = async () => {
@@ -362,6 +395,7 @@ export default function MeetingForm() {
                 className="form-input"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                step="60"
                 required
               />
             </div>
@@ -463,10 +497,22 @@ export default function MeetingForm() {
           </div>
 
           <div className="add-attendee-form">
+            <select
+              className="form-select"
+              value={newAttendee}
+              onChange={(e) => setNewAttendee(e.target.value)}
+            >
+              <option value="">Select person or type name</option>
+              {involvedPersons.map(person => (
+                <option key={person.id} value={person.name}>
+                  {person.name} {person.company?.name ? `(${person.company.name})` : ''}
+                </option>
+              ))}
+            </select>
             <input
               type="text"
               className="form-input"
-              placeholder="Enter attendee name"
+              placeholder="Or enter custom name"
               value={newAttendee}
               onChange={(e) => setNewAttendee(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddAttendee())}

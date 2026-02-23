@@ -8,18 +8,36 @@ export default function AdminPanel() {
   const [incidents, setIncidents] = useState([])
   const [users, setUsers] = useState([])
   const [leaders, setLeaders] = useState([])
+  const [involvedPersons, setInvolvedPersons] = useState([])
+  const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   
   // Form states
   const [showUserForm, setShowUserForm] = useState(false)
   const [showLeaderForm, setShowLeaderForm] = useState(false)
+  const [showInvolvedPersonForm, setShowInvolvedPersonForm] = useState(false)
+  const [showCompanyForm, setShowCompanyForm] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
+  const [editingInvolvedPerson, setEditingInvolvedPerson] = useState(null)
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', is_admin: false })
   const [newLeader, setNewLeader] = useState({ name: '', email: '', phone: '' })
+  const [newInvolvedPerson, setNewInvolvedPerson] = useState({ name: '', email: '', phone: '', company_id: '' })
+  const [newCompany, setNewCompany] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
 
   useEffect(() => {
     fetchData()
+    if (activeTab === 'involved-persons') {
+      fetchCompaniesForSelect()
+    }
   }, [activeTab])
+
+  const fetchCompaniesForSelect = async () => {
+    const { data } = await supabase
+      .from('companies')
+      .select('id, name')
+      .order('name')
+    if (data) setCompanies(data)
+  }
 
   const fetchData = async () => {
     setLoading(true)
@@ -54,6 +72,18 @@ export default function AdminPanel() {
         .select('*')
         .order('name')
       if (data) setLeaders(data)
+    } else if (activeTab === 'involved-persons') {
+      const { data } = await supabase
+        .from('involved_persons')
+        .select('*, company:companies(name)')
+        .order('name')
+      if (data) setInvolvedPersons(data)
+    } else if (activeTab === 'companies') {
+      const { data } = await supabase
+        .from('companies')
+        .select('*')
+        .order('name')
+      if (data) setCompanies(data)
     }
     
     setLoading(false)
@@ -254,6 +284,103 @@ export default function AdminPanel() {
     }
   }
 
+  const handleAddInvolvedPerson = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    const dataToInsert = {
+      name: newInvolvedPerson.name,
+      email: newInvolvedPerson.email || null,
+      phone: newInvolvedPerson.phone || null,
+      company_id: newInvolvedPerson.company_id || null
+    }
+
+    const { error } = await supabase
+      .from('involved_persons')
+      .insert([dataToInsert])
+
+    if (error) {
+      alert(`Error adding involved person: ${error.message}`)
+    } else {
+      setNewInvolvedPerson({ name: '', email: '', phone: '', company_id: '' })
+      setShowInvolvedPersonForm(false)
+      fetchData()
+    }
+    
+    setLoading(false)
+  }
+
+  const handleUpdateInvolvedPerson = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    const dataToUpdate = {
+      name: editingInvolvedPerson.name,
+      email: editingInvolvedPerson.email || null,
+      phone: editingInvolvedPerson.phone || null,
+      company_id: editingInvolvedPerson.company_id || null
+    }
+
+    const { error } = await supabase
+      .from('involved_persons')
+      .update(dataToUpdate)
+      .eq('id', editingInvolvedPerson.id)
+
+    if (error) {
+      alert(`Error updating involved person: ${error.message}`)
+    } else {
+      setEditingInvolvedPerson(null)
+      fetchData()
+    }
+    
+    setLoading(false)
+  }
+
+  const handleDeleteInvolvedPerson = async (id) => {
+    if (!confirm('Are you sure you want to delete this involved person?')) return
+    
+    const { error } = await supabase
+      .from('involved_persons')
+      .delete()
+      .eq('id', id)
+    
+    if (!error) {
+      fetchData()
+    }
+  }
+
+  const handleAddCompany = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    const { error } = await supabase
+      .from('companies')
+      .insert([newCompany])
+
+    if (error) {
+      alert(`Error adding company: ${error.message}`)
+    } else {
+      setNewCompany({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
+      setShowCompanyForm(false)
+      fetchData()
+    }
+    
+    setLoading(false)
+  }
+
+  const handleDeleteCompany = async (id) => {
+    if (!confirm('Are you sure you want to delete this company?')) return
+    
+    const { error } = await supabase
+      .from('companies')
+      .delete()
+      .eq('id', id)
+    
+    if (!error) {
+      fetchData()
+    }
+  }
+
   return (
     <div className="admin-panel">
       <h2 className="page-title">Admin Panel</h2>
@@ -282,6 +409,18 @@ export default function AdminPanel() {
           onClick={() => setActiveTab('leaders')}
         >
           Leaders
+        </button>
+        <button
+          className={`admin-tab ${activeTab === 'involved-persons' ? 'active' : ''}`}
+          onClick={() => setActiveTab('involved-persons')}
+        >
+          Involved Persons
+        </button>
+        <button
+          className={`admin-tab ${activeTab === 'companies' ? 'active' : ''}`}
+          onClick={() => setActiveTab('companies')}
+        >
+          Companies
         </button>
       </div>
 
@@ -598,6 +737,296 @@ export default function AdminPanel() {
                               <button
                                 className="btn-icon btn-delete"
                                 onClick={() => handleDeleteLeader(leader.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'involved-persons' && (
+            <div className="data-table">
+              <div className="section-header">
+                <h3 className="section-title">Involved Persons ({involvedPersons.length})</h3>
+                <button className="btn btn-primary" onClick={() => {
+                  setShowInvolvedPersonForm(!showInvolvedPersonForm)
+                  setEditingInvolvedPerson(null)
+                }}>
+                  {showInvolvedPersonForm ? 'Cancel' : '+ Add Involved Person'}
+                </button>
+              </div>
+
+              {showInvolvedPersonForm && (
+                <form className="form-card" onSubmit={handleAddInvolvedPerson}>
+                  <h4>Add New Involved Person</h4>
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      value={newInvolvedPerson.name}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={newInvolvedPerson.email}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      value={newInvolvedPerson.phone}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, phone: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Company</label>
+                    <select
+                      value={newInvolvedPerson.company_id}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, company_id: e.target.value})}
+                    >
+                      <option value="">Select Company</option>
+                      {companies.map(company => (
+                        <option key={company.id} value={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button type="submit" className="btn btn-primary" disabled={loading}>
+                    {loading ? 'Adding...' : 'Add Involved Person'}
+                  </button>
+                </form>
+              )}
+
+              {editingInvolvedPerson && (
+                <form className="form-card" onSubmit={handleUpdateInvolvedPerson}>
+                  <h4>Edit Involved Person</h4>
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      value={editingInvolvedPerson.name}
+                      onChange={(e) => setEditingInvolvedPerson({...editingInvolvedPerson, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={editingInvolvedPerson.email || ''}
+                      onChange={(e) => setEditingInvolvedPerson({...editingInvolvedPerson, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      value={editingInvolvedPerson.phone || ''}
+                      onChange={(e) => setEditingInvolvedPerson({...editingInvolvedPerson, phone: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Company</label>
+                    <select
+                      value={editingInvolvedPerson.company_id || ''}
+                      onChange={(e) => setEditingInvolvedPerson({...editingInvolvedPerson, company_id: e.target.value})}
+                    >
+                      <option value="">Select Company</option>
+                      {companies.map(company => (
+                        <option key={company.id} value={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-row">
+                    <button type="submit" className="btn btn-primary" disabled={loading}>
+                      {loading ? 'Updating...' : 'Update Involved Person'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={() => setEditingInvolvedPerson(null)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {involvedPersons.length === 0 ? (
+                <p>No involved persons found.</p>
+              ) : (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Company</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {involvedPersons.map((person) => (
+                        <tr key={person.id}>
+                          <td>{person.name}</td>
+                          <td>{person.email || '-'}</td>
+                          <td>{person.phone || '-'}</td>
+                          <td>{person.company?.name || '-'}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                className="btn-icon"
+                                onClick={() => {
+                                  setEditingInvolvedPerson(person)
+                                  setShowInvolvedPersonForm(false)
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeleteInvolvedPerson(person.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'companies' && (
+            <div className="data-table">
+              <div className="section-header">
+                <h3 className="section-title">Companies ({companies.length})</h3>
+                <button className="btn btn-primary" onClick={() => setShowCompanyForm(!showCompanyForm)}>
+                  {showCompanyForm ? 'Cancel' : '+ Add Company'}
+                </button>
+              </div>
+
+              {showCompanyForm && (
+                <form className="form-card" onSubmit={handleAddCompany}>
+                  <h4>Add New Company</h4>
+                  <div className="form-group">
+                    <label>Company Name *</label>
+                    <input
+                      type="text"
+                      value={newCompany.name}
+                      onChange={(e) => setNewCompany({...newCompany, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Address</label>
+                    <input
+                      type="text"
+                      value={newCompany.address}
+                      onChange={(e) => setNewCompany({...newCompany, address: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-row">
+                    <div className="form-group">
+                      <label>City</label>
+                      <input
+                        type="text"
+                        value={newCompany.city}
+                        onChange={(e) => setNewCompany({...newCompany, city: e.target.value})}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>State</label>
+                      <input
+                        type="text"
+                        value={newCompany.state}
+                        onChange={(e) => setNewCompany({...newCompany, state: e.target.value})}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>ZIP</label>
+                      <input
+                        type="text"
+                        value={newCompany.zip}
+                        onChange={(e) => setNewCompany({...newCompany, zip: e.target.value})}
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      value={newCompany.phone}
+                      onChange={(e) => setNewCompany({...newCompany, phone: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={newCompany.email}
+                      onChange={(e) => setNewCompany({...newCompany, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Website</label>
+                    <input
+                      type="url"
+                      value={newCompany.website}
+                      onChange={(e) => setNewCompany({...newCompany, website: e.target.value})}
+                      placeholder="https://"
+                    />
+                  </div>
+                  <button type="submit" className="btn btn-primary" disabled={loading}>
+                    {loading ? 'Adding...' : 'Add Company'}
+                  </button>
+                </form>
+              )}
+
+              {companies.length === 0 ? (
+                <p>No companies found.</p>
+              ) : (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Address</th>
+                        <th>City</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {companies.map((company) => (
+                        <tr key={company.id}>
+                          <td>{company.name}</td>
+                          <td>{company.address || '-'}</td>
+                          <td>{company.city || '-'}</td>
+                          <td>{company.phone || '-'}</td>
+                          <td>{company.email || '-'}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeleteCompany(company.id)}
                               >
                                 Delete
                               </button>

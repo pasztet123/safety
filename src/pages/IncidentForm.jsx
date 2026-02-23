@@ -286,6 +286,7 @@ export default function IncidentForm() {
                 className="form-input"
                 value={formData.time}
                 onChange={(e) => setFormData({ ...formData, time: e.target.value })}
+                step="60"
                 required
               />
             </div>

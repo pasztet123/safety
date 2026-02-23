@@ -1,16 +1,30 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { generateMeetingPDF } from '../lib/pdfGenerator'
 
 export default function Meetings() {
   const navigate = useNavigate()
   const [meetings, setMeetings] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
+    checkAdmin()
     fetchMeetings()
   }, [])
+
+  const checkAdmin = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      setIsAdmin(data?.is_admin || false)
+    }
+  }
 
   const fetchMeetings = async () => {
     setLoading(true)
@@ -29,10 +43,6 @@ export default function Meetings() {
       setMeetings(data)
     }
     setLoading(false)
-  }
-
-  const handleGeneratePDF = async (meeting) => {
-    await generateMeetingPDF(meeting)
   }
 
   if (loading) return <div className="spinner"></div>
@@ -65,12 +75,14 @@ export default function Meetings() {
                     <p className="meeting-project">Project: {meeting.project.name}</p>
                   )}
                 </div>
-                <button 
-                  className="btn btn-accent"
-                  onClick={() => handleGeneratePDF(meeting)}
-                >
-                  📄 PDF
-                </button>
+                {isAdmin && (
+                  <button 
+                    className="btn btn-primary"
+                    onClick={() => navigate(`/meetings/${meeting.id}/edit`)}
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
 
               <div className="meeting-details">

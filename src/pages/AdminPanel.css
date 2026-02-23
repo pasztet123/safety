@@ -12,10 +12,11 @@
 }
 
 .admin-tab {
-  padding: 12px 24px;
+  padding: 14px 28px;
   background: transparent;
   color: #666;
   font-weight: 500;
+  font-size: 16px;
   border: none;
   border-bottom: 3px solid transparent;
   margin-bottom: -2px;
@@ -157,6 +158,55 @@ tbody tr:last-child td {
 .form-card h4 {
   margin-bottom: 16px;
   color: var(--color-primary);
+}
+
+.form-card .form-group {
+  margin-bottom: 20px;
+}
+
+.form-card .form-group label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 8px;
+  font-size: 15px;
+  color: var(--color-text);
+}
+
+.form-card input[type="text"],
+.form-card input[type="email"],
+.form-card input[type="tel"],
+.form-card input[type="password"],
+.form-card input[type="url"],
+.form-card select {
+  width: 100%;
+  padding: 14px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 16px;
+  transition: all 0.2s;
+  background-color: white;
+  appearance: none;
+  cursor: pointer;
+}
+
+.form-card select {
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23171717' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 18px center;
+  padding-right: 45px;
+}
+
+.form-card input:focus,
+.form-card select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(23, 23, 23, 0.1);
+}
+
+.form-card .form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
 }
 
 .checkbox-label {

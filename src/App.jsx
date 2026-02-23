@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import MainMenu from './pages/MainMenu'
 import Meetings from './pages/Meetings'
 import MeetingForm from './pages/MeetingForm'
+import MeetingDetails from './pages/MeetingDetails'
 import Incidents from './pages/Incidents'
 import IncidentForm from './pages/IncidentForm'
 import Checklists from './pages/Checklists'
@@ -49,7 +50,8 @@ function App() {
           <Route path="/projects" element={<Projects />} />
           <Route path="/meetings" element={<Meetings />} />
           <Route path="/meetings/new" element={<MeetingForm />} />
-          <Route path="/meetings/:id" element={<MeetingForm />} />
+          <Route path="/meetings/:id" element={<MeetingDetails />} />
+          <Route path="/meetings/:id/edit" element={<MeetingForm />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<IncidentForm />} />
           <Route path="/incidents/:id" element={<IncidentForm />} />

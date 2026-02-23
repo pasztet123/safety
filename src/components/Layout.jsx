@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import './Layout.css'
@@ -6,6 +6,30 @@ import './Layout.css'
 export default function Layout({ children, session }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const [userName, setUserName] = useState('')
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    fetchUserInfo()
+  }, [session])
+
+  const fetchUserInfo = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('name, is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      if (data) {
+        setUserName(data.name || user.email)
+        setIsAdmin(data.is_admin || false)
+      } else {
+        setUserName(user.email)
+      }
+    }
+  }
 
   const handleLogout = async () => {
     await supabase.auth.signOut()
@@ -25,9 +49,15 @@ export default function Layout({ children, session }) {
           <h1 className="header-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
             Safety Meetings
           </h1>
-          <button className="logout-button" onClick={handleLogout}>
-            Logout
-          </button>
+          <div className="user-info">
+            <span className="user-name">
+              {userName}
+              {isAdmin && <span className="admin-badge">Admin</span>}
+            </span>
+            <button className="logout-button" onClick={handleLogout}>
+              Logout
+            </button>
+          </div>
         </div>
       </header>
       <main className="main-content">
