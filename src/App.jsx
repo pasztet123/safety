@@ -42,7 +42,7 @@ function App() {
   }
 
   return (
-    <BrowserRouter basename="/safety">
+    <BrowserRouter basename="/app4">
       <Layout session={session}>
         <Routes>
           <Route path="/" element={<MainMenu />} />
