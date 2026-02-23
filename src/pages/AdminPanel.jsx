@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { supabaseAdmin } from '../lib/supabaseAdmin'
 import './AdminPanel.css'
 
 export default function AdminPanel() {
@@ -91,31 +90,29 @@ export default function AdminPanel() {
     setLoading(true)
 
     try {
-      // First create auth user using admin client
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: newUser.email,
-        password: newUser.password,
-        email_confirm: true
-      })
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            email: newUser.email,
+            password: newUser.password,
+            name: newUser.name,
+            is_admin: newUser.is_admin,
+          }),
+        }
+      )
 
-      if (authError) {
-        alert(`Error creating user: ${authError.message}`)
-        setLoading(false)
-        return
-      }
+      const data = await response.json()
 
-      // Then add to users table
-      const { error: dbError } = await supabase
-        .from('users')
-        .insert([{
-          id: authData.user.id,
-          email: newUser.email,
-          name: newUser.name,
-          is_admin: newUser.is_admin
-        }])
-
-      if (dbError) {
-        alert(`Error adding user to database: ${dbError.message}`)
+      if (!response.ok) {
+        alert(`Error creating user: ${data.error}`)
       } else {
         setNewUser({ email: '', password: '', name: '', is_admin: false })
         setShowUserForm(false)
@@ -131,17 +128,35 @@ export default function AdminPanel() {
   const handleDeleteUser = async (id) => {
     if (!confirm('Are you sure you want to delete this user?')) return
     
-    // Delete from users table
-    const { error: dbError } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id)
-    
-    // Delete from auth
-    if (!dbError) {
-      await supabaseAdmin.auth.admin.deleteUser(id)
-      fetchData()
+    setLoading(true)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId: id }),
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(`Error deleting user: ${data.error}`)
+      } else {
+        fetchData()
+      }
+    } catch (error) {
+      alert(`Error: ${error.message}`)
     }
+
+    setLoading(false)
   }
 
   const handleUpdateUser = async (e) => {
@@ -179,12 +194,24 @@ export default function AdminPanel() {
     setLoading(true)
 
     try {
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        password: newPassword
-      })
+      const { data: { session } } = await supabase.auth.getSession()
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-reset-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ userId, newPassword }),
+        }
+      )
 
-      if (error) {
-        alert(`Error resetting password: ${error.message}`)
+      const data = await response.json()
+
+      if (!response.ok) {
+        alert(`Error resetting password: ${data.error}`)
       } else {
         alert(`Password successfully reset for ${userEmail}`)
       }

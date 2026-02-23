@@ -20,6 +20,7 @@
     "@types/react": "^18.2.55",
     "@types/react-dom": "^18.2.19",
     "@vitejs/plugin-react": "^4.2.1",
+    "supabase": "^2.76.13",
     "vite": "^5.1.0",
     "vite-plugin-pwa": "^0.17.5"
   }
