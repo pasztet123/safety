@@ -1,0 +1,126 @@
+.checklist-completion {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.checklist-subtitle {
+  text-align: center;
+  color: #666;
+  margin-top: -8px;
+  margin-bottom: 24px;
+}
+
+.progress-card {
+  background-color: white;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.progress-label {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.progress-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.progress-bar {
+  height: 12px;
+  background-color: var(--color-hover);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), #22c55e);
+  transition: width 0.3s ease;
+}
+
+.completion-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.completion-item-row {
+  padding: 16px;
+  background-color: var(--color-hover);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.completion-item-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.checkbox-input {
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
+.item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex: 1;
+  user-select: none;
+}
+
+.item-label.checked .item-text {
+  text-decoration: line-through;
+  color: #999;
+}
+
+.item-number {
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 30px;
+}
+
+.item-text {
+  flex: 1;
+  font-size: 15px;
+  line-height: 1.5;
+  transition: all 0.2s;
+}
+
+.item-note-input {
+  margin-left: 36px;
+  font-size: 14px;
+  background-color: white;
+}
+
+@media (max-width: 768px) {
+  .progress-count {
+    font-size: 20px;
+  }
+  
+  .completion-item-row {
+    padding: 12px;
+  }
+  
+  .item-note-input {
+    margin-left: 0;
+  }
+}
