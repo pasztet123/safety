@@ -12,6 +12,7 @@ export default function SafetyTopics() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [riskFilter, setRiskFilter] = useState('all')
   const [selectedTopic, setSelectedTopic] = useState(null)
+  const [editingTopic, setEditingTopic] = useState(null)
   
   const [formData, setFormData] = useState({
     name: '',
@@ -91,28 +92,76 @@ export default function SafetyTopics() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    const { error } = await supabase
-      .from('safety_topics')
-      .insert([{
-        ...formData,
-        created_by: user.id
-      }])
-    
-    if (!error) {
-      setFormData({
-        name: '',
-        category: '',
-        osha_reference: '',
-        description: '',
-        risk_level: 'medium'
-      })
-      setShowAddForm(false)
-      fetchTopics()
+    if (editingTopic) {
+      // Update existing topic
+      const { error } = await supabase
+        .from('safety_topics')
+        .update(formData)
+        .eq('id', editingTopic.id)
+      
+      if (!error) {
+        setFormData({
+          name: '',
+          category: '',
+          osha_reference: '',
+          description: '',
+          risk_level: 'medium'
+        })
+        setEditingTopic(null)
+        setShowAddForm(false)
+        fetchTopics()
+      } else {
+        alert('Error updating topic: ' + error.message)
+      }
     } else {
-      alert('Error adding topic: ' + error.message)
+      // Create new topic
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      const { error } = await supabase
+        .from('safety_topics')
+        .insert([{
+          ...formData,
+          created_by: user.id
+        }])
+      
+      if (!error) {
+        setFormData({
+          name: '',
+          category: '',
+          osha_reference: '',
+          description: '',
+          risk_level: 'medium'
+        })
+        setShowAddForm(false)
+        fetchTopics()
+      } else {
+        alert('Error adding topic: ' + error.message)
+      }
     }
+  }
+
+  const handleEdit = (topic) => {
+    setFormData({
+      name: topic.name,
+      category: topic.category || '',
+      osha_reference: topic.osha_reference || '',
+      description: topic.description || '',
+      risk_level: topic.risk_level
+    })
+    setEditingTopic(topic)
+    setShowAddForm(true)
+  }
+
+  const handleCancelEdit = () => {
+    setFormData({
+      name: '',
+      category: '',
+      osha_reference: '',
+      description: '',
+      risk_level: 'medium'
+    })
+    setEditingTopic(null)
+    setShowAddForm(false)
   }
 
   const handleDelete = async (id, name) => {
@@ -150,7 +199,19 @@ export default function SafetyTopics() {
         <h1 className="page-title">Safety Topics</h1>
         <button 
           className="btn btn-primary"
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => {
+            if (!showAddForm) {
+              setEditingTopic(null)
+              setFormData({
+                name: '',
+                category: '',
+                osha_reference: '',
+                description: '',
+                risk_level: 'medium'
+              })
+            }
+            setShowAddForm(!showAddForm)
+          }}
         >
           {showAddForm ? 'Cancel' : '+ Add Topic'}
         </button>
@@ -158,7 +219,7 @@ export default function SafetyTopics() {
 
       {showAddForm && (
         <div className="card add-topic-form">
-          <h3>Add New Safety Topic</h3>
+          <h3>{editingTopic ? 'Edit Safety Topic' : 'Add New Safety Topic'}</h3>
           <form onSubmit={handleSubmit}>
             <div className="form-group">
               <label className="form-label">Topic Name *</label>
@@ -222,16 +283,17 @@ export default function SafetyTopics() {
                 className="form-textarea"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                rows="3"
+                rows="8"
+                placeholder="Enter detailed description with sections like Requirements, Safe Practices, Action Items..."
               />
             </div>
 
             <div className="form-actions">
-              <button type="button" className="btn btn-secondary" onClick={() => setShowAddForm(false)}>
+              <button type="button" className="btn btn-secondary" onClick={handleCancelEdit}>
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary">
-                Add Topic
+                {editingTopic ? 'Update Topic' : 'Add Topic'}
               </button>
             </div>
           </form>
@@ -301,13 +363,22 @@ export default function SafetyTopics() {
                       {topic.risk_level}
                     </span>
                     {isAdmin && (
-                      <button
-                        className="btn-delete-topic"
-                        onClick={() => handleDelete(topic.id, topic.name)}
-                        title="Delete topic"
-                      >
-                        ×
-                      </button>
+                      <>
+                        <button
+                          className="btn-edit-topic"
+                          onClick={() => handleEdit(topic)}
+                          title="Edit topic"
+                        >
+                          ✎
+                        </button>
+                        <button
+                          className="btn-delete-topic"
+                          onClick={() => handleDelete(topic.id, topic.name)}
+                          title="Delete topic"
+                        >
+                          ×
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -336,7 +407,21 @@ export default function SafetyTopics() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>{selectedTopic.name}</h2>
-              <button className="modal-close" onClick={() => setSelectedTopic(null)}>×</button>
+              <div className="modal-header-actions">
+                {isAdmin && (
+                  <button 
+                    className="btn-edit-modal"
+                    onClick={() => {
+                      handleEdit(selectedTopic)
+                      setSelectedTopic(null)
+                    }}
+                    title="Edit topic"
+                  >
+                    ✎ Edit
+                  </button>
+                )}
+                <button className="modal-close" onClick={() => setSelectedTopic(null)}>×</button>
+              </div>
             </div>
             <div className="modal-body">
               {selectedTopic.category && (
