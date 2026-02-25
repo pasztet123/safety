@@ -8,6 +8,7 @@ export default function MeetingForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const signatureRef = useRef()
+  const attendeeSignatureRefs = useRef([])
   
   const [loading, setLoading] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -180,7 +181,7 @@ export default function MeetingForm() {
 
   const handleAddAttendee = () => {
     if (!newAttendee.trim()) return
-    setAttendees([...attendees, { name: newAttendee }])
+    setAttendees([...attendees, { name: newAttendee, signature_url: null }])
     setNewAttendee('')
   }
 
@@ -299,15 +300,40 @@ export default function MeetingForm() {
       meetingId = data.id
     }
 
-      // Insert attendees
+      // Insert attendees with signatures
       if (attendees.length > 0) {
-        const { error: attendeesError } = await supabase.from('meeting_attendees').insert(
-          attendees.map(a => ({
-            meeting_id: meetingId,
-            name: a.name,
-            user_id: a.user_id || null
-          }))
+        const attendeesWithSignatures = await Promise.all(
+          attendees.map(async (attendee, index) => {
+            let signatureUrl = attendee.signature_url || null
+            
+            // Upload signature if present for this attendee
+            const sigRef = attendeeSignatureRefs.current[index]
+            if (sigRef && !sigRef.isEmpty()) {
+              const signatureBlob = await fetch(sigRef.toDataURL()).then(r => r.blob())
+              const signatureFile = `attendee-signature-${Date.now()}-${index}.png`
+              
+              const { error: uploadError } = await supabase.storage
+                .from('safety-photos')
+                .upload(signatureFile, signatureBlob)
+
+              if (!uploadError) {
+                const { data } = supabase.storage
+                  .from('safety-photos')
+                  .getPublicUrl(signatureFile)
+                signatureUrl = data.publicUrl
+              }
+            }
+            
+            return {
+              meeting_id: meetingId,
+              name: attendee.name,
+              user_id: attendee.user_id || null,
+              signature_url: signatureUrl
+            }
+          })
         )
+        
+        const { error: attendeesError } = await supabase.from('meeting_attendees').insert(attendeesWithSignatures)
         if (attendeesError) {
           console.error('Error adding attendees:', attendeesError)
         }
@@ -481,21 +507,86 @@ export default function MeetingForm() {
         <div className="card">
           <h3 className="section-title">Attendees</h3>
           
-          <div className="attendees-list">
-            {attendees.map((attendee, index) => (
-              <div key={index} className="attendee-item">
-                <span>{attendee.name}</span>
-                <button
-                  type="button"
-                  className="btn-remove"
-                  onClick={() => handleRemoveAttendee(index)}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
+          {/* List of attendees with signatures */}
+          {attendees.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: '24px' }}>
+              {attendees.map((attendee, index) => (
+                <div key={index} style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '16px' }}>
+                  {/* Attendee name with remove button */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <label className="form-label" style={{ marginBottom: '0', fontSize: '16px', fontWeight: '500' }}>
+                      {index + 1}. {attendee.name}
+                    </label>
+                    <button
+                      type="button"
+                      className="btn-remove"
+                      onClick={() => handleRemoveAttendee(index)}
+                      style={{ position: 'static' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  {/* Attendee signature */}
+                  <div>
+                    <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                      Signature (optional)
+                    </p>
+                    {attendee.signature_url ? (
+                      <div>
+                        <img 
+                          src={attendee.signature_url} 
+                          alt={`Signature of ${attendee.name}`}
+                          style={{ 
+                            maxWidth: '100%', 
+                            maxHeight: '150px',
+                            border: '1px solid var(--color-border)', 
+                            borderRadius: '8px',
+                            marginBottom: '8px'
+                          }} 
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ fontSize: '14px' }}
+                          onClick={() => {
+                            const newAttendees = [...attendees]
+                            newAttendees[index] = { ...newAttendees[index], signature_url: null }
+                            setAttendees(newAttendees)
+                          }}
+                        >
+                          Remove Signature
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="signature-container">
+                        <SignatureCanvas
+                          ref={(ref) => {
+                            if (!attendeeSignatureRefs.current[index]) {
+                              attendeeSignatureRefs.current[index] = ref
+                            }
+                          }}
+                          canvasProps={{
+                            className: 'signature-canvas',
+                            style: { width: '100%', height: '150px' }
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          onClick={() => attendeeSignatureRefs.current[index]?.clear()}
+                        >
+                          Clear Signature
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
+          {/* Add attendee form */}
           <div className="add-attendee-form">
             <select
               className="form-select"

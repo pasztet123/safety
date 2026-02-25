@@ -125,10 +125,41 @@ export default function MeetingDetails() {
         <h3 className="section-title">Attendees</h3>
         
         {meeting.attendees && meeting.attendees.length > 0 ? (
-          <div className="attendees-list">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {meeting.attendees.map((attendee, index) => (
-              <div key={index} className="attendee-item" style={{ cursor: 'default' }}>
-                <span>{attendee.name}</span>
+              <div 
+                key={index} 
+                style={{ 
+                  borderBottom: index < meeting.attendees.length - 1 ? '1px solid var(--color-border)' : 'none',
+                  paddingBottom: '16px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: '500', marginBottom: '4px' }}>{attendee.name}</p>
+                  </div>
+                  
+                  {attendee.signature_url && (
+                    <div style={{ flex: 1, maxWidth: '300px' }}>
+                      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginBottom: '4px' }}>
+                        Signature:
+                      </p>
+                      <img 
+                        src={attendee.signature_url} 
+                        alt={`Signature of ${attendee.name}`}
+                        style={{ 
+                          width: '100%',
+                          maxHeight: '100px',
+                          objectFit: 'contain',
+                          border: '1px solid var(--color-border)', 
+                          borderRadius: '4px',
+                          padding: '4px',
+                          backgroundColor: '#fff'
+                        }} 
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>

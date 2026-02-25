@@ -6,10 +6,25 @@ export default function Checklists() {
   const navigate = useNavigate()
   const [checklists, setChecklists] = useState([])
   const [loading, setLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
+    checkAdmin()
     fetchChecklists()
   }, [])
+
+  const checkAdmin = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      setIsAdmin(data?.is_admin || false)
+    }
+  }
 
   const fetchChecklists = async () => {
     setLoading(true)
@@ -26,6 +41,23 @@ export default function Checklists() {
       setChecklists(data)
     }
     setLoading(false)
+  }
+
+  const handleDelete = async (checklistId, name) => {
+    if (!confirm(`Are you sure you want to delete the checklist "${name}"? This action cannot be undone.`)) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('checklists')
+      .delete()
+      .eq('id', checklistId)
+
+    if (error) {
+      alert('Error deleting checklist: ' + error.message)
+    } else {
+      fetchChecklists()
+    }
   }
 
   if (loading) return <div className="spinner"></div>
@@ -76,6 +108,14 @@ export default function Checklists() {
                 >
                   View/Edit
                 </button>
+                {isAdmin && (
+                  <button 
+                    className="btn btn-danger"
+                    onClick={() => handleDelete(checklist.id, checklist.name)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))

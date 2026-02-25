@@ -142,14 +142,17 @@ export default function AdminPanel() {
       const data = await response.json()
 
       if (!response.ok) {
-        alert(`Error creating user: ${data.error}`)
+        console.error('Edge Function error:', data)
+        alert(`Error creating user (${response.status}): ${data.error || JSON.stringify(data)}`)
       } else {
+        alert('User created successfully!')
         setNewUser({ email: '', password: '', name: '', is_admin: false })
         setShowUserForm(false)
         fetchData()
       }
     } catch (error) {
-      alert(`Error: ${error.message}`)
+      console.error('Request error:', error)
+      alert(`Request failed: ${error.message}`)
     }
     
     setLoading(false)

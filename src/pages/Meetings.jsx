@@ -45,6 +45,23 @@ export default function Meetings() {
     setLoading(false)
   }
 
+  const handleDelete = async (meetingId, topic) => {
+    if (!confirm(`Are you sure you want to delete the meeting "${topic}"? This action cannot be undone.`)) {
+      return
+    }
+
+    const { error } = await supabase
+      .from('meetings')
+      .delete()
+      .eq('id', meetingId)
+
+    if (error) {
+      alert('Error deleting meeting: ' + error.message)
+    } else {
+      fetchMeetings()
+    }
+  }
+
   if (loading) return <div className="spinner"></div>
 
   return (
@@ -76,12 +93,20 @@ export default function Meetings() {
                   )}
                 </div>
                 {isAdmin && (
-                  <button 
-                    className="btn btn-primary"
-                    onClick={() => navigate(`/meetings/${meeting.id}/edit`)}
-                  >
-                    Edit
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      className="btn btn-primary"
+                      onClick={() => navigate(`/meetings/${meeting.id}/edit`)}
+                    >
+                      Edit
+                    </button>
+                    <button 
+                      className="btn btn-danger"
+                      onClick={() => handleDelete(meeting.id, meeting.topic)}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
 

@@ -41,11 +41,19 @@ export default function Layout({ children, session }) {
     <div className="layout">
       <header className="header">
         <div className="header-content">
-          {showBackButton && (
-            <button className="back-button" onClick={() => navigate('/')}>
-              ← Back
-            </button>
-          )}
+          <div className="header-left">
+            <img 
+              src="https://lnfzvpaonuzbcnlulyyk.supabase.co/storage/v1/object/public/product-images/public/RGB_ABEdward_logo_horizontal_mono_no-bckg.png" 
+              alt="AB Edward Logo" 
+              className="header-logo"
+              onClick={() => navigate('/')}
+            />
+            {showBackButton && (
+              <button className="back-button" onClick={() => navigate('/')}>
+                ← Back
+              </button>
+            )}
+          </div>
           <h1 className="header-title" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
             Safety Meetings
           </h1>

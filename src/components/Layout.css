@@ -21,6 +21,22 @@
   gap: 16px;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-logo {
+  height: 32px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.header-logo:hover {
+  opacity: 0.8;
+}
+
 .back-button {
   background: transparent;
   color: white;
@@ -87,6 +103,10 @@
 @media (max-width: 768px) {
   .header-content {
     padding: 0 16px;
+  }
+  
+  .header-logo {
+    height: 24px;
   }
   
   .header-title {

@@ -59,21 +59,46 @@ export const generateMeetingPDF = async (meeting) => {
     yPos += 10
   }
 
-  // Attendees
+  // Attendees with signatures
   if (meeting.attendees && meeting.attendees.length > 0) {
     doc.setFontSize(14)
     doc.setTextColor(23, 23, 23)
     doc.text('Attendees:', 20, yPos)
     yPos += 7
     doc.setFontSize(12)
-    meeting.attendees.forEach((attendee, index) => {
+    
+    for (let index = 0; index < meeting.attendees.length; index++) {
+      const attendee = meeting.attendees[index]
+      
       if (yPos > 270) {
         doc.addPage()
         yPos = 20
       }
+      
+      // Attendee name
       doc.text(`${index + 1}. ${attendee.name}`, 25, yPos)
       yPos += 7
-    })
+      
+      // Attendee signature if available
+      if (attendee.signature_url) {
+        try {
+          if (yPos > 240) {
+            doc.addPage()
+            yPos = 20
+          }
+          
+          const img = await loadImage(attendee.signature_url)
+          doc.setFontSize(10)
+          doc.setTextColor(102, 102, 102)
+          doc.text('Signature:', 30, yPos)
+          yPos += 5
+          doc.addImage(img, 'PNG', 30, yPos, 60, 30)
+          yPos += 35
+        } catch (error) {
+          console.error(`Error loading signature for ${attendee.name}:`, error)
+        }
+      }
+    }
     yPos += 5
   }
 

@@ -91,6 +91,15 @@ a {
   background-color: var(--color-hover);
 }
 
+.btn-danger {
+  background-color: var(--color-accent);
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #d42627;
+}
+
 /* Form styles */
 .form-group {
   margin-bottom: 20px;
