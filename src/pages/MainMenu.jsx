@@ -37,12 +37,20 @@ const SettingsIcon = () => (
   </svg>
 )
 
+const BookIcon = () => (
+  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--color-primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+  </svg>
+)
+
 export default function MainMenu() {
   const navigate = useNavigate()
 
   const menuItems = [
     { title: 'Projects', path: '/projects', icon: <FolderIcon /> },
     { title: 'Meetings', path: '/meetings', icon: <ClipboardIcon /> },
+    { title: 'Safety Topics', path: '/safety-topics', icon: <BookIcon /> },
     { title: 'Incidents', path: '/incidents', icon: <AlertIcon /> },
     { title: 'Checklists', path: '/checklists', icon: <ChecklistIcon /> },
     { title: 'Admin Panel', path: '/admin', icon: <SettingsIcon /> },

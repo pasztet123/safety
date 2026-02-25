@@ -16,6 +16,8 @@ export default function MeetingForm() {
   const [leaders, setLeaders] = useState([])
   const [users, setUsers] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
+  const [safetyTopics, setSafetyTopics] = useState([])
+  const [showCustomTopic, setShowCustomTopic] = useState(false)
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -61,6 +63,7 @@ export default function MeetingForm() {
     fetchLeaders()
     fetchUsers()
     fetchInvolvedPersons()
+    fetchSafetyTopics()
     
     if (id) {
       fetchMeeting()
@@ -130,6 +133,15 @@ export default function MeetingForm() {
       .select('id, name, company:companies(name)')
       .order('name')
     if (data) setInvolvedPersons(data)
+  }
+
+  const fetchSafetyTopics = async () => {
+    const { data } = await supabase
+      .from('safety_topics')
+      .select('*')
+      .order('category')
+      .order('name')
+    if (data) setSafetyTopics(data)
   }
 
   const fetchMeeting = async () => {
@@ -485,14 +497,68 @@ export default function MeetingForm() {
 
           <div className="form-group">
             <label className="form-label">Topic *</label>
-            <input
-              type="text"
-              className="form-input"
+            <select
+              className="form-select"
               value={formData.topic}
-              onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-              required
-            />
+              onChange={(e) => {
+                const value = e.target.value
+                if (value === 'custom') {
+                  setShowCustomTopic(true)
+                  setFormData({ ...formData, topic: '' })
+                } else {
+                  setShowCustomTopic(false)
+                  setFormData({ ...formData, topic: value })
+                }
+              }}
+              required={!showCustomTopic}
+            >
+              <option value="">Select a topic</option>
+              {Object.entries(
+                safetyTopics.reduce((acc, topic) => {
+                  const cat = topic.category || 'Other'
+                  if (!acc[cat]) acc[cat] = []
+                  acc[cat].push(topic)
+                  return acc
+                }, {})
+              ).map(([category, topics]) => (
+                <optgroup key={category} label={category}>
+                  {topics.map(topic => (
+                    <option key={topic.id} value={topic.name}>
+                      {topic.name}
+                      {topic.osha_reference ? ` (OSHA ${topic.osha_reference})` : ''}
+                      {topic.risk_level && topic.risk_level !== 'medium' ? ` - ${topic.risk_level.toUpperCase()}` : ''}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="custom">+ Custom Topic</option>
+            </select>
           </div>
+
+          {showCustomTopic && (
+            <div className="form-group">
+              <label className="form-label">Custom Topic *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={formData.topic}
+                onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                placeholder="Enter custom topic"
+                required
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ marginTop: '8px' }}
+                onClick={() => {
+                  setShowCustomTopic(false)
+                  setFormData({ ...formData, topic: '' })
+                }}
+              >
+                Select from list instead
+              </button>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Notes</label>

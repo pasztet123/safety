@@ -14,6 +14,7 @@ import ChecklistForm from './pages/ChecklistForm'
 import ChecklistCompletion from './pages/ChecklistCompletion'
 import AdminPanel from './pages/AdminPanel'
 import Projects from './pages/Projects'
+import SafetyTopics from './pages/SafetyTopics'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -52,6 +53,7 @@ function App() {
           <Route path="/meetings/new" element={<MeetingForm />} />
           <Route path="/meetings/:id" element={<MeetingDetails />} />
           <Route path="/meetings/:id/edit" element={<MeetingForm />} />
+          <Route path="/safety-topics" element={<SafetyTopics />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<IncidentForm />} />
           <Route path="/incidents/:id" element={<IncidentForm />} />
