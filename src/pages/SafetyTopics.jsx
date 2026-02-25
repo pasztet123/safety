@@ -11,6 +11,7 @@ export default function SafetyTopics() {
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [riskFilter, setRiskFilter] = useState('all')
+  const [selectedTopic, setSelectedTopic] = useState(null)
   
   const [formData, setFormData] = useState({
     name: '',
@@ -281,7 +282,13 @@ export default function SafetyTopics() {
               <div key={topic.id} className="topic-card">
                 <div className="topic-header">
                   <div>
-                    <h3 className="topic-title">{topic.name}</h3>
+                    <h3 
+                      className="topic-title topic-title-clickable"
+                      onClick={() => setSelectedTopic(topic)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      {topic.name}
+                    </h3>
                     {topic.category && (
                       <span className="topic-category">{topic.category}</span>
                     )}
@@ -305,13 +312,55 @@ export default function SafetyTopics() {
                   </div>
                 </div>
                 {topic.description && (
-                  <p className="topic-description">{topic.description}</p>
+                  <p className="topic-description-preview">
+                    {topic.description.split('\n')[0].substring(0, 150)}
+                    {topic.description.length > 150 ? '...' : ''}
+                    {topic.description.length > 150 && (
+                      <button 
+                        className="btn-read-more"
+                        onClick={() => setSelectedTopic(topic)}
+                      >
+                        Read more
+                      </button>
+                    )}
+                  </p>
                 )}
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {selectedTopic && (
+        <div className="modal-overlay" onClick={() => setSelectedTopic(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{selectedTopic.name}</h2>
+              <button className="modal-close" onClick={() => setSelectedTopic(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              {selectedTopic.category && (
+                <div className="modal-meta">
+                  <span className="topic-category">{selectedTopic.category}</span>
+                  {selectedTopic.osha_reference && (
+                    <span className="osha-badge">OSHA {selectedTopic.osha_reference}</span>
+                  )}
+                  <span className={`risk-badge ${getRiskBadgeClass(selectedTopic.risk_level)}`}>
+                    {selectedTopic.risk_level} risk
+                  </span>
+                </div>
+              )}
+              {selectedTopic.description && (
+                <div className="topic-description-full">
+                  {selectedTopic.description.split('\n').map((line, idx) => (
+                    <p key={idx}>{line}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="topics-summary">
         Showing {filteredTopics.length} of {topics.length} topics
