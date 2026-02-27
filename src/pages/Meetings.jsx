@@ -40,7 +40,32 @@ export default function Meetings() {
       .order('time', { ascending: false })
 
     if (!error && data) {
-      setMeetings(data)
+      // Fetch checklists for all meetings
+      const meetingIds = data.map(m => m.id)
+      const { data: checklistsData } = await supabase
+        .from('meeting_checklists')
+        .select(`
+          meeting_id,
+          checklist:checklists(name)
+        `)
+        .in('meeting_id', meetingIds)
+      
+      // Group checklists by meeting_id
+      const checklistsByMeeting = {}
+      checklistsData?.forEach(mc => {
+        if (!checklistsByMeeting[mc.meeting_id]) {
+          checklistsByMeeting[mc.meeting_id] = []
+        }
+        checklistsByMeeting[mc.meeting_id].push(mc.checklist)
+      })
+      
+      // Add checklists to meetings
+      const meetingsWithChecklists = data.map(meeting => ({
+        ...meeting,
+        checklists: checklistsByMeeting[meeting.id] || []
+      }))
+      
+      setMeetings(meetingsWithChecklists)
     }
     setLoading(false)
   }
@@ -67,7 +92,7 @@ export default function Meetings() {
   return (
     <div>
       <div className="page-header">
-        <h2 className="page-title">Safety Meetings</h2>
+        <h2 className="page-title">Toolbox Meetings</h2>
         <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
           + New Meeting
         </button>
@@ -117,6 +142,12 @@ export default function Meetings() {
                 {meeting.location && (
                   <div className="meeting-detail-item">
                     <strong>Location:</strong> {meeting.location}
+                  </div>
+                )}
+                {meeting.checklists && meeting.checklists.length > 0 && (
+                  <div className="meeting-detail-item">
+                    <strong>Checklists ({meeting.checklists.length}):</strong>{' '}
+                    {meeting.checklists.map(c => c.name).join(', ')}
                   </div>
                 )}
                 <div className="meeting-detail-item">

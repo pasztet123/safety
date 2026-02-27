@@ -12,9 +12,13 @@ import IncidentForm from './pages/IncidentForm'
 import Checklists from './pages/Checklists'
 import ChecklistForm from './pages/ChecklistForm'
 import ChecklistCompletion from './pages/ChecklistCompletion'
+import ChecklistHistory from './pages/ChecklistHistory'
+import ChecklistHistoryView from './pages/ChecklistHistoryView'
+import ChecklistHistoryEdit from './pages/ChecklistHistoryEdit'
 import AdminPanel from './pages/AdminPanel'
 import Projects from './pages/Projects'
 import SafetyTopics from './pages/SafetyTopics'
+import CorrectiveActions from './pages/CorrectiveActions'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -54,6 +58,7 @@ function App() {
           <Route path="/meetings/:id" element={<MeetingDetails />} />
           <Route path="/meetings/:id/edit" element={<MeetingForm />} />
           <Route path="/safety-topics" element={<SafetyTopics />} />
+          <Route path="/corrective-actions" element={<CorrectiveActions />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<IncidentForm />} />
           <Route path="/incidents/:id" element={<IncidentForm />} />
@@ -61,6 +66,9 @@ function App() {
           <Route path="/checklists/new" element={<ChecklistForm />} />
           <Route path="/checklists/:id" element={<ChecklistForm />} />
           <Route path="/checklists/:id/complete" element={<ChecklistCompletion />} />
+          <Route path="/checklist-history" element={<ChecklistHistory />} />
+          <Route path="/checklist-history/:id" element={<ChecklistHistoryView />} />
+          <Route path="/checklist-history/:id/edit" element={<ChecklistHistoryEdit />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

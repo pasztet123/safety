@@ -3,12 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import './ChecklistCompletion.css'
 
-export default function ChecklistCompletion() {
+export default function ChecklistHistoryEdit() {
   const navigate = useNavigate()
   const { id } = useParams()
   
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [completion, setCompletion] = useState(null)
   const [checklist, setChecklist] = useState(null)
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('')
@@ -16,43 +18,29 @@ export default function ChecklistCompletion() {
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState([])
 
-  // Set default datetime to current date/time
   useEffect(() => {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    setCompletionDateTime(`${year}-${month}-${day}T${hours}:${minutes}`)
-  }, [])
-
-  useEffect(() => {
-    fetchChecklist()
+    checkAdmin()
     fetchProjects()
+    fetchCompletion()
   }, [id])
 
-  const fetchChecklist = async () => {
-    setLoading(true)
-    const { data, error } = await supabase
-      .from('checklists')
-      .select(`
-        *,
-        items:checklist_items(*)
-      `)
-      .eq('id', id)
-      .single()
-
-    if (!error && data) {
-      setChecklist(data)
-      const sortedItems = data.items.sort((a, b) => a.display_order - b.display_order)
-      setItems(sortedItems.map(item => ({
-        ...item,
-        is_checked: false,
-        notes: ''
-      })))
+  const checkAdmin = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data: userData } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      const adminStatus = userData?.is_admin || false
+      setIsAdmin(adminStatus)
+      
+      // If not admin, redirect
+      if (!adminStatus) {
+        navigate('/checklist-history')
+      }
     }
-    setLoading(false)
   }
 
   const fetchProjects = async () => {
@@ -62,6 +50,60 @@ export default function ChecklistCompletion() {
       .eq('status', 'active')
       .order('name')
     if (data) setProjects(data)
+  }
+
+  const fetchCompletion = async () => {
+    setLoading(true)
+
+    // Fetch completion
+    const { data: completionData, error: completionError } = await supabase
+      .from('checklist_completions')
+      .select('*')
+      .eq('id', id)
+      .single()
+
+    if (completionError || !completionData) {
+      console.error('Error fetching completion:', completionError)
+      setLoading(false)
+      return
+    }
+
+    setCompletion(completionData)
+    setProjectId(completionData.project_id || '')
+    setNotes(completionData.notes || '')
+    
+    // Format datetime for input
+    const dt = new Date(completionData.completion_datetime)
+    const year = dt.getFullYear()
+    const month = String(dt.getMonth() + 1).padStart(2, '0')
+    const day = String(dt.getDate()).padStart(2, '0')
+    const hours = String(dt.getHours()).padStart(2, '0')
+    const minutes = String(dt.getMinutes()).padStart(2, '0')
+    setCompletionDateTime(`${year}-${month}-${day}T${hours}:${minutes}`)
+
+    // Fetch checklist
+    const { data: checklistData } = await supabase
+      .from('checklists')
+      .select('*')
+      .eq('id', completionData.checklist_id)
+      .single()
+
+    if (checklistData) setChecklist(checklistData)
+
+    // Fetch completion items
+    const { data: itemsData } = await supabase
+      .from('checklist_completion_items')
+      .select('*, checklist_item:checklist_items(*)')
+      .eq('completion_id', id)
+
+    if (itemsData) {
+      const sortedItems = itemsData.sort((a, b) => 
+        a.checklist_item.display_order - b.checklist_item.display_order
+      )
+      setItems(sortedItems)
+    }
+
+    setLoading(false)
   }
 
   const handleToggleItem = (index) => {
@@ -78,52 +120,46 @@ export default function ChecklistCompletion() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (!isAdmin) return
+    
     setSubmitting(true)
 
-    const { data: { user } } = await supabase.auth.getUser()
-
-    // Create completion
-    const { data: completion, error: completionError } = await supabase
+    // Update completion
+    const { error: completionError } = await supabase
       .from('checklist_completions')
-      .insert([{
-        checklist_id: id,
+      .update({
         project_id: projectId || null,
-        completed_by: user.id,
         completion_datetime: completionDateTime,
         notes: notes
-      }])
-      .select()
-      .single()
+      })
+      .eq('id', id)
 
     if (completionError) {
-      console.error('Error creating completion:', completionError)
+      console.error('Error updating completion:', completionError)
+      alert('Error updating completion: ' + completionError.message)
       setSubmitting(false)
       return
     }
 
-    // Insert completion items
-    const completionItems = items.map(item => ({
-      completion_id: completion.id,
-      checklist_item_id: item.id,
-      is_checked: item.is_checked,
-      notes: item.notes || null
-    }))
+    // Update completion items
+    const updates = items.map(item => 
+      supabase
+        .from('checklist_completion_items')
+        .update({
+          is_checked: item.is_checked,
+          notes: item.notes || null
+        })
+        .eq('id', item.id)
+    )
 
-    const { error: itemsError } = await supabase
-      .from('checklist_completion_items')
-      .insert(completionItems)
-
-    if (itemsError) {
-      console.error('Error creating completion items:', itemsError)
-      setSubmitting(false)
-      return
-    }
+    await Promise.all(updates)
 
     setSubmitting(false)
-    navigate('/checklists')
+    navigate(`/checklist-history/${id}`)
   }
 
   if (loading) return <div className="spinner"></div>
+  if (!isAdmin) return null
 
   const checkedCount = items.filter(item => item.is_checked).length
   const totalCount = items.length
@@ -131,7 +167,13 @@ export default function ChecklistCompletion() {
 
   return (
     <div className="checklist-completion">
-      <h2 className="page-title">{checklist?.name}</h2>
+      <div className="page-header" style={{ marginBottom: '1.5rem' }}>
+        <h2 className="page-title">Edit: {checklist?.name}</h2>
+        <button className="btn btn-secondary" onClick={() => navigate(`/checklist-history/${id}`)}>
+          Cancel
+        </button>
+      </div>
+
       {checklist?.description && (
         <p className="checklist-subtitle">{checklist.description}</p>
       )}
@@ -198,7 +240,7 @@ export default function ChecklistCompletion() {
                     className={`item-label ${item.is_checked ? 'checked' : ''}`}
                   >
                     <span className="item-number">{index + 1}.</span>
-                    <span className="item-text">{item.title}</span>
+                    <span className="item-text">{item.checklist_item?.title}</span>
                   </label>
                 </div>
                 
@@ -206,7 +248,7 @@ export default function ChecklistCompletion() {
                   type="text"
                   className="form-input item-note-input"
                   placeholder="Add note (optional)"
-                  value={item.notes}
+                  value={item.notes || ''}
                   onChange={(e) => handleItemNoteChange(index, e.target.value)}
                 />
               </div>
@@ -227,11 +269,15 @@ export default function ChecklistCompletion() {
         </div>
 
         <div className="form-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/checklists')}>
+          <button 
+            type="button" 
+            className="btn btn-secondary" 
+            onClick={() => navigate(`/checklist-history/${id}`)}
+          >
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Saving...' : 'Complete Checklist'}
+            {submitting ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </form>

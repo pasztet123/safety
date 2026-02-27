@@ -46,7 +46,18 @@ export default function MeetingDetails() {
       .single()
 
     if (!error && data) {
-      setMeeting(data)
+      // Fetch associated checklists
+      const { data: checklistsData } = await supabase
+        .from('meeting_checklists')
+        .select(`
+          checklist:checklists(id, name, category, trades)
+        `)
+        .eq('meeting_id', id)
+      
+      setMeeting({
+        ...data,
+        checklists: checklistsData?.map(mc => mc.checklist) || []
+      })
     }
     setLoading(false)
   }
@@ -58,7 +69,7 @@ export default function MeetingDetails() {
       <div>
         <h2 className="page-title">Meeting Not Found</h2>
         <button className="btn btn-secondary" onClick={() => navigate('/meetings')}>
-          Back to Meetings
+          Back to Toolbox Meetings
         </button>
       </div>
     )
@@ -113,6 +124,63 @@ export default function MeetingDetails() {
           <p className="detail-value">{meeting.topic}</p>
         </div>
 
+        {meeting.checklists && meeting.checklists.length > 0 && (
+          <div className="form-group">
+            <label className="form-label">Associated Checklists ({meeting.checklists.length})</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {meeting.checklists.map(checklist => (
+                <div 
+                  key={checklist.id}
+                  style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: '12px',
+                    padding: '12px',
+                    backgroundColor: '#f9fafb',
+                    borderRadius: '8px',
+                    border: '1px solid var(--color-border)'
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: '500', marginBottom: '4px' }}>
+                      {checklist.name}
+                    </p>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {checklist.category && (
+                        <span style={{ fontSize: '12px', color: '#666' }}>
+                          {checklist.category}
+                        </span>
+                      )}
+                      {checklist.trades && checklist.trades.length > 0 && (
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {checklist.trades.map(trade => (
+                            <span key={trade} style={{
+                              backgroundColor: '#e0f2fe',
+                              color: '#0369a1',
+                              padding: '4px 10px',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              fontWeight: '500'
+                            }}>
+                              {trade}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => navigate(`/checklists/${checklist.id}`)}
+                  >
+                    View Checklist
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {meeting.notes && (
           <div className="form-group">
             <label className="form-label">Notes</label>
@@ -137,6 +205,11 @@ export default function MeetingDetails() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '20px' }}>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: '500', marginBottom: '4px' }}>{attendee.name}</p>
+                    {attendee.signed_with_checkbox && (
+                      <p style={{ fontSize: '13px', color: 'var(--color-primary)', marginTop: '4px' }}>
+                        ✓ Confirmed attendance
+                      </p>
+                    )}
                   </div>
                   
                   {attendee.signature_url && (
@@ -193,7 +266,7 @@ export default function MeetingDetails() {
 
       <div className="form-actions">
         <button className="btn btn-secondary" onClick={() => navigate('/meetings')}>
-          Back to Meetings
+          Back to Toolbox Meetings
         </button>
       </div>
     </div>

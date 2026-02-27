@@ -4,6 +4,70 @@ import { supabase } from '../lib/supabase'
 import SignatureCanvas from 'react-signature-canvas'
 import './IncidentForm.css'
 
+// Incident subtypes by type
+const INCIDENT_SUBTYPES = {
+  'Accident (injury)': [
+    { value: 'laceration', label: 'Laceration (cut)' },
+    { value: 'fracture', label: 'Fracture (broken bone)' },
+    { value: 'sprain', label: 'Sprain' },
+    { value: 'strain', label: 'Strain' },
+    { value: 'burn', label: 'Burn' },
+    { value: 'contusion', label: 'Contusion (bruise)' },
+    { value: 'puncture', label: 'Puncture' },
+    { value: 'electrical_injury', label: 'Electrical injury' },
+    { value: 'eye_injury', label: 'Eye injury' },
+    { value: 'head_injury', label: 'Head injury' },
+    { value: 'back_injury', label: 'Back injury' },
+    { value: 'amputation', label: 'Amputation' },
+    { value: 'other', label: 'Other' },
+  ],
+  'Near miss': [
+    // Fall/slip related
+    { value: 'slip', label: 'Slip', category: 'Fall/Slip Related' },
+    { value: 'trip', label: 'Trip', category: 'Fall/Slip Related' },
+    { value: 'fall_same_level', label: 'Fall (same level)', category: 'Fall/Slip Related' },
+    { value: 'fall_from_height', label: 'Fall from height', category: 'Fall/Slip Related' },
+    // Struck by object
+    { value: 'falling_object', label: 'Falling object', category: 'Struck by Object' },
+    { value: 'flying_object', label: 'Flying object', category: 'Struck by Object' },
+    { value: 'moving_equipment', label: 'Moving equipment', category: 'Struck by Object' },
+    // Tool related
+    { value: 'hand_tool', label: 'Hand tool', category: 'Tool Related' },
+    { value: 'power_tool', label: 'Power tool', category: 'Tool Related' },
+    { value: 'machinery', label: 'Machinery', category: 'Tool Related' },
+    // Electrical
+    { value: 'electric_shock', label: 'Electric shock', category: 'Electrical' },
+    { value: 'exposed_wire', label: 'Exposed wire', category: 'Electrical' },
+    // Structural/environment
+    { value: 'sharp_edge', label: 'Sharp edge', category: 'Structural/Environment' },
+    { value: 'unprotected_edge', label: 'Unprotected edge', category: 'Structural/Environment' },
+    { value: 'unstable_surface', label: 'Unstable surface', category: 'Structural/Environment' },
+    // PPE related
+    { value: 'missing_ppe', label: 'Missing PPE', category: 'PPE Related' },
+    { value: 'improper_ppe', label: 'Improper PPE', category: 'PPE Related' },
+  ],
+  'Unsafe condition': [
+    // Same as near miss
+    { value: 'slip', label: 'Slip', category: 'Fall/Slip Related' },
+    { value: 'trip', label: 'Trip', category: 'Fall/Slip Related' },
+    { value: 'fall_same_level', label: 'Fall (same level)', category: 'Fall/Slip Related' },
+    { value: 'fall_from_height', label: 'Fall from height', category: 'Fall/Slip Related' },
+    { value: 'falling_object', label: 'Falling object', category: 'Struck by Object' },
+    { value: 'flying_object', label: 'Flying object', category: 'Struck by Object' },
+    { value: 'moving_equipment', label: 'Moving equipment', category: 'Struck by Object' },
+    { value: 'hand_tool', label: 'Hand tool', category: 'Tool Related' },
+    { value: 'power_tool', label: 'Power tool', category: 'Tool Related' },
+    { value: 'machinery', label: 'Machinery', category: 'Tool Related' },
+    { value: 'electric_shock', label: 'Electric shock', category: 'Electrical' },
+    { value: 'exposed_wire', label: 'Exposed wire', category: 'Electrical' },
+    { value: 'sharp_edge', label: 'Sharp edge', category: 'Structural/Environment' },
+    { value: 'unprotected_edge', label: 'Unprotected edge', category: 'Structural/Environment' },
+    { value: 'unstable_surface', label: 'Unstable surface', category: 'Structural/Environment' },
+    { value: 'missing_ppe', label: 'Missing PPE', category: 'PPE Related' },
+    { value: 'improper_ppe', label: 'Improper PPE', category: 'PPE Related' },
+  ],
+}
+
 export default function IncidentForm() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -13,6 +77,8 @@ export default function IncidentForm() {
   const [projects, setProjects] = useState([])
   const [incidentTypes, setIncidentTypes] = useState([])
   const [employees, setEmployees] = useState([])
+  const [predefinedActions, setPredefinedActions] = useState([])
+  const [involvedPersons, setInvolvedPersons] = useState([])
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -27,17 +93,29 @@ export default function IncidentForm() {
     notes: '',
     incident_type_id: '',
     type_name: '',
+    incident_subtype: '',
   })
   
   const [photoFile, setPhotoFile] = useState(null)
   const [photoPreview, setPhotoPreview] = useState(null)
   const [newType, setNewType] = useState('')
+  const [newTypeDate, setNewTypeDate] = useState(new Date().toISOString().split('T')[0])
   const [showNewType, setShowNewType] = useState(false)
+  
+  const [correctiveActions, setCorrectiveActions] = useState([])
+  const [newAction, setNewAction] = useState({
+    description: '',
+    responsible_person_id: '',
+    due_date: '',
+    status: 'open'
+  })
 
   useEffect(() => {
     fetchProjects()
     fetchIncidentTypes()
     fetchEmployees()
+    fetchPredefinedActions()
+    fetchInvolvedPersons()
     
     if (id) {
       fetchIncident()
@@ -90,6 +168,23 @@ export default function IncidentForm() {
     // Employees will be entered manually
     setEmployees([])
   }
+  
+  const fetchPredefinedActions = async () => {
+    const { data } = await supabase
+      .from('predefined_corrective_actions')
+      .select('*')
+      .order('category')
+      .order('description')
+    if (data) setPredefinedActions(data)
+  }
+  
+  const fetchInvolvedPersons = async () => {
+    const { data } = await supabase
+      .from('involved_persons')
+      .select('id, name')
+      .order('name')
+    if (data) setInvolvedPersons(data)
+  }
 
   const fetchIncident = async () => {
     setLoading(true)
@@ -113,9 +208,20 @@ export default function IncidentForm() {
         notes: data.notes || '',
         incident_type_id: data.incident_type_id || '',
         type_name: data.type_name,
+        incident_subtype: data.incident_subtype || '',
       })
       if (data.photo_url) {
         setPhotoPreview(data.photo_url)
+      }
+      
+      // Fetch existing corrective actions
+      const { data: actionsData } = await supabase
+        .from('corrective_actions')
+        .select('*')
+        .eq('incident_id', id)
+      
+      if (actionsData) {
+        setCorrectiveActions(actionsData)
       }
     }
     setLoading(false)
@@ -126,7 +232,10 @@ export default function IncidentForm() {
 
     const { data, error } = await supabase
       .from('incident_types')
-      .insert([{ name: newType }])
+      .insert([{ 
+        name: newType,
+        incident_date: newTypeDate 
+      }])
       .select()
       .single()
 
@@ -134,6 +243,7 @@ export default function IncidentForm() {
       setIncidentTypes([...incidentTypes, data])
       setFormData({ ...formData, incident_type_id: data.id, type_name: data.name })
       setNewType('')
+      setNewTypeDate(new Date().toISOString().split('T')[0])
       setShowNewType(false)
     }
   }
@@ -148,7 +258,8 @@ export default function IncidentForm() {
     setFormData({
       ...formData,
       incident_type_id: typeId,
-      type_name: type?.name || ''
+      type_name: type?.name || '',
+      incident_subtype: '' // Reset subtype when type changes
     })
   }
 
@@ -162,6 +273,32 @@ export default function IncidentForm() {
       }
       reader.readAsDataURL(file)
     }
+  }
+  
+  const handleAddCorrectiveAction = () => {
+    if (!newAction.description.trim()) return
+    
+    setCorrectiveActions([...correctiveActions, { ...newAction, isNew: true }])
+    setNewAction({
+      description: '',
+      responsible_person_id: '',
+      due_date: '',
+      status: 'open'
+    })
+  }
+  
+  const handleRemoveCorrectiveAction = (index) => {
+    setCorrectiveActions(correctiveActions.filter((_, i) => i !== index))
+  }
+  
+  const handleUpdateCorrectiveAction = (index, field, value) => {
+    const updated = [...correctiveActions]
+    updated[index] = { ...updated[index], [field]: value }
+    setCorrectiveActions(updated)
+  }
+  
+  const handleSelectPredefinedAction = (actionDescription) => {
+    setNewAction({ ...newAction, description: actionDescription })
   }
 
   const handleSubmit = async (e) => {
@@ -208,12 +345,26 @@ export default function IncidentForm() {
 
     // Insert or update incident
     const incidentData = {
-      ...formData,
+      project_id: formData.project_id || null,
+      date: formData.date,
+      time: formData.time,
+      location: formData.location || null,
+      employee_id: formData.employee_id || null,
+      employee_name: formData.employee_name,
+      phone: formData.phone || null,
+      reporter_name: formData.reporter_name,
+      details: formData.details,
+      notes: formData.notes || null,
+      incident_type_id: formData.incident_type_id || null,
+      type_name: formData.type_name,
+      incident_subtype: formData.incident_subtype || null,
       photo_url: photoUrl,
       signature_url: signatureUrl,
       created_by: user.id,
     }
 
+    let incidentId = id
+    
     if (id) {
       const { error } = await supabase
         .from('incidents')
@@ -226,14 +377,49 @@ export default function IncidentForm() {
         return
       }
     } else {
-      const { error } = await supabase
+      const { data: newIncident, error } = await supabase
         .from('incidents')
         .insert([incidentData])
+        .select()
+        .single()
 
       if (error) {
         console.error('Error creating incident:', error)
         setLoading(false)
         return
+      }
+      
+      incidentId = newIncident.id
+    }
+    
+    // Handle corrective actions
+    if (incidentId) {
+      // Delete existing corrective actions if editing
+      if (id) {
+        await supabase
+          .from('corrective_actions')
+          .delete()
+          .eq('incident_id', id)
+      }
+      
+      // Insert new corrective actions
+      if (correctiveActions.length > 0) {
+        const actionsToInsert = correctiveActions.map(action => ({
+          incident_id: incidentId,
+          description: action.description,
+          responsible_person_id: action.responsible_person_id && action.responsible_person_id !== '' ? action.responsible_person_id : null,
+          due_date: action.due_date && action.due_date !== '' ? action.due_date : null,
+          status: action.status || 'open',
+          completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null
+        }))
+        
+        const { error: actionsError } = await supabase
+          .from('corrective_actions')
+          .insert(actionsToInsert)
+        
+        if (actionsError) {
+          console.error('Error inserting corrective actions:', actionsError)
+        }
       }
     }
 
@@ -330,6 +516,15 @@ export default function IncidentForm() {
                 value={newType}
                 onChange={(e) => setNewType(e.target.value)}
               />
+              <div className="form-group">
+                <label className="form-label">Incident Date</label>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={newTypeDate}
+                  onChange={(e) => setNewTypeDate(e.target.value)}
+                />
+              </div>
               <div className="form-row">
                 <button type="button" className="btn btn-primary" onClick={handleAddType}>
                   Add Type
@@ -340,11 +535,46 @@ export default function IncidentForm() {
                   onClick={() => {
                     setShowNewType(false)
                     setNewType('')
+                    setNewTypeDate(new Date().toISOString().split('T')[0])
                   }}
                 >
                   Cancel
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Subtype selection - shown for specific incident types */}
+          {formData.type_name && INCIDENT_SUBTYPES[formData.type_name] && (
+            <div className="form-group">
+              <label className="form-label">Incident Subtype {formData.type_name === 'Accident (injury)' ? '*' : ''}</label>
+              <select
+                className="form-select"
+                value={formData.incident_subtype}
+                onChange={(e) => setFormData({ ...formData, incident_subtype: e.target.value })}
+                required={formData.type_name === 'Accident (injury)'}
+              >
+                <option value="">Select Subtype</option>
+                {INCIDENT_SUBTYPES[formData.type_name].map((subtype, index) => {
+                  // Group by category for near miss and unsafe condition
+                  const showCategory = subtype.category && (
+                    index === 0 || 
+                    INCIDENT_SUBTYPES[formData.type_name][index - 1].category !== subtype.category
+                  )
+                  return (
+                    <React.Fragment key={subtype.value}>
+                      {showCategory && (
+                        <option disabled style={{ fontWeight: 'bold', fontStyle: 'italic' }}>
+                          ─── {subtype.category} ───
+                        </option>
+                      )}
+                      <option value={subtype.value}>
+                        {subtype.category ? '  ' : ''}{subtype.label}
+                      </option>
+                    </React.Fragment>
+                  )
+                })}
+              </select>
             </div>
           )}
         </div>
@@ -427,6 +657,135 @@ export default function IncidentForm() {
               onChange={handlePhotoChange}
             />
           </div>
+        </div>
+
+        <div className="card">
+          <h3 className="section-title">Corrective Actions</h3>
+          
+          <div className="form-group">
+            <label className="form-label">Select from predefined actions or enter custom</label>
+            <select
+              className="form-select"
+              value=""
+              onChange={(e) => handleSelectPredefinedAction(e.target.value)}
+            >
+              <option value="">-- Select a predefined action --</option>
+              {predefinedActions.reduce((acc, action) => {
+                // Group by category
+                if (!acc.find(item => item.category === action.category)) {
+                  acc.push({ category: action.category, actions: [] })
+                }
+                const categoryGroup = acc.find(item => item.category === action.category)
+                categoryGroup.actions.push(action)
+                return acc
+              }, []).map((group, idx) => (
+                <optgroup key={idx} label={group.category}>
+                  {group.actions.map(action => (
+                    <option key={action.id} value={action.description}>
+                      {action.description}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Action Description</label>
+            <textarea
+              className="form-textarea"
+              value={newAction.description}
+              onChange={(e) => setNewAction({ ...newAction, description: e.target.value })}
+              placeholder="Enter corrective action description (optional)"
+              rows="2"
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group">
+              <label className="form-label">Responsible Person</label>
+              <select
+                className="form-select"
+                value={newAction.responsible_person_id}
+                onChange={(e) => setNewAction({ ...newAction, responsible_person_id: e.target.value })}
+              >
+                <option value="">Select Person (Optional)</option>
+                {involvedPersons.map(person => (
+                  <option key={person.id} value={person.id}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Due Date</label>
+              <input
+                type="date"
+                className="form-input"
+                value={newAction.due_date}
+                onChange={(e) => setNewAction({ ...newAction, due_date: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={handleAddCorrectiveAction}
+          >
+            + Add Corrective Action
+          </button>
+
+          {correctiveActions.length > 0 && (
+            <div className="corrective-actions-list">
+              <h4>Added Actions ({correctiveActions.length})</h4>
+              {correctiveActions.map((action, index) => (
+                <div key={index} className="corrective-action-item">
+                  <div className="action-content">
+                    <textarea
+                      className="action-description-edit"
+                      value={action.description}
+                      onChange={(e) => handleUpdateCorrectiveAction(index, 'description', e.target.value)}
+                      rows="2"
+                    />
+                    <div className="action-edit-fields">
+                      <select
+                        value={action.responsible_person_id || ''}
+                        onChange={(e) => handleUpdateCorrectiveAction(index, 'responsible_person_id', e.target.value)}
+                      >
+                        <option value="">No one assigned</option>
+                        {involvedPersons.map(person => (
+                          <option key={person.id} value={person.id}>
+                            {person.name}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="date"
+                        value={action.due_date || ''}
+                        onChange={(e) => handleUpdateCorrectiveAction(index, 'due_date', e.target.value)}
+                      />
+                      <select
+                        value={action.status}
+                        onChange={(e) => handleUpdateCorrectiveAction(index, 'status', e.target.value)}
+                      >
+                        <option value="open">Open</option>
+                        <option value="completed">Completed</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-remove"
+                    onClick={() => handleRemoveCorrectiveAction(index)}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="card">

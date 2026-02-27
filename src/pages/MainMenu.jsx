@@ -44,14 +44,21 @@ const BookIcon = () => (
   </svg>
 )
 
+const WrenchIcon = () => (
+  <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+  </svg>
+)
+
 export default function MainMenu() {
   const navigate = useNavigate()
 
   const menuItems = [
     { title: 'Projects', path: '/projects', icon: <FolderIcon /> },
-    { title: 'Meetings', path: '/meetings', icon: <ClipboardIcon /> },
+    { title: 'Toolbox Meetings', path: '/meetings', icon: <ClipboardIcon /> },
     { title: 'Safety Topics', path: '/safety-topics', icon: <BookIcon /> },
     { title: 'Incidents', path: '/incidents', icon: <AlertIcon /> },
+    { title: 'Corrective Actions Log', path: '/corrective-actions', icon: <WrenchIcon /> },
     { title: 'Checklists', path: '/checklists', icon: <ChecklistIcon /> },
     { title: 'Admin Panel', path: '/admin', icon: <SettingsIcon /> },
   ]

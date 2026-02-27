@@ -54,7 +54,7 @@ serve(async (req) => {
 
     console.log('Admin verified')
 
-    const { email, password, name, is_admin } = await req.json()
+    const { email, password, name, is_admin, default_signature_url } = await req.json()
     console.log('Creating user:', email)
 
     // Check if user already exists in users table
@@ -133,6 +133,7 @@ serve(async (req) => {
         email,
         name,
         is_admin,
+        default_signature_url,
       }])
 
     if (dbError) {

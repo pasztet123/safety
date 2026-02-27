@@ -17,6 +17,8 @@ export default function MeetingForm() {
   const [users, setUsers] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [safetyTopics, setSafetyTopics] = useState([])
+  const [checklists, setChecklists] = useState([])
+  const [selectedChecklists, setSelectedChecklists] = useState([])
   const [showCustomTopic, setShowCustomTopic] = useState(false)
   
   const [formData, setFormData] = useState({
@@ -28,6 +30,7 @@ export default function MeetingForm() {
     leader_name: '',
     topic: '',
     notes: '',
+    completed: false,
   })
   
   const [attendees, setAttendees] = useState([])
@@ -35,6 +38,8 @@ export default function MeetingForm() {
   const [photos, setPhotos] = useState([])
   const [newLeader, setNewLeader] = useState('')
   const [showNewLeader, setShowNewLeader] = useState(false)
+  const [userDefaultSignatures, setUserDefaultSignatures] = useState({}) // Map of name -> default_signature_url
+  const [leaderDefaultSignature, setLeaderDefaultSignature] = useState(null) // Leader's default signature URL
 
   useEffect(() => {
     checkAdminAndLoadData()
@@ -61,9 +66,13 @@ export default function MeetingForm() {
     
     fetchProjects()
     fetchLeaders()
-    fetchUsers()
-    fetchInvolvedPersons()
     fetchSafetyTopics()
+    fetchChecklists()
+    
+    // Fetch users and involved persons, then build signature map
+    Promise.all([fetchUsers(), fetchInvolvedPersons()]).then(([usersData, involvedPersonsData]) => {
+      buildSignatureMap(usersData, involvedPersonsData)
+    })
     
     if (id) {
       fetchMeeting()
@@ -107,7 +116,7 @@ export default function MeetingForm() {
   const fetchLeaders = async () => {
     const { data } = await supabase
       .from('leaders')
-      .select('*')
+      .select('*, default_signature_url')
       .order('name')
     if (data) {
       setLeaders(data)
@@ -118,21 +127,59 @@ export default function MeetingForm() {
           leader_id: data[0].id,
           leader_name: data[0].name
         }))
+        // Set default signature for auto-selected leader
+        if (data[0].default_signature_url) {
+          setLeaderDefaultSignature(data[0].default_signature_url)
+        }
       }
     }
   }
 
   const fetchUsers = async () => {
-    // Users will be fetched from auth if needed
-    setUsers([])
+    // Fetch users with their default signatures
+    const { data } = await supabase
+      .from('users')
+      .select('id, name, email, default_signature_url')
+      .order('name')
+    
+    if (data) {
+      setUsers(data)
+      return data
+    }
+    return []
   }
 
   const fetchInvolvedPersons = async () => {
     const { data } = await supabase
       .from('involved_persons')
-      .select('id, name, company:companies(name)')
+      .select('id, name, company:companies(name), default_signature_url')
       .order('name')
-    if (data) setInvolvedPersons(data)
+    
+    if (data) {
+      setInvolvedPersons(data)
+      return data
+    }
+    return []
+  }
+
+  const buildSignatureMap = (usersData, involvedPersonsData) => {
+    const sigMap = {}
+    
+    // Add signatures from users
+    usersData.forEach(user => {
+      if (user.default_signature_url) {
+        sigMap[user.name] = user.default_signature_url
+      }
+    })
+    
+    // Add signatures from involved persons
+    involvedPersonsData.forEach(person => {
+      if (person.default_signature_url) {
+        sigMap[person.name] = person.default_signature_url
+      }
+    })
+    
+    setUserDefaultSignatures(sigMap)
   }
 
   const fetchSafetyTopics = async () => {
@@ -142,6 +189,14 @@ export default function MeetingForm() {
       .order('category')
       .order('name')
     if (data) setSafetyTopics(data)
+  }
+
+  const fetchChecklists = async () => {
+    const { data } = await supabase
+      .from('checklists')
+      .select('id, name, category, trades')
+      .order('name')
+    if (data) setChecklists(data)
   }
 
   const fetchMeeting = async () => {
@@ -166,9 +221,20 @@ export default function MeetingForm() {
         leader_name: data.leader_name,
         topic: data.topic,
         notes: data.notes || '',
+        completed: data.completed || false,
       })
       setAttendees(data.attendees || [])
       setPhotos(data.photos || [])
+      
+      // Fetch associated checklists
+      const { data: checklistsData } = await supabase
+        .from('meeting_checklists')
+        .select('checklist_id')
+        .eq('meeting_id', id)
+      
+      if (checklistsData) {
+        setSelectedChecklists(checklistsData.map(mc => mc.checklist_id))
+      }
     }
     setLoading(false)
   }
@@ -227,6 +293,46 @@ export default function MeetingForm() {
     setPhotos(photos.filter((_, i) => i !== index))
   }
 
+  // Load default signature into canvas
+  const loadDefaultSignature = (attendeeName, index) => {
+    const defaultSignatureUrl = userDefaultSignatures[attendeeName]
+    
+    if (defaultSignatureUrl && attendeeSignatureRefs.current[index]) {
+      const canvas = attendeeSignatureRefs.current[index]
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const ctx = canvas.getCanvas().getContext('2d')
+        const canvasElement = canvas.getCanvas()
+        
+        // Clear canvas first
+        canvas.clear()
+        
+        // Calculate scaling to maintain aspect ratio
+        const canvasWidth = canvasElement.width
+        const canvasHeight = canvasElement.height
+        const imgWidth = img.width
+        const imgHeight = img.height
+        
+        // Calculate scale to fit image within canvas while maintaining aspect ratio
+        const scale = Math.min(canvasWidth / imgWidth, canvasHeight / imgHeight)
+        
+        // Calculate dimensions and position to center the image
+        const scaledWidth = imgWidth * scale
+        const scaledHeight = imgHeight * scale
+        const x = (canvasWidth - scaledWidth) / 2
+        const y = (canvasHeight - scaledHeight) / 2
+        
+        // Draw the image with proper scaling and centering
+        ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
+      }
+      img.onerror = (error) => {
+        console.error('Error loading signature image:', error)
+      }
+      img.src = defaultSignatureUrl
+    }
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
@@ -277,6 +383,7 @@ export default function MeetingForm() {
         topic: formData.topic,
         notes: formData.notes || null,
         signature_url: signatureUrl,
+        completed: formData.completed,
         created_by: user.id,
       }
 
@@ -296,6 +403,7 @@ export default function MeetingForm() {
       // Delete existing attendees and photos
       await supabase.from('meeting_attendees').delete().eq('meeting_id', id)
       await supabase.from('meeting_photos').delete().eq('meeting_id', id)
+      await supabase.from('meeting_checklists').delete().eq('meeting_id', id)
     } else {
       const { data, error } = await supabase
         .from('meetings')
@@ -340,7 +448,8 @@ export default function MeetingForm() {
               meeting_id: meetingId,
               name: attendee.name,
               user_id: attendee.user_id || null,
-              signature_url: signatureUrl
+              signature_url: signatureUrl,
+              signed_with_checkbox: attendee.signed_with_checkbox || false
             }
           })
         )
@@ -365,6 +474,19 @@ export default function MeetingForm() {
         }
       }
 
+      // Insert checklist associations
+      if (selectedChecklists.length > 0) {
+        const { error: checklistsError } = await supabase.from('meeting_checklists').insert(
+          selectedChecklists.map(checklistId => ({
+            meeting_id: meetingId,
+            checklist_id: checklistId
+          }))
+        )
+        if (checklistsError) {
+          console.error('Error adding checklists:', checklistsError)
+        }
+      }
+
       setLoading(false)
       navigate('/meetings')
     } catch (error) {
@@ -386,6 +508,12 @@ export default function MeetingForm() {
       leader_id: leaderId,
       leader_name: leader?.name || ''
     })
+    // Set leader's default signature
+    if (leader?.default_signature_url) {
+      setLeaderDefaultSignature(leader.default_signature_url)
+    } else {
+      setLeaderDefaultSignature(null)
+    }
   }
 
   if (loading && id) return <div className="spinner"></div>
@@ -561,6 +689,80 @@ export default function MeetingForm() {
           )}
 
           <div className="form-group">
+            <label className="form-label">Associated Checklists (Optional)</label>
+            <div style={{ 
+              maxHeight: '300px', 
+              overflowY: 'auto', 
+              border: '1px solid var(--color-border)', 
+              borderRadius: '8px',
+              padding: '12px',
+              backgroundColor: '#f9fafb'
+            }}>
+              {checklists.length === 0 ? (
+                <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>No checklists available</p>
+              ) : (
+                checklists.map(checklist => (
+                  <label 
+                    key={checklist.id}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'flex-start',
+                      padding: '8px',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      marginBottom: '4px',
+                      backgroundColor: selectedChecklists.includes(checklist.id) ? '#e0f2fe' : 'transparent'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = selectedChecklists.includes(checklist.id) ? '#bae6fd' : '#f1f5f9'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = selectedChecklists.includes(checklist.id) ? '#e0f2fe' : 'transparent'}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedChecklists.includes(checklist.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedChecklists([...selectedChecklists, checklist.id])
+                        } else {
+                          setSelectedChecklists(selectedChecklists.filter(id => id !== checklist.id))
+                        }
+                      }}
+                      style={{ marginRight: '10px', marginTop: '3px', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: '500', marginBottom: '2px' }}>
+                        {checklist.name}
+                      </div>
+                      <div style={{ fontSize: '12px', color: '#666', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        {checklist.category && (
+                          <span>{checklist.category}</span>
+                        )}
+                        {checklist.trades && checklist.trades.length > 0 && (
+                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                            {checklist.trades.map(trade => (
+                              <span key={trade} style={{
+                                backgroundColor: '#dbeafe',
+                                color: '#1e40af',
+                                padding: '2px 6px',
+                                borderRadius: '8px',
+                                fontSize: '11px'
+                              }}>
+                                {trade}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                ))
+              )}
+            </div>
+            <small style={{ color: '#666', marginTop: '8px', display: 'block' }}>
+              Select one or more checklists to associate with this meeting
+            </small>
+          </div>
+
+          <div className="form-group">
             <label className="form-label">Notes</label>
             <textarea
               className="form-textarea"
@@ -595,56 +797,107 @@ export default function MeetingForm() {
                   
                   {/* Attendee signature */}
                   <div>
-                    <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-                      Signature (optional)
-                    </p>
-                    {attendee.signature_url ? (
-                      <div>
-                        <img 
-                          src={attendee.signature_url} 
-                          alt={`Signature of ${attendee.name}`}
-                          style={{ 
-                            maxWidth: '100%', 
-                            maxHeight: '150px',
-                            border: '1px solid var(--color-border)', 
-                            borderRadius: '8px',
-                            marginBottom: '8px'
-                          }} 
-                        />
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          style={{ fontSize: '14px' }}
-                          onClick={() => {
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={attendee.signed_with_checkbox || false}
+                          onChange={(e) => {
                             const newAttendees = [...attendees]
-                            newAttendees[index] = { ...newAttendees[index], signature_url: null }
+                            newAttendees[index] = { 
+                              ...newAttendees[index], 
+                              signed_with_checkbox: e.target.checked 
+                            }
                             setAttendees(newAttendees)
                           }}
-                        >
-                          Remove Signature
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="signature-container">
-                        <SignatureCanvas
-                          ref={(ref) => {
-                            if (!attendeeSignatureRefs.current[index]) {
-                              attendeeSignatureRefs.current[index] = ref
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                          Confirm attendance (checkbox signature)
+                        </span>
+                      </label>
+                    </div>
+                    
+                    <div style={{ marginBottom: '12px' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={attendee.show_signature_field || false}
+                          onChange={(e) => {
+                            const newAttendees = [...attendees]
+                            newAttendees[index] = { 
+                              ...newAttendees[index], 
+                              show_signature_field: e.target.checked 
+                            }
+                            setAttendees(newAttendees)
+                            
+                            // Load default signature if checking the box
+                            if (e.target.checked) {
+                              // Use setTimeout to ensure canvas is rendered
+                              setTimeout(() => loadDefaultSignature(attendee.name, index), 100)
                             }
                           }}
-                          canvasProps={{
-                            className: 'signature-canvas',
-                            style: { width: '100%', height: '150px' }
-                          }}
+                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                         />
-                        <button
-                          type="button"
-                          className="btn btn-secondary"
-                          onClick={() => attendeeSignatureRefs.current[index]?.clear()}
-                        >
-                          Clear Signature
-                        </button>
-                      </div>
+                        <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                          Add drawn signature
+                        </span>
+                      </label>
+                    </div>
+                    
+                    {attendee.show_signature_field && (
+                      <>
+                        {attendee.signature_url ? (
+                          <div>
+                            <img 
+                              src={attendee.signature_url} 
+                              alt={`Signature of ${attendee.name}`}
+                              style={{ 
+                                maxWidth: '100%', 
+                                maxHeight: '150px',
+                                border: '1px solid var(--color-border)', 
+                                borderRadius: '8px',
+                                marginBottom: '8px'
+                              }} 
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              style={{ fontSize: '14px' }}
+                              onClick={() => {
+                                const newAttendees = [...attendees]
+                                newAttendees[index] = { ...newAttendees[index], signature_url: null }
+                                setAttendees(newAttendees)
+                              }}
+                            >
+                              Remove Signature
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="signature-container">
+                            <SignatureCanvas
+                              ref={(ref) => {
+                                if (!attendeeSignatureRefs.current[index]) {
+                                  attendeeSignatureRefs.current[index] = ref
+                                }
+                              }}
+                              canvasProps={{
+                                width: 800,
+                                height: 200,
+                                className: 'signature-canvas',
+                                style: { width: '100%', height: '150px' }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-secondary"
+                              onClick={() => attendeeSignatureRefs.current[index]?.clear()}
+                            >
+                              Clear Signature
+                            </button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>
@@ -713,10 +966,54 @@ export default function MeetingForm() {
         <div className="card">
           <h3 className="section-title">Signature (Optional)</h3>
           
+          <div className="form-group" style={{ marginBottom: '16px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                onChange={(e) => {
+                  if (e.target.checked && leaderDefaultSignature && signatureRef.current) {
+                    // Load leader's default signature
+                    const img = new Image()
+                    img.crossOrigin = 'anonymous'
+                    img.onload = () => {
+                      const ctx = signatureRef.current.getCanvas().getContext('2d')
+                      const canvasElement = signatureRef.current.getCanvas()
+                      
+                      // Clear canvas first
+                      signatureRef.current.clear()
+                      
+                      // Calculate scaling to maintain aspect ratio
+                      const canvasWidth = canvasElement.width
+                      const canvasHeight = canvasElement.height
+                      const imgWidth = img.width
+                      const imgHeight = img.height
+                      
+                      const scale = Math.min(canvasWidth / imgWidth, canvasHeight / imgHeight)
+                      
+                      const scaledWidth = imgWidth * scale
+                      const scaledHeight = imgHeight * scale
+                      const x = (canvasWidth - scaledWidth) / 2
+                      const y = (canvasHeight - scaledHeight) / 2
+                      
+                      ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
+                    }
+                    img.src = leaderDefaultSignature
+                  }
+                }}
+                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '14px', fontWeight: '500' }}>
+                Use my default signature
+              </span>
+            </label>
+          </div>
+          
           <div className="signature-container">
             <SignatureCanvas
               ref={signatureRef}
               canvasProps={{
+                width: 800,
+                height: 200,
                 className: 'signature-canvas'
               }}
             />
@@ -727,6 +1024,20 @@ export default function MeetingForm() {
             >
               Clear Signature
             </button>
+          </div>
+
+          <div className="form-group" style={{ marginTop: '24px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={formData.completed}
+                onChange={(e) => setFormData({ ...formData, completed: e.target.checked })}
+                style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+              />
+              <span style={{ fontSize: '16px', fontWeight: '500' }}>
+                Leader declares that this meeting is completed
+              </span>
+            </label>
           </div>
         </div>
 

@@ -7,10 +7,29 @@ export default function Incidents() {
   const navigate = useNavigate()
   const [incidents, setIncidents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [correctiveActions, setCorrectiveActions] = useState({})
+  const [involvedPersons, setInvolvedPersons] = useState([])
+  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
-    fetchIncidents()
+    checkAdminAndFetchData()
   }, [])
+
+  const checkAdminAndFetchData = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      const { data } = await supabase
+        .from('users')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single()
+      
+      setIsAdmin(data?.is_admin || false)
+    }
+    
+    await fetchIncidents()
+    await fetchInvolvedPersons()
+  }
 
   const fetchIncidents = async () => {
     setLoading(true)
@@ -25,12 +44,59 @@ export default function Incidents() {
 
     if (!error && data) {
       setIncidents(data)
+      
+      // Fetch corrective actions for all incidents
+      const incidentIds = data.map(i => i.id)
+      if (incidentIds.length > 0) {
+        const { data: actions } = await supabase
+          .from('corrective_actions')
+          .select('*')
+          .in('incident_id', incidentIds)
+        
+        if (actions) {
+          // Group actions by incident_id
+          const actionsByIncident = {}
+          actions.forEach(action => {
+            if (!actionsByIncident[action.incident_id]) {
+              actionsByIncident[action.incident_id] = []
+            }
+            actionsByIncident[action.incident_id].push(action)
+          })
+          setCorrectiveActions(actionsByIncident)
+        }
+      }
     }
     setLoading(false)
+  }
+  
+  const fetchInvolvedPersons = async () => {
+    const { data } = await supabase
+      .from('involved_persons')
+      .select('id, name')
+      .order('name')
+    if (data) setInvolvedPersons(data)
   }
 
   const handleGeneratePDF = async (incident) => {
     await generateIncidentPDF(incident)
+  }
+  
+  const handleToggleActionStatus = async (actionId, currentStatus) => {
+    const newStatus = currentStatus === 'open' ? 'completed' : 'open'
+    const updateData = {
+      status: newStatus,
+      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null
+    }
+    
+    const { error } = await supabase
+      .from('corrective_actions')
+      .update(updateData)
+      .eq('id', actionId)
+    
+    if (!error) {
+      // Refresh corrective actions
+      await fetchIncidents()
+    }
   }
 
   if (loading) return <div className="spinner"></div>
@@ -54,7 +120,14 @@ export default function Incidents() {
             <div key={incident.id} className="card incident-card">
               <div className="incident-header">
                 <div>
-                  <span className="incident-type-badge">{incident.type_name}</span>
+                  <div>
+                    <span className="incident-type-badge">{incident.type_name}</span>
+                    {incident.incident_subtype && (
+                      <span className="incident-subtype-badge">
+                        {incident.incident_subtype.replace(/_/g, ' ')}
+                      </span>
+                    )}
+                  </div>
                   <p className="incident-meta">
                     {new Date(incident.date).toLocaleDateString()} at{' '}
                     {incident.time}
@@ -105,11 +178,51 @@ export default function Incidents() {
                 )}
               </div>
 
+              {correctiveActions[incident.id] && correctiveActions[incident.id].length > 0 && (
+                <div className="corrective-actions-section">
+                  <h4>Corrective Actions ({correctiveActions[incident.id].length})</h4>
+                  <div className="actions-list">
+                    {correctiveActions[incident.id].map(action => (
+                      <div key={action.id} className={`action-item ${action.status}`}>
+                        <div className="action-status-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={action.status === 'completed'}
+                            onChange={() => handleToggleActionStatus(action.id, action.status)}
+                            disabled={!isAdmin}
+                          />
+                        </div>
+                        <div className="action-content">
+                          <p className="action-text">{action.description}</p>
+                          <div className="action-meta">
+                            {action.responsible_person_id && (
+                              <span className="action-responsible">
+                                👤 {involvedPersons.find(p => p.id === action.responsible_person_id)?.name || 'Unknown'}
+                              </span>
+                            )}
+                            {action.due_date && (
+                              <span className="action-due-date">
+                                📅 Due: {new Date(action.due_date).toLocaleDateString()}
+                              </span>
+                            )}
+                            {action.completion_date && (
+                              <span className="action-completed-date">
+                                ✅ Completed: {new Date(action.completion_date).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button 
                 className="btn btn-secondary"
                 onClick={() => navigate(`/incidents/${incident.id}`)}
               >
-                View Details
+                Edit Incident
               </button>
             </div>
           ))

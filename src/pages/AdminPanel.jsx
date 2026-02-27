@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import SignatureCanvas from 'react-signature-canvas'
 import './AdminPanel.css'
 
 export default function AdminPanel() {
+  const newUserSignatureRef = useRef()
+  const newLeaderSignatureRef = useRef()
+  const editLeaderSignatureRef = useRef()
+  const newInvolvedPersonSignatureRef = useRef()
+  const editInvolvedPersonSignatureRef = useRef()
   const [activeTab, setActiveTab] = useState('meetings')
   const [meetings, setMeetings] = useState([])
   const [incidents, setIncidents] = useState([])
@@ -18,10 +24,16 @@ export default function AdminPanel() {
   const [showInvolvedPersonForm, setShowInvolvedPersonForm] = useState(false)
   const [showCompanyForm, setShowCompanyForm] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
+  const [editingLeader, setEditingLeader] = useState(null)
   const [editingInvolvedPerson, setEditingInvolvedPerson] = useState(null)
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', is_admin: false })
+  const [newUserShowSignature, setNewUserShowSignature] = useState(false)
   const [newLeader, setNewLeader] = useState({ name: '', email: '', phone: '' })
+  const [newLeaderShowSignature, setNewLeaderShowSignature] = useState(false)
+  const [editLeaderShowSignature, setEditLeaderShowSignature] = useState(false)
   const [newInvolvedPerson, setNewInvolvedPerson] = useState({ name: '', email: '', phone: '', company_id: '' })
+  const [newInvolvedPersonShowSignature, setNewInvolvedPersonShowSignature] = useState(false)
+  const [editInvolvedPersonShowSignature, setEditInvolvedPersonShowSignature] = useState(false)
   const [newCompany, setNewCompany] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
 
   useEffect(() => {
@@ -120,6 +132,27 @@ export default function AdminPanel() {
     setLoading(true)
 
     try {
+      // Upload default signature if present
+      let defaultSignatureUrl = null
+      if (newUserSignatureRef.current && !newUserSignatureRef.current.isEmpty()) {
+        const signatureBlob = await fetch(newUserSignatureRef.current.toDataURL()).then(r => r.blob())
+        const signatureFile = `default-signature-${Date.now()}.png`
+        
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('signatures')
+          .upload(signatureFile, signatureBlob)
+
+        if (uploadError) {
+          console.error('Error uploading signature:', uploadError)
+          alert('Error uploading signature. User will be created without default signature.')
+        } else {
+          const { data: { publicUrl } } = supabase.storage
+            .from('signatures')
+            .getPublicUrl(signatureFile)
+          defaultSignatureUrl = publicUrl
+        }
+      }
+
       const { data: { session } } = await supabase.auth.getSession()
       
       const response = await fetch(
@@ -135,6 +168,7 @@ export default function AdminPanel() {
             password: newUser.password,
             name: newUser.name,
             is_admin: newUser.is_admin,
+            default_signature_url: defaultSignatureUrl,
           }),
         }
       )
@@ -147,6 +181,10 @@ export default function AdminPanel() {
       } else {
         alert('User created successfully!')
         setNewUser({ email: '', password: '', name: '', is_admin: false })
+        setNewUserShowSignature(false)
+        if (newUserSignatureRef.current) {
+          newUserSignatureRef.current.clear()
+        }
         setShowUserForm(false)
         fetchData()
       }
@@ -259,15 +297,100 @@ export default function AdminPanel() {
     e.preventDefault()
     setLoading(true)
 
+    // Upload default signature if present
+    let defaultSignatureUrl = null
+    if (newLeaderSignatureRef.current && !newLeaderSignatureRef.current.isEmpty()) {
+      const signatureBlob = await fetch(newLeaderSignatureRef.current.toDataURL()).then(r => r.blob())
+      const signatureFile = `leader-signature-${Date.now()}.png`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('signatures')
+        .upload(signatureFile, signatureBlob)
+
+      if (uploadError) {
+        console.error('Error uploading signature:', uploadError)
+        alert('Error uploading signature. Leader will be added without default signature.')
+      } else {
+        const { data: { publicUrl } } = supabase.storage
+          .from('signatures')
+          .getPublicUrl(signatureFile)
+        defaultSignatureUrl = publicUrl
+      }
+    }
+
+    const dataToInsert = {
+      ...newLeader,
+      default_signature_url: defaultSignatureUrl
+    }
+
     const { error } = await supabase
       .from('leaders')
-      .insert([newLeader])
+      .insert([dataToInsert])
 
     if (error) {
       alert(`Error adding leader: ${error.message}`)
     } else {
       setNewLeader({ name: '', email: '', phone: '' })
+      setNewLeaderShowSignature(false)
+      if (newLeaderSignatureRef.current) {
+        newLeaderSignatureRef.current.clear()
+      }
       setShowLeaderForm(false)
+      fetchData()
+    }
+    
+    setLoading(false)
+  }
+
+  const handleUpdateLeader = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+
+    // Upload default signature if present
+    let defaultSignatureUrl = null
+    if (editLeaderSignatureRef.current && !editLeaderSignatureRef.current.isEmpty()) {
+      const signatureBlob = await fetch(editLeaderSignatureRef.current.toDataURL()).then(r => r.blob())
+      const signatureFile = `leader-signature-${Date.now()}.png`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('signatures')
+        .upload(signatureFile, signatureBlob)
+
+      if (uploadError) {
+        console.error('Error uploading signature:', uploadError)
+        alert('Error uploading signature. Update will proceed without changing signature.')
+      } else {
+        const { data: { publicUrl } } = supabase.storage
+          .from('signatures')
+          .getPublicUrl(signatureFile)
+        defaultSignatureUrl = publicUrl
+      }
+    }
+
+    const dataToUpdate = {
+      name: editingLeader.name,
+      email: editingLeader.email || null,
+      phone: editingLeader.phone || null
+    }
+
+    // Only update signature URL if a new one was uploaded
+    if (defaultSignatureUrl) {
+      dataToUpdate.default_signature_url = defaultSignatureUrl
+    }
+
+    const { error } = await supabase
+      .from('leaders')
+      .update(dataToUpdate)
+      .eq('id', editingLeader.id)
+
+    if (error) {
+      alert(`Error updating leader: ${error.message}`)
+    } else {
+      setEditingLeader(null)
+      setEditLeaderShowSignature(false)
+      if (editLeaderSignatureRef.current) {
+        editLeaderSignatureRef.current.clear()
+      }
       fetchData()
     }
     
@@ -291,11 +414,33 @@ export default function AdminPanel() {
     e.preventDefault()
     setLoading(true)
 
+    // Upload default signature if present
+    let defaultSignatureUrl = null
+    if (newInvolvedPersonSignatureRef.current && !newInvolvedPersonSignatureRef.current.isEmpty()) {
+      const signatureBlob = await fetch(newInvolvedPersonSignatureRef.current.toDataURL()).then(r => r.blob())
+      const signatureFile = `involved-person-signature-${Date.now()}.png`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('signatures')
+        .upload(signatureFile, signatureBlob)
+
+      if (uploadError) {
+        console.error('Error uploading signature:', uploadError)
+        alert('Error uploading signature. Person will be added without default signature.')
+      } else {
+        const { data: { publicUrl } } = supabase.storage
+          .from('signatures')
+          .getPublicUrl(signatureFile)
+        defaultSignatureUrl = publicUrl
+      }
+    }
+
     const dataToInsert = {
       name: newInvolvedPerson.name,
       email: newInvolvedPerson.email || null,
       phone: newInvolvedPerson.phone || null,
-      company_id: newInvolvedPerson.company_id || null
+      company_id: newInvolvedPerson.company_id || null,
+      default_signature_url: defaultSignatureUrl
     }
 
     const { error } = await supabase
@@ -306,6 +451,10 @@ export default function AdminPanel() {
       alert(`Error adding involved person: ${error.message}`)
     } else {
       setNewInvolvedPerson({ name: '', email: '', phone: '', company_id: '' })
+      setNewInvolvedPersonShowSignature(false)
+      if (newInvolvedPersonSignatureRef.current) {
+        newInvolvedPersonSignatureRef.current.clear()
+      }
       setShowInvolvedPersonForm(false)
       fetchData()
     }
@@ -317,11 +466,37 @@ export default function AdminPanel() {
     e.preventDefault()
     setLoading(true)
 
+    // Upload new signature if present
+    let defaultSignatureUrl = editingInvolvedPerson.default_signature_url
+    if (editInvolvedPersonSignatureRef.current && !editInvolvedPersonSignatureRef.current.isEmpty()) {
+      const signatureBlob = await fetch(editInvolvedPersonSignatureRef.current.toDataURL()).then(r => r.blob())
+      const signatureFile = `involved-person-signature-${Date.now()}.png`
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('signatures')
+        .upload(signatureFile, signatureBlob)
+
+      if (uploadError) {
+        console.error('Error uploading signature:', uploadError)
+        alert('Error uploading signature. Update will proceed without changing signature.')
+      } else {
+        const { data: { publicUrl } } = supabase.storage
+          .from('signatures')
+          .getPublicUrl(signatureFile)
+        defaultSignatureUrl = publicUrl
+      }
+    }
+
     const dataToUpdate = {
       name: editingInvolvedPerson.name,
       email: editingInvolvedPerson.email || null,
       phone: editingInvolvedPerson.phone || null,
       company_id: editingInvolvedPerson.company_id || null
+    }
+
+    // Only update signature URL if a new one was uploaded
+    if (defaultSignatureUrl) {
+      dataToUpdate.default_signature_url = defaultSignatureUrl
     }
 
     const { error } = await supabase
@@ -333,6 +508,10 @@ export default function AdminPanel() {
       alert(`Error updating involved person: ${error.message}`)
     } else {
       setEditingInvolvedPerson(null)
+      setEditInvolvedPersonShowSignature(false)
+      if (editInvolvedPersonSignatureRef.current) {
+        editInvolvedPersonSignatureRef.current.clear()
+      }
       fetchData()
     }
     
@@ -615,6 +794,53 @@ export default function AdminPanel() {
                       Admin Access
                     </label>
                   </div>
+                  
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={newUserShowSignature}
+                        onChange={(e) => setNewUserShowSignature(e.target.checked)}
+                      />
+                      Add default signature (optional)
+                    </label>
+                  </div>
+                  
+                  {newUserShowSignature && (
+                    <div className="form-group">
+                      <label>Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignatureCanvas
+                          ref={newUserSignatureRef}
+                          canvasProps={{
+                            width: 800,
+                            height: 200,
+                            style: { 
+                              width: '100%', 
+                              height: '150px',
+                              borderRadius: '8px'
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '8px' }}
+                        onClick={() => newUserSignatureRef.current?.clear()}
+                      >
+                        Clear Signature
+                      </button>
+                      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+                        This signature will be automatically loaded when the user adds a drawn signature in meetings.
+                      </p>
+                    </div>
+                  )}
+                  
                   <button type="submit" className="btn btn-primary" disabled={loading}>
                     {loading ? 'Adding...' : 'Add User'}
                   </button>
@@ -710,9 +936,166 @@ export default function AdminPanel() {
                       onChange={(e) => setNewLeader({...newLeader, phone: e.target.value})}
                     />
                   </div>
+                  
+                  <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={newLeaderShowSignature}
+                        onChange={(e) => setNewLeaderShowSignature(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span>Add Default Signature</span>
+                    </label>
+                  </div>
+
+                  {newLeaderShowSignature && (
+                    <div className="form-group">
+                      <label>Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignatureCanvas
+                          ref={newLeaderSignatureRef}
+                          canvasProps={{
+                            width: 800,
+                            height: 200,
+                            style: { 
+                              width: '100%', 
+                              height: '150px',
+                              borderRadius: '8px'
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => newLeaderSignatureRef.current?.clear()}
+                        style={{ marginTop: '8px' }}
+                      >
+                        Clear Signature
+                      </button>
+                    </div>
+                  )}
+                  
                   <button type="submit" className="btn btn-primary" disabled={loading}>
                     {loading ? 'Adding...' : 'Add Leader'}
                   </button>
+                </form>
+              )}
+
+              {editingLeader && (
+                <form className="form-card" onSubmit={handleUpdateLeader}>
+                  <h4>Edit Leader</h4>
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      value={editingLeader.name}
+                      onChange={(e) => setEditingLeader({...editingLeader, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={editingLeader.email || ''}
+                      onChange={(e) => setEditingLeader({...editingLeader, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      value={editingLeader.phone || ''}
+                      onChange={(e) => setEditingLeader({...editingLeader, phone: e.target.value})}
+                    />
+                  </div>
+                  
+                  {editingLeader.default_signature_url && (
+                    <div className="form-group">
+                      <label>Current Default Signature</label>
+                      <img 
+                        src={editingLeader.default_signature_url}
+                        alt="Current signature"
+                        style={{ 
+                          maxWidth: '100%', 
+                          maxHeight: '150px',
+                          border: '1px solid var(--color-border)', 
+                          borderRadius: '8px',
+                          display: 'block',
+                          marginTop: '8px'
+                        }}
+                      />
+                    </div>
+                  )}
+                  
+                  <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={editLeaderShowSignature}
+                        onChange={(e) => setEditLeaderShowSignature(e.target.checked)}
+                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                      />
+                      <span>Update Default Signature</span>
+                    </label>
+                  </div>
+
+                  {editLeaderShowSignature && (
+                    <div className="form-group">
+                      <label>Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignatureCanvas
+                          ref={editLeaderSignatureRef}
+                          canvasProps={{
+                            width: 800,
+                            height: 200,
+                            style: { 
+                              width: '100%', 
+                              height: '150px',
+                              borderRadius: '8px'
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => editLeaderSignatureRef.current?.clear()}
+                        style={{ marginTop: '8px' }}
+                      >
+                        Clear Signature
+                      </button>
+                    </div>
+                  )}
+                  
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" className="btn btn-primary" disabled={loading}>
+                      {loading ? 'Updating...' : 'Update Leader'}
+                    </button>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={() => {
+                        setEditingLeader(null)
+                        setEditLeaderShowSignature(false)
+                        if (editLeaderSignatureRef.current) {
+                          editLeaderSignatureRef.current.clear()
+                        }
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </form>
               )}
 
@@ -737,6 +1120,19 @@ export default function AdminPanel() {
                           <td>{leader.phone || '-'}</td>
                           <td>
                             <div className="table-actions">
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => {
+                                  setEditingLeader(leader)
+                                  setShowLeaderForm(false)
+                                  setEditLeaderShowSignature(false)
+                                  if (editLeaderSignatureRef.current) {
+                                    editLeaderSignatureRef.current.clear()
+                                  }
+                                }}
+                              >
+                                Edit
+                              </button>
                               <button
                                 className="btn-icon btn-delete"
                                 onClick={() => handleDeleteLeader(leader.id)}
@@ -806,6 +1202,53 @@ export default function AdminPanel() {
                       ))}
                     </select>
                   </div>
+                  
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={newInvolvedPersonShowSignature}
+                        onChange={(e) => setNewInvolvedPersonShowSignature(e.target.checked)}
+                      />
+                      Add default signature (optional)
+                    </label>
+                  </div>
+                  
+                  {newInvolvedPersonShowSignature && (
+                    <div className="form-group">
+                      <label>Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignatureCanvas
+                          ref={newInvolvedPersonSignatureRef}
+                          canvasProps={{
+                            width: 800,
+                            height: 200,
+                            style: { 
+                              width: '100%', 
+                              height: '150px',
+                              borderRadius: '8px'
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '8px' }}
+                        onClick={() => newInvolvedPersonSignatureRef.current?.clear()}
+                      >
+                        Clear Signature
+                      </button>
+                      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+                        This signature will be automatically loaded when this person adds a drawn signature in meetings.
+                      </p>
+                    </div>
+                  )}
+                  
                   <button type="submit" className="btn btn-primary" disabled={loading}>
                     {loading ? 'Adding...' : 'Add Involved Person'}
                   </button>
@@ -852,6 +1295,68 @@ export default function AdminPanel() {
                       ))}
                     </select>
                   </div>
+                  
+                  {editingInvolvedPerson.default_signature_url && (
+                    <div className="form-group">
+                      <label>Current Default Signature</label>
+                      <img 
+                        src={editingInvolvedPerson.default_signature_url}
+                        alt="Current signature"
+                        style={{ 
+                          maxWidth: '100%', 
+                          maxHeight: '150px',
+                          border: '1px solid var(--color-border)', 
+                          borderRadius: '8px',
+                          display: 'block',
+                          marginTop: '8px'
+                        }}
+                      />
+                    </div>
+                  )}
+                  
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={editInvolvedPersonShowSignature}
+                        onChange={(e) => setEditInvolvedPersonShowSignature(e.target.checked)}
+                      />
+                      {editingInvolvedPerson.default_signature_url ? 'Update default signature' : 'Add default signature (optional)'}
+                    </label>
+                  </div>
+                  
+                  {editInvolvedPersonShowSignature && (
+                    <div className="form-group">
+                      <label>New Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignatureCanvas
+                          ref={editInvolvedPersonSignatureRef}
+                          canvasProps={{
+                            width: 800,
+                            height: 200,
+                            style: { 
+                              width: '100%', 
+                              height: '150px',
+                              borderRadius: '8px'
+                            }
+                          }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '8px' }}
+                        onClick={() => editInvolvedPersonSignatureRef.current?.clear()}
+                      >
+                        Clear Signature
+                      </button>
+                    </div>
+                  )}
+                  
                   <div className="form-row">
                     <button type="submit" className="btn btn-primary" disabled={loading}>
                       {loading ? 'Updating...' : 'Update Involved Person'}
@@ -894,6 +1399,7 @@ export default function AdminPanel() {
                                 className="btn-icon"
                                 onClick={() => {
                                   setEditingInvolvedPerson(person)
+                                  setEditInvolvedPersonShowSignature(false)
                                   setShowInvolvedPersonForm(false)
                                 }}
                               >

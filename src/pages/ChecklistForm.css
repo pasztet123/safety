@@ -7,6 +7,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 20px;
+  align-items: stretch;
+}
+
+.checklists-grid .card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .checklist-name {
@@ -14,6 +21,9 @@
   font-weight: 600;
   margin-bottom: 8px;
   color: var(--color-primary);
+  min-height: 50px;
+  display: flex;
+  align-items: center;
 }
 
 .checklist-description {
@@ -21,6 +31,7 @@
   color: #666;
   margin-bottom: 16px;
   line-height: 1.6;
+  min-height: 44px;
 }
 
 .checklist-stats {
@@ -30,6 +41,7 @@
   background-color: var(--color-hover);
   border-radius: 8px;
   margin-bottom: 16px;
+  margin-top: auto;
 }
 
 .stat-item {
@@ -76,32 +88,23 @@
   padding: 12px 16px;
   background-color: var(--color-hover);
   border-radius: 8px;
-}
-
-.item-controls {
-  display: flex;
-  gap: 4px;
-}
-
-.btn-move {
-  background: white;
-  color: var(--color-primary);
-  border: 1px solid var(--color-border);
-  font-size: 14px;
-  font-weight: 700;
-  padding: 4px 8px;
-  border-radius: 4px;
   transition: all 0.2s;
 }
 
-.btn-move:hover:not(:disabled) {
-  background-color: var(--color-primary);
-  color: white;
+.item-row.dragging {
+  opacity: 0.5;
 }
 
-.btn-move:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
+.section-header-row {
+  background-color: var(--color-primary);
+  color: white;
+  font-weight: 600;
+  cursor: default !important;
+}
+
+.section-header-title {
+  font-weight: 700;
+  font-size: 16px;
 }
 
 .item-number {
@@ -110,12 +113,45 @@
   min-width: 30px;
 }
 
+.section-header-row .item-number {
+  color: white;
+}
+
 .item-title {
   flex: 1;
 }
 
+.btn-remove {
+  background: none;
+  border: none;
+  color: var(--color-accent);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn-remove:hover {
+  color: #d32f2f;
+  transform: scale(1.2);
+}
+
+.section-header-row .btn-remove {
+  color: white;
+}
+
+.section-header-row .btn-remove:hover {
+  color: #ffcccc;
+}
+
 .add-item-form {
   display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
