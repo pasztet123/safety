@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import './Meetings.css'
 
 export default function Meetings() {
   const navigate = useNavigate()

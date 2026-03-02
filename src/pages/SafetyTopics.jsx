@@ -19,7 +19,8 @@ export default function SafetyTopics() {
     category: '',
     osha_reference: '',
     description: '',
-    risk_level: 'medium'
+    risk_level: 'medium',
+    image_url: ''
   })
 
   useEffect(() => {
@@ -105,7 +106,8 @@ export default function SafetyTopics() {
           category: '',
           osha_reference: '',
           description: '',
-          risk_level: 'medium'
+          risk_level: 'medium',
+          image_url: ''
         })
         setEditingTopic(null)
         setShowAddForm(false)
@@ -130,7 +132,8 @@ export default function SafetyTopics() {
           category: '',
           osha_reference: '',
           description: '',
-          risk_level: 'medium'
+          risk_level: 'medium',
+          image_url: ''
         })
         setShowAddForm(false)
         fetchTopics()
@@ -146,7 +149,8 @@ export default function SafetyTopics() {
       category: topic.category || '',
       osha_reference: topic.osha_reference || '',
       description: topic.description || '',
-      risk_level: topic.risk_level
+      risk_level: topic.risk_level,
+      image_url: topic.image_url || ''
     })
     setEditingTopic(topic)
     setShowAddForm(true)
@@ -158,7 +162,8 @@ export default function SafetyTopics() {
       category: '',
       osha_reference: '',
       description: '',
-      risk_level: 'medium'
+      risk_level: 'medium',
+      image_url: ''
     })
     setEditingTopic(null)
     setShowAddForm(false)
@@ -263,6 +268,17 @@ export default function SafetyTopics() {
             </div>
 
             <div className="form-group">
+              <label className="form-label">Image URL</label>
+              <input
+                type="url"
+                className="form-input"
+                value={formData.image_url}
+                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                placeholder="https://... (Supabase Storage URL)"
+              />
+            </div>
+
+            <div className="form-group">
               <label className="form-label">Risk Level *</label>
               <select
                 className="form-select"
@@ -342,60 +358,62 @@ export default function SafetyTopics() {
           <div className="topics-list">
             {filteredTopics.map(topic => (
               <div key={topic.id} className="topic-card">
-                <div className="topic-header">
-                  <div>
-                    <h3 
+                {/* Thumbnail strip */}
+                <div className="topic-image-strip">
+                  {topic.image_url ? (
+                    <img src={topic.image_url} alt={topic.name} />
+                  ) : (
+                    <div className="topic-image-placeholder">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#d1d5db" strokeWidth="1.5">
+                        <rect x="3" y="3" width="18" height="18" rx="2"/>
+                        <circle cx="8.5" cy="8.5" r="1.5"/>
+                        <path d="M21 15l-5-5L5 21"/>
+                      </svg>
+                    </div>
+                  )}
+                </div>
+
+                {/* Card body */}
+                <div className="topic-body">
+                  <div className="topic-top-row">
+                    <h3
                       className="topic-title topic-title-clickable"
                       onClick={() => setSelectedTopic(topic)}
-                      style={{ cursor: 'pointer' }}
                     >
                       {topic.name}
                     </h3>
-                    {topic.category && (
-                      <span className="topic-category">{topic.category}</span>
-                    )}
+                    <div className="topic-badges">
+                      {topic.osha_reference && (
+                        <span className="osha-badge">OSHA {topic.osha_reference}</span>
+                      )}
+                      <span className={`risk-badge ${getRiskBadgeClass(topic.risk_level)}`}>
+                        {topic.risk_level}
+                      </span>
+                      {isAdmin && (
+                        <>
+                          <button className="btn-edit-topic" onClick={() => handleEdit(topic)} title="Edit topic">✎</button>
+                          <button className="btn-delete-topic" onClick={() => handleDelete(topic.id, topic.name)} title="Delete topic">×</button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="topic-badges">
-                    {topic.osha_reference && (
-                      <span className="osha-badge">OSHA {topic.osha_reference}</span>
-                    )}
-                    <span className={`risk-badge ${getRiskBadgeClass(topic.risk_level)}`}>
-                      {topic.risk_level}
-                    </span>
-                    {isAdmin && (
-                      <>
-                        <button
-                          className="btn-edit-topic"
-                          onClick={() => handleEdit(topic)}
-                          title="Edit topic"
-                        >
-                          ✎
+
+                  {topic.category && (
+                    <span className="topic-category">{topic.category}</span>
+                  )}
+
+                  {topic.description && (
+                    <p className="topic-description-preview">
+                      {topic.description.split('\n')[0].substring(0, 150)}
+                      {topic.description.length > 150 ? '...' : ''}
+                      {topic.description.length > 150 && (
+                        <button className="btn-read-more" onClick={() => setSelectedTopic(topic)}>
+                          Read more
                         </button>
-                        <button
-                          className="btn-delete-topic"
-                          onClick={() => handleDelete(topic.id, topic.name)}
-                          title="Delete topic"
-                        >
-                          ×
-                        </button>
-                      </>
-                    )}
-                  </div>
+                      )}
+                    </p>
+                  )}
                 </div>
-                {topic.description && (
-                  <p className="topic-description-preview">
-                    {topic.description.split('\n')[0].substring(0, 150)}
-                    {topic.description.length > 150 ? '...' : ''}
-                    {topic.description.length > 150 && (
-                      <button 
-                        className="btn-read-more"
-                        onClick={() => setSelectedTopic(topic)}
-                      >
-                        Read more
-                      </button>
-                    )}
-                  </p>
-                )}
               </div>
             ))}
           </div>
@@ -405,6 +423,13 @@ export default function SafetyTopics() {
       {selectedTopic && (
         <div className="modal-overlay" onClick={() => setSelectedTopic(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            {selectedTopic.image_url && (
+              <img
+                className="modal-hero-image"
+                src={selectedTopic.image_url}
+                alt={selectedTopic.name}
+              />
+            )}
             <div className="modal-header">
               <h2>{selectedTopic.name}</h2>
               <div className="modal-header-actions">

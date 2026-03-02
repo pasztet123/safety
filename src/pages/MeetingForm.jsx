@@ -20,6 +20,14 @@ export default function MeetingForm() {
   const [checklists, setChecklists] = useState([])
   const [selectedChecklists, setSelectedChecklists] = useState([])
   const [showCustomTopic, setShowCustomTopic] = useState(false)
+  const [checklistSearch, setChecklistSearch] = useState('')
+  const [openChecklistModal, setOpenChecklistModal] = useState(null) // Holds checklist ID being filled
+  const [currentChecklist, setCurrentChecklist] = useState(null) // Current checklist details
+  const [checklistItems, setChecklistItems] = useState([]) // Items for the open checklist
+  const [checklistNotes, setChecklistNotes] = useState('') // Notes for checklist completion
+  const [selectedTopicDetails, setSelectedTopicDetails] = useState(null) // Details of selected topic
+  const [showTopicContent, setShowTopicContent] = useState(true) // Show/hide topic content
+  const [completedChecklists, setCompletedChecklists] = useState({}) // Store completed checklists before saving meeting
   
   const [formData, setFormData] = useState({
     project_id: '',
@@ -41,9 +49,59 @@ export default function MeetingForm() {
   const [userDefaultSignatures, setUserDefaultSignatures] = useState({}) // Map of name -> default_signature_url
   const [leaderDefaultSignature, setLeaderDefaultSignature] = useState(null) // Leader's default signature URL
 
+  // ── New UI state ──
+  const [suggestedChecklists, setSuggestedChecklists] = useState([])
+  const [showChecklistPanel, setShowChecklistPanel] = useState(false)
+  const [showNotesPanel, setShowNotesPanel] = useState(false)
+  const [showPhotosPanel, setShowPhotosPanel] = useState(false)
+  const [showSignaturePanel, setShowSignaturePanel] = useState(false)
+  const [attendeeSearch, setAttendeeSearch] = useState('')
+  const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
+
   useEffect(() => {
     checkAdminAndLoadData()
   }, [id])
+
+  // Load from localStorage if creating new meeting
+  useEffect(() => {
+    if (!id) {
+      const savedData = localStorage.getItem('meeting-draft')
+      if (savedData) {
+        try {
+          const parsed = JSON.parse(savedData)
+          if (parsed.formData) setFormData(prev => ({ ...prev, ...parsed.formData }))
+          if (parsed.attendees) setAttendees(parsed.attendees)
+          if (parsed.selectedChecklists) setSelectedChecklists(parsed.selectedChecklists)
+          if (parsed.completedChecklists) setCompletedChecklists(parsed.completedChecklists)
+        } catch (e) {
+          console.error('Error loading draft:', e)
+        }
+      }
+    }
+  }, [])
+
+  // Auto-save to localStorage (only for new meetings)
+  useEffect(() => {
+    if (!id && formData.topic) {
+      const draftData = {
+        formData: {
+          project_id: formData.project_id,
+          date: formData.date,
+          time: formData.time,
+          location: formData.location,
+          leader_id: formData.leader_id,
+          leader_name: formData.leader_name,
+          topic: formData.topic,
+          notes: formData.notes
+        },
+        attendees,
+        selectedChecklists,
+        completedChecklists,
+        timestamp: new Date().toISOString()
+      }
+      localStorage.setItem('meeting-draft', JSON.stringify(draftData))
+    }
+  }, [formData, attendees, selectedChecklists, completedChecklists, id])
 
   const checkAdminAndLoadData = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -191,12 +249,216 @@ export default function MeetingForm() {
     if (data) setSafetyTopics(data)
   }
 
+  const handleTopicChange = (topicName) => {
+    if (topicName === 'custom' || !topicName) {
+      setSelectedTopicDetails(null)
+      setSuggestedChecklists([])
+      return
+    }
+    const topic = safetyTopics.find(t => t.name === topicName)
+    if (topic) {
+      setSelectedTopicDetails(topic)
+      setShowTopicContent(true)
+      fetchSuggestedChecklists(topic.id)
+      setShowChecklistPanel(true) // auto-open checklists panel when topic selected
+    }
+  }
+
+  const fetchSuggestedChecklists = async (topicId) => {
+    if (!topicId) { setSuggestedChecklists([]); return }
+    const { data } = await supabase
+      .from('topic_checklist_suggestions')
+      .select('checklist_id')
+      .eq('topic_id', topicId)
+    if (data) {
+      const ids = data.map(r => r.checklist_id)
+      setSuggestedChecklists(ids)
+      // Auto-select suggested checklists that aren't already selected
+      setSelectedChecklists(prev => [...new Set([...prev, ...ids])])
+    }
+  }
+
+  const loadLastMeetingAttendees = async () => {
+    const { data } = await supabase
+      .from('meetings')
+      .select('attendees:meeting_attendees(name)')
+      .order('date', { ascending: false })
+      .order('time', { ascending: false })
+      .limit(2)
+    if (data) {
+      // Take the most recent meeting that isn't the current one
+      const source = data.find(m => m.attendees && m.attendees.length > 0)
+      if (source) {
+        const existingNames = new Set(attendees.map(a => a.name))
+        const newOnes = source.attendees
+          .filter(a => !existingNames.has(a.name))
+          .map(a => ({ name: a.name, signature_url: null }))
+        setAttendees(prev => [...prev, ...newOnes])
+      }
+    }
+  }
+
+  const addAttendeeFromPerson = (person) => {
+    if (!attendees.find(a => a.name === person.name)) {
+      setAttendees(prev => [...prev, { name: person.name, signature_url: null }])
+    }
+    setAttendeeSearch('')
+    setAttendeeDropdownOpen(false)
+  }
+
+  const addAttendeeCustom = () => {
+    const name = attendeeSearch.trim()
+    if (!name) return
+    if (!attendees.find(a => a.name === name)) {
+      setAttendees(prev => [...prev, { name, signature_url: null }])
+    }
+    setAttendeeSearch('')
+    setAttendeeDropdownOpen(false)
+  }
+
   const fetchChecklists = async () => {
     const { data } = await supabase
       .from('checklists')
       .select('id, name, category, trades')
       .order('name')
     if (data) setChecklists(data)
+  }
+
+  const openChecklistForFilling = async (checklistId) => {
+    console.log('Opening checklist:', checklistId)
+    setOpenChecklistModal(checklistId)
+    
+    // Fetch checklist items
+    const { data, error } = await supabase
+      .from('checklists')
+      .select(`
+        *,
+        items:checklist_items(*)
+      `)
+      .eq('id', checklistId)
+      .single()
+
+    console.log('Checklist data:', data)
+    console.log('Checklist error:', error)
+
+    if (error) {
+      console.error('Error fetching checklist:', error)
+      alert('Error loading checklist')
+      setOpenChecklistModal(null)
+      return
+    }
+
+    if (data) {
+      setCurrentChecklist(data)
+      const items = data.items || []
+      console.log('Items found:', items.length)
+      const sortedItems = items.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      
+      // Check if there's a saved completion for this checklist
+      const savedCompletion = completedChecklists[checklistId]
+      
+      if (savedCompletion) {
+        // Load saved data
+        console.log('Loading saved completion')
+        setChecklistItems(savedCompletion.items)
+        setChecklistNotes(savedCompletion.notes || '')
+      } else {
+        // Initialize empty
+        console.log('Initializing empty checklist items')
+        const initializedItems = sortedItems.map(item => ({
+          ...item,
+          is_checked: false,
+          notes: ''
+        }))
+        console.log('Initialized items:', initializedItems)
+        setChecklistItems(initializedItems)
+        setChecklistNotes('')
+      }
+    }
+  }
+
+  const closeChecklistModal = () => {
+    setOpenChecklistModal(null)
+    setCurrentChecklist(null)
+    setChecklistItems([])
+    setChecklistNotes('')
+  }
+
+  const handleToggleChecklistItem = (index) => {
+    const newItems = [...checklistItems]
+    newItems[index].is_checked = !newItems[index].is_checked
+    setChecklistItems(newItems)
+  }
+
+  const handleChecklistItemNoteChange = (index, value) => {
+    const newItems = [...checklistItems]
+    newItems[index].notes = value
+    setChecklistItems(newItems)
+  }
+
+  const saveChecklistCompletion = async () => {
+    // If meeting not saved yet, store in state and localStorage
+    if (!id) {
+      const completionData = {
+        checklistId: openChecklistModal,
+        items: checklistItems,
+        notes: checklistNotes,
+        timestamp: new Date().toISOString()
+      }
+      
+      const newCompletedChecklists = {
+        ...completedChecklists,
+        [openChecklistModal]: completionData
+      }
+      
+      setCompletedChecklists(newCompletedChecklists)
+      alert('Checklist saved temporarily. It will be submitted when you save the meeting.')
+      closeChecklistModal()
+      return
+    }
+
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Create completion
+    const { data: completion, error: completionError } = await supabase
+      .from('checklist_completions')
+      .insert([{
+        checklist_id: openChecklistModal,
+        project_id: formData.project_id || null,
+        completed_by: user.id,
+        completion_datetime: new Date().toISOString(),
+        notes: checklistNotes,
+        meeting_id: id // Associate with this meeting
+      }])
+      .select()
+      .single()
+
+    if (completionError) {
+      console.error('Error creating completion:', completionError)
+      alert('Error saving checklist completion')
+      return
+    }
+
+    // Save item completions
+    const itemCompletions = checklistItems.map(item => ({
+      completion_id: completion.id,
+      item_id: item.id,
+      is_checked: item.is_checked,
+      notes: item.notes || null
+    }))
+
+    const { error: itemsError } = await supabase
+      .from('checklist_item_completions')
+      .insert(itemCompletions)
+
+    if (itemsError) {
+      console.error('Error saving items:', itemsError)
+      alert('Error saving checklist items')
+      return
+    }
+
+    alert('Checklist completed successfully!')
+    closeChecklistModal()
   }
 
   const fetchMeeting = async () => {
@@ -225,6 +487,11 @@ export default function MeetingForm() {
       })
       setAttendees(data.attendees || [])
       setPhotos(data.photos || [])
+      
+      // Load topic details if available
+      if (data.topic) {
+        handleTopicChange(data.topic)
+      }
       
       // Fetch associated checklists
       const { data: checklistsData } = await supabase
@@ -487,6 +754,37 @@ export default function MeetingForm() {
         }
       }
 
+      // Save completed checklists
+      if (Object.keys(completedChecklists).length > 0) {
+        for (const [checklistId, completion] of Object.entries(completedChecklists)) {
+          const { data: comp, error: compError } = await supabase
+            .from('checklist_completions')
+            .insert([{
+              checklist_id: checklistId,
+              project_id: formData.project_id || null,
+              completed_by: user.id,
+              completion_datetime: completion.timestamp,
+              notes: completion.notes,
+              meeting_id: meetingId
+            }])
+            .select()
+            .single()
+
+          if (!compError && comp) {
+            const itemCompletions = completion.items.map(item => ({
+              completion_id: comp.id,
+              item_id: item.id,
+              is_checked: item.is_checked,
+              notes: item.notes || null
+            }))
+            await supabase.from('checklist_item_completions').insert(itemCompletions)
+          }
+        }
+      }
+
+      // Clear localStorage draft
+      localStorage.removeItem('meeting-draft')
+
       setLoading(false)
       navigate('/meetings')
     } catch (error) {
@@ -520,141 +818,104 @@ export default function MeetingForm() {
 
   return (
     <div className="meeting-form">
-      <h2 className="page-title">{id ? 'Edit Meeting' : 'New Safety Meeting'}</h2>
 
-      <form onSubmit={handleSubmit}>
-        <div className="card">
-          <h3 className="section-title">Meeting Details</h3>
+      {/* ── Page header ── */}
+      <div className="mf-page-header">
+        <h2 className="page-title">{id ? 'Edit Meeting' : 'New Safety Meeting'}</h2>
+        {!id && localStorage.getItem('meeting-draft') && (
+          <button type="button" className="btn btn-secondary btn-sm"
+            onClick={() => { if (confirm('Clear saved draft?')) { localStorage.removeItem('meeting-draft'); window.location.reload() } }}>
+            Clear Draft
+          </button>
+        )}
+      </div>
 
-          <div className="form-group">
-            <label className="form-label">Project</label>
-            <select
-              className="form-select"
-              value={formData.project_id}
-              onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-            >
-              <option value="">Select Project</option>
-              {projects.map(project => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
+      <form id="meeting-form-el" onSubmit={handleSubmit}>
 
-          <div className="form-row">
+        {/* ════════════════════════════════════
+            SECTION 1 — MEETING SETUP
+        ════════════════════════════════════ */}
+        <div className="mf-section mf-section--setup">
+          <div className="mf-section-label"><span className="mf-section-num">1</span> Meeting Setup</div>
+
+          <div className="mf-row-2">
             <div className="form-group">
-              <label className="form-label">Date *</label>
-              <input
-                type="date"
-                className="form-input"
-                value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
-                required
-              />
+              <label className="form-label">Project</label>
+              <select className="form-select" value={formData.project_id}
+                onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}>
+                <option value="">Select Project</option>
+                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
             </div>
-
             <div className="form-group">
-              <label className="form-label">Time *</label>
-              <input
-                type="time"
-                className="form-input"
-                value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })}
-                step="60"
-                required
-              />
+              <label className="form-label">Leader *</label>
+              <select className="form-select" value={formData.leader_id} onChange={handleLeaderChange} required>
+                <option value="">Select Leader</option>
+                {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                <option value="new">+ Add New Leader</option>
+              </select>
             </div>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Location</label>
-            <input
-              type="text"
-              className="form-input"
-              value={formData.location}
-              onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-              placeholder="Auto-filled from GPS or enter manually"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Leader *</label>
-            <select
-              className="form-select"
-              value={formData.leader_id}
-              onChange={handleLeaderChange}
-              required
-            >
-              <option value="">Select Leader</option>
-              {leaders.map(leader => (
-                <option key={leader.id} value={leader.id}>
-                  {leader.name}
-                </option>
-              ))}
-              <option value="new">+ Add New Leader</option>
-            </select>
           </div>
 
           {showNewLeader && (
-            <div className="new-leader-form">
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Enter leader name"
-                value={newLeader}
-                onChange={(e) => setNewLeader(e.target.value)}
-              />
-              <div className="form-row">
-                <button type="button" className="btn btn-primary" onClick={handleAddLeader}>
-                  Add Leader
-                </button>
-                <button 
-                  type="button" 
-                  className="btn btn-secondary"
-                  onClick={() => {
-                    setShowNewLeader(false)
-                    setNewLeader('')
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
+            <div className="mf-inline-form">
+              <input type="text" className="form-input" placeholder="Leader name"
+                value={newLeader} onChange={(e) => setNewLeader(e.target.value)} />
+              <button type="button" className="btn btn-primary" onClick={handleAddLeader}>Add</button>
+              <button type="button" className="btn btn-secondary"
+                onClick={() => { setShowNewLeader(false); setNewLeader('') }}>Cancel</button>
             </div>
           )}
 
+          <div className="mf-row-3">
+            <div className="form-group">
+              <label className="form-label">Date *</label>
+              <input type="date" className="form-input" value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Time *</label>
+              <input type="time" className="form-input" value={formData.time}
+                onChange={(e) => setFormData({ ...formData, time: e.target.value })} step="60" required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Location</label>
+              <input type="text" className="form-input" value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                placeholder="Address or GPS auto-filled" />
+            </div>
+          </div>
+
           <div className="form-group">
             <label className="form-label">Topic *</label>
-            <select
-              className="form-select"
-              value={formData.topic}
+            <select className="form-select" value={formData.topic}
               onChange={(e) => {
                 const value = e.target.value
                 if (value === 'custom') {
                   setShowCustomTopic(true)
                   setFormData({ ...formData, topic: '' })
+                  setSelectedTopicDetails(null)
+                  setSuggestedChecklists([])
                 } else {
                   setShowCustomTopic(false)
                   setFormData({ ...formData, topic: value })
+                  handleTopicChange(value)
                 }
               }}
-              required={!showCustomTopic}
-            >
+              required={!showCustomTopic}>
               <option value="">Select a topic</option>
               {Object.entries(
-                safetyTopics.reduce((acc, topic) => {
-                  const cat = topic.category || 'Other'
+                safetyTopics.reduce((acc, t) => {
+                  const cat = t.category || 'Other'
                   if (!acc[cat]) acc[cat] = []
-                  acc[cat].push(topic)
+                  acc[cat].push(t)
                   return acc
                 }, {})
               ).map(([category, topics]) => (
                 <optgroup key={category} label={category}>
-                  {topics.map(topic => (
-                    <option key={topic.id} value={topic.name}>
-                      {topic.name}
-                      {topic.osha_reference ? ` (OSHA ${topic.osha_reference})` : ''}
-                      {topic.risk_level && topic.risk_level !== 'medium' ? ` - ${topic.risk_level.toUpperCase()}` : ''}
+                  {topics.map(t => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}{t.risk_level && t.risk_level !== 'medium' ? ` · ${t.risk_level.toUpperCase()}` : ''}
                     </option>
                   ))}
                 </optgroup>
@@ -666,390 +927,406 @@ export default function MeetingForm() {
           {showCustomTopic && (
             <div className="form-group">
               <label className="form-label">Custom Topic *</label>
-              <input
-                type="text"
-                className="form-input"
-                value={formData.topic}
+              <input type="text" className="form-input" value={formData.topic}
                 onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                placeholder="Enter custom topic"
-                required
-              />
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ marginTop: '8px' }}
-                onClick={() => {
-                  setShowCustomTopic(false)
-                  setFormData({ ...formData, topic: '' })
-                }}
-              >
-                Select from list instead
+                placeholder="Describe the meeting topic" required />
+              <button type="button" className="mf-link-btn"
+                style={{ marginTop: '6px' }}
+                onClick={() => { setShowCustomTopic(false); setFormData({ ...formData, topic: '' }) }}>
+                ← Select from list
               </button>
             </div>
           )}
 
-          <div className="form-group">
-            <label className="form-label">Associated Checklists (Optional)</label>
-            <div style={{ 
-              maxHeight: '300px', 
-              overflowY: 'auto', 
-              border: '1px solid var(--color-border)', 
-              borderRadius: '8px',
-              padding: '12px',
-              backgroundColor: '#f9fafb'
-            }}>
-              {checklists.length === 0 ? (
-                <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>No checklists available</p>
-              ) : (
-                checklists.map(checklist => (
-                  <label 
-                    key={checklist.id}
-                    style={{ 
-                      display: 'flex', 
-                      alignItems: 'flex-start',
-                      padding: '8px',
-                      cursor: 'pointer',
-                      borderRadius: '4px',
-                      marginBottom: '4px',
-                      backgroundColor: selectedChecklists.includes(checklist.id) ? '#e0f2fe' : 'transparent'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = selectedChecklists.includes(checklist.id) ? '#bae6fd' : '#f1f5f9'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = selectedChecklists.includes(checklist.id) ? '#e0f2fe' : 'transparent'}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedChecklists.includes(checklist.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedChecklists([...selectedChecklists, checklist.id])
-                        } else {
-                          setSelectedChecklists(selectedChecklists.filter(id => id !== checklist.id))
-                        }
-                      }}
-                      style={{ marginRight: '10px', marginTop: '3px', cursor: 'pointer' }}
-                    />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: '500', marginBottom: '2px' }}>
-                        {checklist.name}
-                      </div>
-                      <div style={{ fontSize: '12px', color: '#666', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        {checklist.category && (
-                          <span>{checklist.category}</span>
-                        )}
-                        {checklist.trades && checklist.trades.length > 0 && (
-                          <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                            {checklist.trades.map(trade => (
-                              <span key={trade} style={{
-                                backgroundColor: '#dbeafe',
-                                color: '#1e40af',
-                                padding: '2px 6px',
-                                borderRadius: '8px',
-                                fontSize: '11px'
-                              }}>
-                                {trade}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
+          {selectedTopicDetails && !showCustomTopic && (
+            <div className="topic-content-card">
+              <div className="topic-content-header" onClick={() => setShowTopicContent(!showTopicContent)}>
+                <h4>Topic Guidelines</h4>
+                <button type="button" className="topic-toggle-btn">{showTopicContent ? '▼' : '▶'}</button>
+              </div>
+              {showTopicContent && (
+                <div className="topic-content-body">
+                  {selectedTopicDetails.description && (
+                    <div className="topic-section"><h5>Description</h5><p>{selectedTopicDetails.description}</p></div>
+                  )}
+                  {selectedTopicDetails.osha_reference && (
+                    <div className="topic-section"><h5>OSHA Reference</h5><p className="topic-osha">{selectedTopicDetails.osha_reference}</p></div>
+                  )}
+                  {selectedTopicDetails.risk_level && (
+                    <div className="topic-section">
+                      <h5>Risk Level</h5>
+                      <span className={`topic-risk-badge risk-${selectedTopicDetails.risk_level}`}>
+                        {selectedTopicDetails.risk_level.toUpperCase()}
+                      </span>
                     </div>
-                  </label>
-                ))
+                  )}
+                </div>
               )}
             </div>
-            <small style={{ color: '#666', marginTop: '8px', display: 'block' }}>
-              Select one or more checklists to associate with this meeting
-            </small>
+          )}
+        </div>
+
+        {/* ════════════════════════════════════
+            SECTION 2 — CONTENT & CONTEXT
+        ════════════════════════════════════ */}
+        <div className="mf-section mf-section--content">
+          <div className="mf-section-label mf-section-label--padded"><span className="mf-section-num">2</span> Content & Context</div>
+
+          {/* Checklists accordion */}
+          <div className="mf-accordion">
+            <button type="button" className="mf-accordion-head"
+              onClick={() => setShowChecklistPanel(!showChecklistPanel)}>
+              <span className="mf-accordion-title">Checklists</span>
+              {selectedChecklists.length > 0 && (
+                <span className="mf-accordion-count">{selectedChecklists.length} selected</span>
+              )}
+              {suggestedChecklists.length > 0 && selectedChecklists.length === 0 && (
+                <span className="mf-accordion-hint">{suggestedChecklists.length} suggested</span>
+              )}
+              <span className="mf-accordion-chevron">{showChecklistPanel ? '▼' : '▶'}</span>
+            </button>
+            {showChecklistPanel && (
+              <div className="mf-accordion-body">
+                {suggestedChecklists.length > 0 && (
+                  <div className="mf-suggested-bar">
+                    <span>✨ Suggested for this topic</span>
+                    <button type="button" className="mf-link-btn"
+                      onClick={() => setSelectedChecklists(prev => [...new Set([...prev, ...suggestedChecklists])])}>
+                      Select all suggested
+                    </button>
+                  </div>
+                )}
+                <input type="text" className="form-input" style={{ marginBottom: '12px' }}
+                  placeholder="Search by name, category or trade..."
+                  value={checklistSearch} onChange={(e) => setChecklistSearch(e.target.value)} />
+                <div className="mf-checklist-list">
+                  {(() => {
+                    const filtered = checklists.filter(c => {
+                      if (!checklistSearch.trim()) return true
+                      const s = checklistSearch.toLowerCase()
+                      return c.name.toLowerCase().includes(s)
+                        || (c.category && c.category.toLowerCase().includes(s))
+                        || (c.trades && c.trades.some(t => t.toLowerCase().includes(s)))
+                    })
+                    const sorted = [
+                      ...filtered.filter(c => suggestedChecklists.includes(c.id)),
+                      ...filtered.filter(c => !suggestedChecklists.includes(c.id))
+                    ]
+                    return sorted.map(checklist => (
+                      <div key={checklist.id} className={`mf-checklist-row${selectedChecklists.includes(checklist.id) ? ' is-selected' : ''}`}>
+                        <label className="mf-checklist-label">
+                          <input type="checkbox" checked={selectedChecklists.includes(checklist.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedChecklists(prev => [...prev, checklist.id])
+                              else setSelectedChecklists(prev => prev.filter(i => i !== checklist.id))
+                            }} />
+                          <div className="mf-checklist-info">
+                            <span className="mf-checklist-name">{checklist.name}</span>
+                            <div className="mf-checklist-meta">
+                              {checklist.category && <span className="mf-checklist-cat">{checklist.category}</span>}
+                              {checklist.trades?.map(t => <span key={t} className="mf-checklist-trade">{t}</span>)}
+                              {suggestedChecklists.includes(checklist.id) && <span className="mf-badge mf-badge--suggested">Suggested</span>}
+                              {completedChecklists[checklist.id] && <span className="mf-badge mf-badge--filled">✓ Filled</span>}
+                            </div>
+                          </div>
+                        </label>
+                        {selectedChecklists.includes(checklist.id) && (
+                          <button type="button"
+                            className={`btn btn-sm ${completedChecklists[checklist.id] ? 'btn-primary' : 'btn-secondary'}`}
+                            onClick={() => openChecklistForFilling(checklist.id)}>
+                            {completedChecklists[checklist.id] ? 'Edit' : 'Fill'}
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  })()}
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Notes</label>
-            <textarea
-              className="form-textarea"
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-            />
+          {/* Notes accordion */}
+          <div className="mf-accordion">
+            <button type="button" className="mf-accordion-head"
+              onClick={() => setShowNotesPanel(!showNotesPanel)}>
+              <span className="mf-accordion-title">Notes</span>
+              {formData.notes && <span className="mf-accordion-count">Added</span>}
+              <span className="mf-accordion-chevron">{showNotesPanel ? '▼' : '▶'}</span>
+            </button>
+            {showNotesPanel && (
+              <div className="mf-accordion-body">
+                <textarea className="form-textarea" rows={5}
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Key discussion points, instructions, observations..." />
+              </div>
+            )}
+          </div>
+
+          {/* Photos accordion */}
+          <div className="mf-accordion">
+            <button type="button" className="mf-accordion-head"
+              onClick={() => setShowPhotosPanel(!showPhotosPanel)}>
+              <span className="mf-accordion-title">Photos</span>
+              {photos.length > 0 && <span className="mf-accordion-count">{photos.length} added</span>}
+              <span className="mf-accordion-chevron">{showPhotosPanel ? '▼' : '▶'}</span>
+            </button>
+            {showPhotosPanel && (
+              <div className="mf-accordion-body">
+                {photos.length > 0 && (
+                  <div className="photos-grid">
+                    {photos.map((photo, index) => (
+                      <div key={index} className="photo-item">
+                        <img src={photo.photo_url} alt={`Photo ${index + 1}`} />
+                        <button type="button" className="btn-remove-photo" onClick={() => handleRemovePhoto(index)}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <input type="file" className="form-input" accept="image/*" multiple onChange={handlePhotoUpload} />
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="card">
-          <h3 className="section-title">Attendees</h3>
-          
-          {/* List of attendees with signatures */}
-          {attendees.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', marginBottom: '24px' }}>
-              {attendees.map((attendee, index) => (
-                <div key={index} style={{ borderBottom: '1px solid var(--color-border)', paddingBottom: '16px' }}>
-                  {/* Attendee name with remove button */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <label className="form-label" style={{ marginBottom: '0', fontSize: '16px', fontWeight: '500' }}>
-                      {index + 1}. {attendee.name}
-                    </label>
-                    <button
-                      type="button"
-                      className="btn-remove"
-                      onClick={() => handleRemoveAttendee(index)}
-                      style={{ position: 'static' }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  
-                  {/* Attendee signature */}
-                  <div>
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={attendee.signed_with_checkbox || false}
-                          onChange={(e) => {
-                            const newAttendees = [...attendees]
-                            newAttendees[index] = { 
-                              ...newAttendees[index], 
-                              signed_with_checkbox: e.target.checked 
-                            }
-                            setAttendees(newAttendees)
-                          }}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '14px', fontWeight: '500' }}>
-                          Confirm attendance (checkbox signature)
-                        </span>
-                      </label>
-                    </div>
-                    
-                    <div style={{ marginBottom: '12px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={attendee.show_signature_field || false}
-                          onChange={(e) => {
-                            const newAttendees = [...attendees]
-                            newAttendees[index] = { 
-                              ...newAttendees[index], 
-                              show_signature_field: e.target.checked 
-                            }
-                            setAttendees(newAttendees)
-                            
-                            // Load default signature if checking the box
-                            if (e.target.checked) {
-                              // Use setTimeout to ensure canvas is rendered
-                              setTimeout(() => loadDefaultSignature(attendee.name, index), 100)
-                            }
-                          }}
-                          style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                        />
-                        <span style={{ fontSize: '14px', fontWeight: '500' }}>
-                          Add drawn signature
-                        </span>
-                      </label>
-                    </div>
-                    
-                    {attendee.show_signature_field && (
-                      <>
-                        {attendee.signature_url ? (
-                          <div>
-                            <img 
-                              src={attendee.signature_url} 
-                              alt={`Signature of ${attendee.name}`}
-                              style={{ 
-                                maxWidth: '100%', 
-                                maxHeight: '150px',
-                                border: '1px solid var(--color-border)', 
-                                borderRadius: '8px',
-                                marginBottom: '8px'
-                              }} 
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              style={{ fontSize: '14px' }}
-                              onClick={() => {
-                                const newAttendees = [...attendees]
-                                newAttendees[index] = { ...newAttendees[index], signature_url: null }
-                                setAttendees(newAttendees)
-                              }}
-                            >
-                              Remove Signature
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="signature-container">
-                            <SignatureCanvas
-                              ref={(ref) => {
-                                if (!attendeeSignatureRefs.current[index]) {
-                                  attendeeSignatureRefs.current[index] = ref
-                                }
-                              }}
-                              canvasProps={{
-                                width: 800,
-                                height: 200,
-                                className: 'signature-canvas',
-                                style: { width: '100%', height: '150px' }
-                              }}
-                            />
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              onClick={() => attendeeSignatureRefs.current[index]?.clear()}
-                            >
-                              Clear Signature
-                            </button>
-                          </div>
-                        )}
-                      </>
+        {/* ════════════════════════════════════
+            SECTION 3 — ATTENDANCE & CONFIRMATION
+        ════════════════════════════════════ */}
+        <div className="mf-section mf-section--confirm">
+          <div className="mf-section-label"><span className="mf-section-num">3</span> Attendance & Confirmation</div>
+
+          {/* Attendees tag-input */}
+          <div className="form-group">
+            <label className="form-label">Attendees</label>
+
+            {attendees.length > 0 && (
+              <div className="mf-chips-row">
+                {attendees.map((a, i) => (
+                  <span key={i} className="mf-chip">
+                    {a.name}
+                    {a.signed_with_checkbox && <span className="mf-chip-check" title="Confirmed">✓</span>}
+                    <button type="button" className="mf-chip-remove" onClick={() => handleRemoveAttendee(i)}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mf-attendee-input-wrap">
+              <input type="text" className="form-input"
+                placeholder="Type name to search or add..."
+                value={attendeeSearch}
+                onChange={(e) => { setAttendeeSearch(e.target.value); setAttendeeDropdownOpen(true) }}
+                onFocus={() => setAttendeeDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setAttendeeDropdownOpen(false), 150)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); addAttendeeCustom() }
+                  if (e.key === 'Escape') setAttendeeDropdownOpen(false)
+                }}
+              />
+              {attendeeDropdownOpen && (
+                <div className="mf-attendee-dropdown">
+                  {involvedPersons
+                    .filter(p => !attendees.find(a => a.name === p.name) &&
+                      (!attendeeSearch || p.name.toLowerCase().includes(attendeeSearch.toLowerCase())))
+                    .slice(0, 8)
+                    .map(p => (
+                      <button key={p.id} type="button" className="mf-attendee-option"
+                        onMouseDown={(e) => { e.preventDefault(); addAttendeeFromPerson(p) }}>
+                        {p.name}
+                        {p.company?.name && <span className="mf-attendee-option-co">{p.company.name}</span>}
+                      </button>
+                    ))}
+                  {attendeeSearch.trim() &&
+                    !involvedPersons.find(p => p.name.toLowerCase() === attendeeSearch.toLowerCase()) && (
+                      <button type="button" className="mf-attendee-option mf-attendee-option--add"
+                        onMouseDown={(e) => { e.preventDefault(); addAttendeeCustom() }}>
+                        + Add "{attendeeSearch.trim()}"
+                      </button>
                     )}
+                </div>
+              )}
+            </div>
+
+            <div className="mf-attendee-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={loadLastMeetingAttendees}>
+                Load last meeting
+              </button>
+            </div>
+          </div>
+
+          {/* Per-attendee signature rows */}
+          {attendees.length > 0 && (
+            <div className="mf-attendee-list">
+              {attendees.map((attendee, index) => (
+                <div key={index} className="mf-attendee-row">
+                  <div className="mf-attendee-row-head">
+                    <span className="mf-attendee-row-name">{attendee.name}</span>
+                    <div className="mf-attendee-row-controls">
+                      <label className="mf-inline-check">
+                        <input type="checkbox" checked={attendee.signed_with_checkbox || false}
+                          onChange={(e) => {
+                            const n = [...attendees]
+                            n[index] = { ...n[index], signed_with_checkbox: e.target.checked }
+                            setAttendees(n)
+                          }} />
+                        Confirmed
+                      </label>
+                      <label className="mf-inline-check">
+                        <input type="checkbox" checked={attendee.show_signature_field || false}
+                          onChange={(e) => {
+                            const n = [...attendees]
+                            n[index] = { ...n[index], show_signature_field: e.target.checked }
+                            setAttendees(n)
+                            if (e.target.checked) setTimeout(() => loadDefaultSignature(attendee.name, index), 100)
+                          }} />
+                        Signature
+                      </label>
+                    </div>
                   </div>
+                  {attendee.show_signature_field && (
+                    <div className="mf-attendee-sig">
+                      {attendee.signature_url ? (
+                        <>
+                          <img src={attendee.signature_url} alt={`Signature of ${attendee.name}`} className="mf-sig-img" />
+                          <button type="button" className="btn btn-secondary btn-sm"
+                            onClick={() => { const n = [...attendees]; n[index] = { ...n[index], signature_url: null }; setAttendees(n) }}>
+                            Remove
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <SignatureCanvas
+                            ref={(ref) => { attendeeSignatureRefs.current[index] = ref }}
+                            canvasProps={{ width: 800, height: 160, className: 'signature-canvas' }}
+                          />
+                          <button type="button" className="btn btn-secondary btn-sm"
+                            onClick={() => attendeeSignatureRefs.current[index]?.clear()}>
+                            Clear
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Add attendee form */}
-          <div className="add-attendee-form">
-            <select
-              className="form-select"
-              value={newAttendee}
-              onChange={(e) => setNewAttendee(e.target.value)}
-            >
-              <option value="">Select person or type name</option>
-              {involvedPersons.map(person => (
-                <option key={person.id} value={person.name}>
-                  {person.name} {person.company?.name ? `(${person.company.name})` : ''}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Or enter custom name"
-              value={newAttendee}
-              onChange={(e) => setNewAttendee(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddAttendee())}
-            />
-            <button type="button" className="btn btn-secondary" onClick={handleAddAttendee}>
-              + Add
-            </button>
-          </div>
-        </div>
-
-        <div className="card">
-          <h3 className="section-title">Photos</h3>
-          
-          <div className="photos-grid">
-            {photos.map((photo, index) => (
-              <div key={index} className="photo-item">
-                <img src={photo.photo_url} alt={`Photo ${index + 1}`} />
-                <button
-                  type="button"
-                  className="btn-remove-photo"
-                  onClick={() => handleRemovePhoto(index)}
-                >
-                  ×
+          {/* Verification */}
+          <div className="mf-verification">
+            <h4 className="mf-verify-title">Verification</h4>
+            <label className="mf-verify-item">
+              <input type="checkbox" checked={formData.completed}
+                onChange={(e) => setFormData({ ...formData, completed: e.target.checked })} />
+              <span>Leader confirms this meeting is complete</span>
+            </label>
+            <label className="mf-verify-item">
+              <input type="checkbox" checked={showSignaturePanel}
+                onChange={(e) => setShowSignaturePanel(e.target.checked)} />
+              <span>Add digital signature</span>
+            </label>
+            {showSignaturePanel && (
+              <div className="mf-signature-panel">
+                {leaderDefaultSignature && (
+                  <label className="mf-verify-item">
+                    <input type="checkbox"
+                      onChange={(e) => {
+                        if (e.target.checked && leaderDefaultSignature && signatureRef.current) {
+                          const img = new Image()
+                          img.crossOrigin = 'anonymous'
+                          img.onload = () => {
+                            const ctx = signatureRef.current.getCanvas().getContext('2d')
+                            const cel = signatureRef.current.getCanvas()
+                            signatureRef.current.clear()
+                            const scale = Math.min(cel.width / img.width, cel.height / img.height)
+                            const sw = img.width * scale; const sh = img.height * scale
+                            const x = (cel.width - sw) / 2; const y = (cel.height - sh) / 2
+                            ctx.drawImage(img, x, y, sw, sh)
+                          }
+                          img.src = leaderDefaultSignature
+                        }
+                      }} />
+                    <span>Use my default signature</span>
+                  </label>
+                )}
+                <SignatureCanvas ref={signatureRef}
+                  canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }} />
+                <button type="button" className="btn btn-secondary btn-sm"
+                  onClick={() => signatureRef.current?.clear()}>
+                  Clear Signature
                 </button>
               </div>
-            ))}
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">Upload Photos</label>
-            <input
-              type="file"
-              className="form-input"
-              accept="image/*"
-              multiple
-              onChange={handlePhotoUpload}
-            />
+            )}
           </div>
         </div>
 
-        <div className="card">
-          <h3 className="section-title">Signature (Optional)</h3>
-          
-          <div className="form-group" style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                onChange={(e) => {
-                  if (e.target.checked && leaderDefaultSignature && signatureRef.current) {
-                    // Load leader's default signature
-                    const img = new Image()
-                    img.crossOrigin = 'anonymous'
-                    img.onload = () => {
-                      const ctx = signatureRef.current.getCanvas().getContext('2d')
-                      const canvasElement = signatureRef.current.getCanvas()
-                      
-                      // Clear canvas first
-                      signatureRef.current.clear()
-                      
-                      // Calculate scaling to maintain aspect ratio
-                      const canvasWidth = canvasElement.width
-                      const canvasHeight = canvasElement.height
-                      const imgWidth = img.width
-                      const imgHeight = img.height
-                      
-                      const scale = Math.min(canvasWidth / imgWidth, canvasHeight / imgHeight)
-                      
-                      const scaledWidth = imgWidth * scale
-                      const scaledHeight = imgHeight * scale
-                      const x = (canvasWidth - scaledWidth) / 2
-                      const y = (canvasHeight - scaledHeight) / 2
-                      
-                      ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
-                    }
-                    img.src = leaderDefaultSignature
-                  }
-                }}
-                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '14px', fontWeight: '500' }}>
-                Use my default signature
-              </span>
-            </label>
-          </div>
-          
-          <div className="signature-container">
-            <SignatureCanvas
-              ref={signatureRef}
-              canvasProps={{
-                width: 800,
-                height: 200,
-                className: 'signature-canvas'
-              }}
-            />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => signatureRef.current?.clear()}
-            >
-              Clear Signature
-            </button>
-          </div>
-
-          <div className="form-group" style={{ marginTop: '24px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={formData.completed}
-                onChange={(e) => setFormData({ ...formData, completed: e.target.checked })}
-                style={{ width: '20px', height: '20px', cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '16px', fontWeight: '500' }}>
-                Leader declares that this meeting is completed
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div className="form-actions">
-          <button type="button" className="btn btn-secondary" onClick={() => navigate('/meetings')}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={loading}>
-            {loading ? 'Saving...' : id ? 'Update Meeting' : 'Create Meeting'}
-          </button>
-        </div>
       </form>
+
+      {/* ── Sticky bottom bar ── */}
+      <div className="mf-bottom-bar">
+        <button type="button" className="btn btn-secondary" onClick={() => navigate('/meetings')}>
+          Cancel
+        </button>
+        <button type="submit" form="meeting-form-el" className="btn btn-primary" disabled={loading}>
+          {loading ? 'Saving...' : id ? 'Update Meeting' : 'Create Meeting'}
+        </button>
+      </div>
+
+      {/* ── Checklist Modal ── */}
+      {openChecklistModal && (
+        <div className="checklist-modal-overlay" onClick={closeChecklistModal}>
+          <div className="checklist-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="checklist-modal-header">
+              <h3>{currentChecklist ? currentChecklist.name : 'Fill Checklist'}</h3>
+              <button className="btn-close" onClick={closeChecklistModal}>×</button>
+            </div>
+            <div className="checklist-modal-body">
+              {checklistItems.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: '#666' }}>
+                  <p>Loading checklist items...</p>
+                </div>
+              ) : (
+                <>
+                  <div className="checklist-items-container">
+                    {checklistItems.map((item, index) => (
+                      <div key={item.id} className="checklist-item-card">
+                        <div className="checklist-item-header">
+                          <label className="checklist-item-checkbox">
+                            <input type="checkbox" checked={item.is_checked}
+                              onChange={() => handleToggleChecklistItem(index)} />
+                            <span className={item.is_checked ? 'checked' : ''}>{item.title}</span>
+                          </label>
+                        </div>
+                        {item.description && <p className="checklist-item-description">{item.description}</p>}
+                        <div className="checklist-item-notes">
+                          <input type="text" className="form-input" placeholder="Notes (optional)"
+                            value={item.notes}
+                            onChange={(e) => handleChecklistItemNoteChange(index, e.target.value)} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="checklist-modal-footer-notes">
+                    <label className="form-label">Overall Notes</label>
+                    <textarea className="form-textarea" value={checklistNotes}
+                      onChange={(e) => setChecklistNotes(e.target.value)}
+                      placeholder="Additional notes about this checklist..." rows="3" />
+                  </div>
+                  {!id && (
+                    <div style={{ padding: '12px', backgroundColor: '#fef3c7', border: '1px solid #fbbf24', borderRadius: '8px', marginBottom: '16px', fontSize: '14px', color: '#92400e' }}>
+                      <strong>Note:</strong> This checklist will be saved when you submit the meeting.
+                    </div>
+                  )}
+                  <div className="checklist-modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={closeChecklistModal}>Cancel</button>
+                    <button type="button" className="btn btn-primary" onClick={saveChecklistCompletion}>Save Checklist</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

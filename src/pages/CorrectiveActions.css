@@ -228,6 +228,11 @@
   border-color: #86efac;
 }
 
+.action-timeline-item.overdue {
+  background: rgba(202, 138, 4, 0.04);
+  border-color: rgba(202, 138, 4, 0.30);
+}
+
 .action-status-indicator {
   padding-top: 4px;
 }

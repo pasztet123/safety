@@ -341,8 +341,9 @@ export default function CorrectiveActions() {
       <div className="actions-timeline">
         {filteredActions.map((action) => {
           const incident = getIncidentInfo(action.incident_id)
+          const isOverdue = action.status === 'open' && action.due_date && new Date(action.due_date) < new Date()
           return (
-            <div key={action.id} className={`action-timeline-item ${action.status}`}>
+            <div key={action.id} className={`action-timeline-item ${action.status}${isOverdue ? ' overdue' : ''}`}>
               <div className="action-status-indicator">
                 <input
                   type="checkbox"
@@ -355,9 +356,12 @@ export default function CorrectiveActions() {
               <div className="action-timeline-content">
                 <div className="action-header">
                   <h3 className="action-description">{action.description}</h3>
-                  <span className={`status-badge ${action.status}`}>
-                    {action.status === 'completed' ? '✓ Completed' : '⏳ Open'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    {isOverdue && <span className="badge badge--overdue">Overdue</span>}
+                    <span className={`status-badge ${action.status}`}>
+                      {action.status === 'completed' ? '✓ Completed' : '⏳ Open'}
+                    </span>
+                  </div>
                 </div>
                 
                 {incident && (

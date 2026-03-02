@@ -1,0 +1,27 @@
+INSERT INTO safety_topics (name, category, osha_reference, description, risk_level)
+SELECT
+  'Fire Watch Procedures After Hot Work',
+  'Fire Safety & Hot Work',
+  'OSHA 29 CFR 1926.352; NFPA 51B',
+  'Hot work on roofing systems — torch-applied membrane, soldering, welding, grinding, and brazing — creates ignition risks that do not end when the flame is extinguished. Heat transfers through metal fasteners, into wood nailers, through roof penetrations, and into concealed spaces where it can smolder undetected for hours before erupting into a structural fire. Building fires started by roofing torch work are among the most common and most devastating construction-related fire losses recorded by NFPA. A fire watch is not a formality — it is a last line of defense against a fire that may already be burning inside a wall or attic when the crew packs up for the day.
+
+• Pre-Watch Setup and Authorization
+A hot work permit must be verified and in place before fire watch activities begin — the permit defines the scope of work, the fire watch duration, and the responsible parties. The fire watch must be a named, specifically assigned individual, not a general crew member pulled in at the last moment. That person must be trained in fire prevention principles and in the operation of fire extinguishers — how to select the correct extinguisher, how to operate it, and how to recognize when a fire is beyond the capacity of a portable extinguisher and requires emergency services. Fire extinguishers must be present in the work area, fully charged, and of the correct class for the potential fire materials — Class A for wood and insulation, Class B for propane and adhesive vapors, and ABC extinguishers where both hazards are present.
+
+• Post-Hot-Work Inspection
+Immediately after hot work is completed, a thorough inspection of the work area must be conducted before the fire watch monitoring period begins. Combustible materials within and around the work zone must be examined for smoldering, discoloration, or heat. Roof penetrations and flashing areas must be specifically inspected — torch heat concentrates at metal-to-substrate interfaces and transfers aggressively into surrounding materials. Attic and concealed spaces must be evaluated where accessible; hot work performed at roof-to-wall junctions can transmit heat into concealed cavities that are invisible from the roof surface. Insulation and wood nailers must be checked for heat transfer — polyisocyanurate and EPS insulation can hold and transfer heat in ways that are not visible on the surface. Surrounding walls, parapets, and roof curbs must be inspected. Roof drains and scuppers must be checked for accumulated debris that may have been reached by sparks. Thermal imaging must be used if equipment is available — it provides visibility into heat concentrations that are entirely invisible to the naked eye.
+
+• Fire Watch Monitoring Conduct
+The fire watch must be maintained for the minimum required duration after the last hot work activity — NFPA 51B requires a minimum of 30 minutes, but many jurisdictions, insurers, and company policies require 60 minutes or more, particularly for torch-applied roofing where heat transfer into wood-framed structures is a known high-risk scenario. The monitoring time must be documented on the permit, including start time and end time. The fire watch person must remain in the work area for the full duration and must not be reassigned to other tasks — multitasking during fire watch defeats the purpose entirely and violates the intent of the requirement. Weather conditions must be evaluated during the monitoring period; wind can carry embers and accelerate any smoldering that has begun. Wind direction must be monitored for potential ember spread beyond the immediate work zone. Ground level must be checked for falling sparks or debris, and any debris chute landing zone must be inspected for ignition sources.
+
+• Equipment Shutdown and Permit Closure
+Propane cylinders must be shut off and secured after hot work is complete — open valves in proximity to a potential fire are a compounding hazard. Torches and all hot work tools must be fully cooled before storage. The hot work permit must not be closed until the fire watch has been fully completed and documented. The supervisor must sign off only after the final inspection is complete and the full monitoring period has elapsed.
+
+• Emergency Readiness and Incident Response
+Emergency contact information — site superintendent, fire department, building owner — must be accessible to the fire watch person throughout the monitoring period. If smoke, unusual heat, or any sign of smoldering is detected at any point during or after the fire watch, it must be reported immediately and emergency services contacted without delay. Stop-work authority applies to any observation of smoldering or smoke — no worker or supervisor may override an observation-based stop-work call when fire is suspected. A slow response to a smoldering observation has led to the total loss of buildings that were fully repairable at the moment the smoke was first seen.
+
+Remember: The fire watch period is not downtime. It is active monitoring. The crew goes home; the fire watch stays. The permit does not close until the full time has elapsed and the final inspection is signed.',
+  'critical'
+WHERE NOT EXISTS (
+  SELECT 1 FROM safety_topics WHERE name = 'Fire Watch Procedures After Hot Work'
+);

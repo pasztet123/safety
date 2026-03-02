@@ -5,12 +5,53 @@
 }
 
 :root {
+  /* Brand colors */
   --color-primary: #171717;
-  --color-accent: #EE2E2F;
+  --color-accent: #E53935;
+  --color-accent-dark: #C62828;
+  --color-accent-light: #FFEBEE;
+
+  /* Surfaces & text */
   --color-bg: #ffffff;
   --color-text: #171717;
+  --color-text-secondary: #6b7280;
   --color-border: #e5e5e5;
   --color-hover: #f5f5f5;
+  --color-background-secondary: #f3f4f6;
+
+  /* Semantic */
+  --color-success: #16a34a;
+  --color-success-bg: #dcfce7;
+  --color-warning: #ca8a04;
+  --color-warning-bg: #fef9c3;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fee2e2;
+  --color-info: #0284c7;
+  --color-info-bg: #e0f2fe;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+  --shadow-accent: 0 4px 14px rgba(229, 57, 53, 0.20);
+
+  /* Typography scale */
+  --font-size-xs: 11px;
+  --font-size-sm: 13px;
+  --font-size-base: 15px;
+  --font-size-md: 17px;
+  --font-size-lg: 20px;
+  --font-size-xl: 24px;
+  --font-size-2xl: 32px;
+
+  /* Transitions */
+  --transition-fast: 0.12s ease;
+  --transition-base: 0.2s ease;
 }
 
 body {
@@ -64,12 +105,13 @@ a {
 }
 
 .btn-primary {
-  background-color: var(--color-primary);
+  background-color: var(--color-accent);
   color: white;
 }
 
 .btn-primary:hover {
-  background-color: #2a2a2a;
+  background-color: var(--color-accent-dark);
+  box-shadow: var(--shadow-accent);
 }
 
 .btn-accent {
@@ -89,6 +131,11 @@ a {
 
 .btn-secondary:hover {
   background-color: var(--color-hover);
+}
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 13px;
 }
 
 .btn-danger {
@@ -122,13 +169,25 @@ a {
   border-radius: 8px;
   font-size: 16px;
   transition: all 0.2s;
+  background-color: white;
+}
+
+.form-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 44px;
+  cursor: pointer;
 }
 
 .form-input:focus,
 .form-textarea:focus,
 .form-select:focus {
   outline: none;
-  border-color: var(--color-primary);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
 }
 
 .form-textarea {
@@ -151,14 +210,14 @@ a {
 }
 
 .card-clickable:hover {
-  border-color: var(--color-primary);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-accent);
 }
 
 /* Loading spinner */
 .spinner {
   border: 3px solid var(--color-border);
-  border-top: 3px solid var(--color-primary);
+  border-top: 3px solid var(--color-accent);
   border-radius: 50%;
   width: 40px;
   height: 40px;

@@ -10,6 +10,14 @@ export default function AdminPanel() {
   const newInvolvedPersonSignatureRef = useRef()
   const editInvolvedPersonSignatureRef = useRef()
   const [activeTab, setActiveTab] = useState('meetings')
+
+  // ── Topic → Checklist Suggestions tool ──
+  const [tcTopics, setTcTopics] = useState([])
+  const [tcChecklists, setTcChecklists] = useState([])
+  const [tcSelectedTopicId, setTcSelectedTopicId] = useState('')
+  const [tcSuggestions, setTcSuggestions] = useState([])
+  const [tcTopicSearch, setTcTopicSearch] = useState('')
+  const [tcChecklistSearch, setTcChecklistSearch] = useState('')
   const [meetings, setMeetings] = useState([])
   const [incidents, setIncidents] = useState([])
   const [users, setUsers] = useState([])
@@ -96,9 +104,45 @@ export default function AdminPanel() {
         .select('*')
         .order('name')
       if (data) setCompanies(data)
+    } else if (activeTab === 'topic-checklists') {
+      await fetchTcData()
     }
     
     setLoading(false)
+  }
+
+  const fetchTcData = async () => {
+    const [{ data: topics }, { data: cls }] = await Promise.all([
+      supabase.from('safety_topics').select('id, name, category').order('category').order('name'),
+      supabase.from('checklists').select('id, name, category').order('name')
+    ])
+    if (topics) setTcTopics(topics)
+    if (cls) setTcChecklists(cls)
+  }
+
+  const fetchTcSuggestions = async (topicId) => {
+    if (!topicId) { setTcSuggestions([]); return }
+    const { data } = await supabase
+      .from('topic_checklist_suggestions')
+      .select('checklist_id')
+      .eq('topic_id', topicId)
+    if (data) setTcSuggestions(data.map(r => r.checklist_id))
+  }
+
+  const toggleTcChecklist = async (checklistId) => {
+    if (!tcSelectedTopicId) return
+    const isSelected = tcSuggestions.includes(checklistId)
+    if (isSelected) {
+      const { error } = await supabase.from('topic_checklist_suggestions')
+        .delete()
+        .eq('topic_id', tcSelectedTopicId)
+        .eq('checklist_id', checklistId)
+      if (!error) setTcSuggestions(prev => prev.filter(id => id !== checklistId))
+    } else {
+      const { error } = await supabase.from('topic_checklist_suggestions')
+        .insert([{ topic_id: tcSelectedTopicId, checklist_id: checklistId }])
+      if (!error) setTcSuggestions(prev => [...prev, checklistId])
+    }
   }
 
   const handleDeleteMeeting = async (id) => {
@@ -603,6 +647,12 @@ export default function AdminPanel() {
           onClick={() => setActiveTab('companies')}
         >
           Companies
+        </button>
+        <button
+          className={`admin-tab ${activeTab === 'topic-checklists' ? 'active' : ''}`}
+          onClick={() => setActiveTab('topic-checklists')}
+        >
+          Topic Checklists
         </button>
       </div>
 
@@ -1547,6 +1597,79 @@ export default function AdminPanel() {
                   </table>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'topic-checklists' && (
+            <div className="tc-tool">
+              <h3 className="section-title">Topic → Checklist Suggestions</h3>
+              <p className="tc-intro">Select a safety topic to configure which checklists are suggested when it's chosen in a new meeting. Changes save instantly.</p>
+              <div className="tc-layout">
+                <div className="tc-col tc-col--topics">
+                  <div className="tc-col-header">Safety Topics</div>
+                  <input
+                    type="text"
+                    className="form-input tc-search"
+                    placeholder="Search topics..."
+                    value={tcTopicSearch}
+                    onChange={(e) => setTcTopicSearch(e.target.value)}
+                  />
+                  <div className="tc-list">
+                    {tcTopics
+                      .filter(t => !tcTopicSearch || t.name.toLowerCase().includes(tcTopicSearch.toLowerCase()))
+                      .map(topic => (
+                        <button
+                          key={topic.id}
+                          type="button"
+                          className={`tc-topic-item ${tcSelectedTopicId === topic.id ? 'is-selected' : ''}`}
+                          onClick={() => { setTcSelectedTopicId(topic.id); fetchTcSuggestions(topic.id) }}
+                        >
+                          <span className="tc-topic-name">{topic.name}</span>
+                          {topic.category && <span className="tc-topic-cat">{topic.category}</span>}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+                <div className="tc-col tc-col--checklists">
+                  {tcSelectedTopicId ? (
+                    <>
+                      <div className="tc-col-header">
+                        Checklists
+                        <span className="tc-count">{tcSuggestions.length} selected</span>
+                      </div>
+                      <input
+                        type="text"
+                        className="form-input tc-search"
+                        placeholder="Search checklists..."
+                        value={tcChecklistSearch}
+                        onChange={(e) => setTcChecklistSearch(e.target.value)}
+                      />
+                      <div className="tc-list">
+                        {tcChecklists
+                          .filter(c => !tcChecklistSearch || c.name.toLowerCase().includes(tcChecklistSearch.toLowerCase()))
+                          .map(checklist => (
+                            <label
+                              key={checklist.id}
+                              className={`tc-checklist-row ${tcSuggestions.includes(checklist.id) ? 'is-selected' : ''}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={tcSuggestions.includes(checklist.id)}
+                                onChange={() => toggleTcChecklist(checklist.id)}
+                              />
+                              <div>
+                                <div className="tc-checklist-name">{checklist.name}</div>
+                                {checklist.category && <div className="tc-checklist-cat">{checklist.category}</div>}
+                              </div>
+                            </label>
+                          ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="tc-empty-state">← Select a topic to configure its suggested checklists</div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </div>
