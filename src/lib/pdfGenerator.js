@@ -1,312 +1,407 @@
 import { jsPDF } from 'jspdf'
+import html2canvas from 'html2canvas'
 
-// ─── helpers ────────────────────────────────────────────────────────────────
+// ─── Brand ───────────────────────────────────────────────────────────────────
+const ACCENT   = '#E53935'
+const PRIMARY  = '#171717'
+const GRAY     = '#6b7280'
+const BORDER   = '#e5e5e5'
 
-const loadImage = (url) => new Promise((resolve, reject) => {
+// ─── Core renderer ───────────────────────────────────────────────────────────
+
+const renderHTMLtoPDF = async (html, filename) => {
+  // Mount hidden container
+  const wrap = document.createElement('div')
+  wrap.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff;z-index:-1'
+  wrap.innerHTML = html
+  document.body.appendChild(wrap)
+
+  try {
+    const canvas = await html2canvas(wrap, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+    })
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.92)
+    const pxW = canvas.width
+    const pxH = canvas.height
+    const A4W = 210
+    const A4H = 297
+    const pxPerMm = pxW / A4W
+    const mmH = pxH / pxPerMm
+
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+
+    // Slice into A4 pages
+    let sliceTop = 0
+    let page = 0
+    while (sliceTop < mmH) {
+      if (page > 0) doc.addPage()
+      doc.addImage(imgData, 'JPEG', 0, -sliceTop, A4W, mmH)
+      sliceTop += A4H
+      page++
+    }
+
+    doc.save(filename)
+  } finally {
+    document.body.removeChild(wrap)
+  }
+}
+
+// ─── Shared CSS injected into every HTML template ────────────────────────────
+
+const BASE_CSS = `
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+       color:${PRIMARY};background:#fff;font-size:14px;line-height:1.5}
+  .pdf-wrap{width:794px;background:#fff;padding:0}
+
+  /* header bar */
+  .pdf-header{background:${PRIMARY};color:#fff;padding:28px 36px 24px;position:relative;overflow:hidden}
+  .pdf-header::after{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;background:${ACCENT}}
+  .pdf-header-type{font-size:11px;font-weight:600;letter-spacing:1.5px;text-transform:uppercase;
+                   color:rgba(255,255,255,0.55);margin-bottom:6px}
+  .pdf-header-title{font-size:24px;font-weight:700;line-height:1.2;margin-bottom:8px}
+  .pdf-header-sub{font-size:13px;color:rgba(255,255,255,0.65)}
+
+  /* body */
+  .pdf-body{padding:28px 36px}
+
+  /* section */
+  .pdf-section{margin-bottom:24px}
+  .pdf-section-title{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;
+                     color:${ACCENT};border-bottom:1.5px solid ${ACCENT};padding-bottom:5px;
+                     margin-bottom:12px}
+
+  /* field grid */
+  .pdf-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px 24px}
+  .pdf-fields.full{grid-template-columns:1fr}
+  .pdf-field{background:#f8f8f8;border-radius:6px;padding:9px 12px}
+  .pdf-field-label{font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;
+                   color:${GRAY};margin-bottom:3px}
+  .pdf-field-value{font-size:13px;color:${PRIMARY};word-break:break-word}
+
+  /* attendees */
+  .pdf-attendee{display:flex;align-items:flex-start;gap:12px;padding:10px 12px;
+                background:#f8f8f8;border-radius:6px;margin-bottom:8px}
+  .pdf-attendee-num{font-size:12px;font-weight:700;color:#9ca3af;min-width:22px;margin-top:1px}
+  .pdf-attendee-name{font-size:13px;font-weight:600;color:${PRIMARY}}
+  .pdf-attendee-badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:10px;
+                      margin-top:3px;font-weight:600}
+  .badge-confirmed{background:#dcfce7;color:#15803d}
+  .badge-signed{background:#e0f2fe;color:#0369a1}
+  .pdf-sig-img{margin-top:6px;max-height:44px;max-width:140px;object-fit:contain}
+
+  /* risk badge */
+  .risk-low{background:#dcfce7;color:#15803d}
+  .risk-medium{background:#fef9c3;color:#854d0e}
+  .risk-high{background:#ffedd5;color:#9a3412}
+  .risk-critical{background:#fee2e2;color:#991b1b}
+  .risk-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;
+             font-weight:700;text-transform:capitalize}
+
+  /* notes / description */
+  .pdf-text{font-size:13px;color:${PRIMARY};line-height:1.7;white-space:pre-wrap;
+            background:#f8f8f8;border-radius:6px;padding:12px 14px}
+
+  /* checklist items */
+  .pdf-item{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;
+            border-bottom:1px solid ${BORDER}}
+  .pdf-item:last-child{border-bottom:none}
+  .pdf-item-box{width:14px;height:14px;border:1.5px solid #9ca3af;border-radius:3px;
+                flex-shrink:0;margin-top:2px}
+  .pdf-item-text{font-size:13px;color:${PRIMARY};flex:1}
+  .pdf-item-header{font-size:11px;font-weight:700;text-transform:uppercase;
+                   letter-spacing:0.8px;color:${ACCENT};padding:10px 12px 4px;
+                   background:#fff8f8;border-radius:4px;margin-top:8px;margin-bottom:2px}
+
+  /* sig block */
+  .pdf-sig-block{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;margin-top:28px;
+                 border-top:1px solid ${BORDER};padding-top:18px}
+  .pdf-sig-line{border-bottom:1.5px solid #d1d5db;height:40px;margin-bottom:6px}
+  .pdf-sig-caption{font-size:10px;color:${GRAY}}
+
+  /* footer */
+  .pdf-footer{padding:12px 36px;border-top:1px solid ${BORDER};display:flex;
+              justify-content:space-between;align-items:center;
+              background:#f9fafb;font-size:10px;color:${GRAY}}
+  .pdf-footer-logo{font-weight:800;font-size:11px;color:${PRIMARY};letter-spacing:-0.3px}
+  .pdf-footer-logo span{color:${ACCENT}}
+
+  /* severity badge for incidents */
+  .sev-low{background:#dcfce7;color:#15803d}
+  .sev-medium{background:#fef9c3;color:#854d0e}
+  .sev-high{background:#ffedd5;color:#9a3412}
+  .sev-critical, .sev-fatal{background:#fee2e2;color:#991b1b}
+  .sev-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;
+            font-weight:700;text-transform:capitalize}
+  .osha-pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:12px;
+             font-weight:700;background:#ede9fe;color:#6d28d9}
+`
+
+const baseHTML = (content) => `
+  <style>${BASE_CSS}</style>
+  <div class="pdf-wrap">${content}</div>
+`
+
+const footer = () => `
+  <div class="pdf-footer">
+    <div class="pdf-footer-logo">Roof<span>Chimp</span> Safety</div>
+    <div>Generated ${new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})}</div>
+  </div>
+`
+
+const field = (label, value) => {
+  if (!value) return ''
+  const v = String(value).replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return `<div class="pdf-field"><div class="pdf-field-label">${label}</div><div class="pdf-field-value">${v}</div></div>`
+}
+
+const section = (title, content) =>
+  `<div class="pdf-section"><div class="pdf-section-title">${title}</div>${content}</div>`
+
+// ─── loadImage (for cross-origin images in html2canvas) ─────────────────────
+
+const toDataURL = (url) => new Promise((resolve) => {
   const img = new Image()
   img.crossOrigin = 'Anonymous'
-  img.onload = () => resolve(img)
-  img.onerror = reject
+  img.onload = () => {
+    const c = document.createElement('canvas')
+    c.width = img.naturalWidth; c.height = img.naturalHeight
+    c.getContext('2d').drawImage(img, 0, 0)
+    resolve(c.toDataURL('image/jpeg', 0.85))
+  }
+  img.onerror = () => resolve(null)
   img.src = url
 })
 
-const PAGE_H = 280
-const MARGIN = 20
-const WIDTH = 170
-
-const checkPage = (doc, y, needed = 10) => {
-  if (y + needed > PAGE_H) { doc.addPage(); return MARGIN }
-  return y
-}
-
-const sectionTitle = (doc, y, text, color = [229, 57, 53]) => {
-  y = checkPage(doc, y, 14)
-  doc.setFontSize(12)
-  doc.setTextColor(...color)
-  doc.setFont(undefined, 'bold')
-  doc.text(text, MARGIN, y)
-  doc.setFont(undefined, 'normal')
-  doc.setTextColor(23, 23, 23)
-  return y + 8
-}
-
-const fieldRow = (doc, y, label, value) => {
-  if (!value) return y
-  y = checkPage(doc, y, 12)
-  if (label) {
-    doc.setFontSize(9)
-    doc.setTextColor(110, 110, 110)
-    doc.text(label.toUpperCase(), MARGIN, y)
-    y += 4
-  }
-  doc.setFontSize(11)
-  doc.setTextColor(23, 23, 23)
-  const lines = doc.splitTextToSize(String(value), WIDTH)
-  lines.forEach(line => { y = checkPage(doc, y, 6); doc.text(line, MARGIN, y); y += 6 })
-  return y + 3
-}
-
-const pageHeader = (doc, title, subtitle, bgColor = [33, 97, 140]) => {
-  doc.setFillColor(...bgColor)
-  doc.rect(0, 0, 210, 30, 'F')
-  doc.setFontSize(17)
-  doc.setFont(undefined, 'bold')
-  doc.setTextColor(255, 255, 255)
-  doc.text(title, MARGIN, 13)
-  doc.setFont(undefined, 'normal')
-  if (subtitle) {
-    doc.setFontSize(10)
-    doc.text(subtitle, MARGIN, 22)
-  }
-  return 38
-}
-
-// ─── Meeting PDF ─────────────────────────────────────────────────────────────
+// ─── Meeting PDF ──────────────────────────────────────────────────────────────
 
 export const generateMeetingPDF = async (meeting) => {
-  const doc = new jsPDF()
-  let y = pageHeader(
-    doc,
-    'Toolbox Safety Meeting',
-    `${new Date(meeting.date).toLocaleDateString()} · ${meeting.time?.substring(0,5) || ''}`
-  )
+  const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
+  const timeStr = meeting.time ? meeting.time.substring(0, 5) : ''
 
-  y = sectionTitle(doc, y, 'Meeting Info', [33, 97, 140])
-  y = fieldRow(doc, y, 'Topic', meeting.topic)
-  y = fieldRow(doc, y, 'Leader', meeting.leader_name)
-  y = fieldRow(doc, y, 'Project', meeting.project?.name)
-  y = fieldRow(doc, y, 'Location', meeting.location)
-
-  if (meeting.notes) {
-    y = sectionTitle(doc, y, 'Notes', [33, 97, 140])
-    y = fieldRow(doc, y, '', meeting.notes)
+  // Pre-load signature images as data URLs
+  const attImages = {}
+  if (meeting.attendees) {
+    for (const att of meeting.attendees) {
+      if (att.signature_url) attImages[att.signature_url] = await toDataURL(att.signature_url)
+    }
   }
-
-  if (meeting.attendees && meeting.attendees.length > 0) {
-    y = sectionTitle(doc, y, `Attendees (${meeting.attendees.length})`, [33, 97, 140])
-    for (let i = 0; i < meeting.attendees.length; i++) {
-      const att = meeting.attendees[i]
-      y = checkPage(doc, y, 10)
-      doc.setFontSize(11); doc.setTextColor(23, 23, 23)
-      doc.text(`${i + 1}.  ${att.name}`, MARGIN + 2, y); y += 6
-      if (att.signed_with_checkbox) {
-        doc.setFontSize(9); doc.setTextColor(22, 163, 74)
-        doc.text('    Confirmed attendance', MARGIN + 4, y)
-        doc.setTextColor(23, 23, 23); y += 5
-      }
-      if (att.signature_url) {
-        try {
-          y = checkPage(doc, y, 32)
-          const img = await loadImage(att.signature_url)
-          doc.setFontSize(8); doc.setTextColor(110, 110, 110)
-          doc.text('    Signature:', MARGIN + 4, y); y += 3
-          doc.addImage(img, 'PNG', MARGIN + 4, y, 52, 22); y += 26
-        } catch {}
-      }
-      y += 2
+  const leaderSigData = meeting.signature_url ? await toDataURL(meeting.signature_url) : null
+  const photoDataURLs = []
+  if (meeting.photos) {
+    for (const p of meeting.photos) {
+      const d = await toDataURL(p.photo_url)
+      if (d) photoDataURLs.push(d)
     }
   }
 
-  if (meeting.photos && meeting.photos.length > 0) {
-    doc.addPage(); y = MARGIN
-    y = sectionTitle(doc, y, 'Photos', [33, 97, 140])
-    for (const photo of meeting.photos) {
-      try {
-        const img = await loadImage(photo.photo_url)
-        const h = Math.min((img.height * WIDTH) / img.width, 140)
-        y = checkPage(doc, y, h + 8)
-        doc.addImage(img, 'JPEG', MARGIN, y, WIDTH, h); y += h + 8
-      } catch {}
-    }
-  }
+  const attendeesHTML = meeting.attendees && meeting.attendees.length > 0 ? `
+    ${meeting.attendees.map((att, i) => `
+      <div class="pdf-attendee">
+        <div class="pdf-attendee-num">${i + 1}</div>
+        <div style="flex:1">
+          <div class="pdf-attendee-name">${att.name || ''}</div>
+          ${att.signed_with_checkbox ? '<span class="pdf-attendee-badge badge-confirmed">✓ Confirmed attendance</span>' : ''}
+          ${att.signature_url && attImages[att.signature_url] ? `<div><span class="pdf-attendee-badge badge-signed" style="margin-top:4px">Signed</span><br><img class="pdf-sig-img" src="${attImages[att.signature_url]}" /></div>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  ` : '<p style="color:#9ca3af;font-size:13px">No attendees recorded</p>'
 
-  if (meeting.signature_url) {
-    try {
-      y = checkPage(doc, y, 46)
-      y = sectionTitle(doc, y, 'Leader Signature', [33, 97, 140])
-      const img = await loadImage(meeting.signature_url)
-      doc.addImage(img, 'PNG', MARGIN, y, 78, 34)
-    } catch {}
-  }
+  const photosHTML = photoDataURLs.length > 0 ? `
+    ${photoDataURLs.map(d => `<div style="margin-bottom:12px"><img src="${d}" style="width:100%;border-radius:6px;display:block" /></div>`).join('')}
+  ` : ''
 
-  const meetingSlug = (meeting.topic || 'report').replace(/\s+/g, '-')
-  const meetingDate = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
-  doc.save('meeting-' + meetingSlug + '-' + meetingDate + '.pdf')
+  const leaderSigHTML = leaderSigData ? `
+    <div style="margin-top:8px">
+      <img src="${leaderSigData}" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" />
+    </div>
+  ` : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+
+  const html = baseHTML(`
+    <div class="pdf-header">
+      <div class="pdf-header-type">Toolbox Safety Meeting</div>
+      <div class="pdf-header-title">${meeting.topic || 'Safety Meeting'}</div>
+      <div class="pdf-header-sub">${dateStr}${timeStr ? ' · ' + timeStr : ''}${meeting.project ? ' · ' + meeting.project.name : ''}</div>
+    </div>
+    <div class="pdf-body">
+      ${section('Meeting Info', `
+        <div class="pdf-fields">
+          ${field('Leader', meeting.leader_name)}
+          ${field('Location', meeting.location)}
+          ${field('Project', meeting.project ? meeting.project.name : '')}
+          ${field('Date', dateStr + (timeStr ? ' at ' + timeStr : ''))}
+        </div>
+      `)}
+      ${meeting.notes ? section('Notes', `<div class="pdf-text">${meeting.notes}</div>`) : ''}
+      ${section('Attendees (' + (meeting.attendees ? meeting.attendees.length : 0) + ')', attendeesHTML)}
+      ${photoDataURLs.length > 0 ? section('Photos', photosHTML) : ''}
+      ${section('Leader Signature', leaderSigHTML)}
+    </div>
+    ${footer()}
+  `)
+
+  const slug = (meeting.topic || 'meeting').replace(/\s+/g, '-')
+  const datePart = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
+  await renderHTMLtoPDF(html, 'meeting-' + slug + '-' + datePart + '.pdf')
 }
 
 // ─── Incident PDF ─────────────────────────────────────────────────────────────
 
 export const generateIncidentPDF = async (incident) => {
-  const doc = new jsPDF()
-  const sev = incident.severity ? ` · ${incident.severity.toUpperCase()}` : ''
-  let y = pageHeader(
-    doc,
-    'Incident Report',
-    `${new Date(incident.date).toLocaleDateString()} · ${incident.time || ''}${sev}`,
-    [180, 30, 30]
-  )
+  const dateStr = incident.date ? new Date(incident.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
+  const sev = incident.severity || ''
+  const sevClass = 'sev-' + (sev.toLowerCase() || 'medium')
 
-  y = sectionTitle(doc, y, 'Classification', [180, 30, 30])
-  y = fieldRow(doc, y, 'Type', incident.type_name)
-  if (incident.incident_subtype) y = fieldRow(doc, y, 'Subtype', incident.incident_subtype.replace(/_/g, ' '))
-  y = fieldRow(doc, y, 'Severity', incident.severity)
-  if (incident.osha_recordable) {
-    doc.setFontSize(10); doc.setTextColor(124, 58, 237)
-    y = checkPage(doc, y, 8)
-    doc.text('OSHA Recordable', MARGIN, y); y += 7
-    doc.setTextColor(23, 23, 23)
-  }
+  const sigData = incident.signature_url ? await toDataURL(incident.signature_url) : null
+  const photoData = incident.photo_url ? await toDataURL(incident.photo_url) : null
 
-  y = sectionTitle(doc, y, 'When & Where', [180, 30, 30])
-  y = fieldRow(doc, y, 'Date', new Date(incident.date).toLocaleDateString())
-  y = fieldRow(doc, y, 'Time', incident.time)
-  y = fieldRow(doc, y, 'Project', incident.project?.name)
-  y = fieldRow(doc, y, 'Location', incident.location)
+  const sigHTML = sigData
+    ? `<div style="margin-top:8px"><img src="${sigData}" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+    : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Reporter signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
-  y = sectionTitle(doc, y, 'People Involved', [180, 30, 30])
-  y = fieldRow(doc, y, 'Employee', incident.employee_name)
-  y = fieldRow(doc, y, 'Phone', incident.phone)
-  y = fieldRow(doc, y, 'Reporter', incident.reporter_name)
+  const html = baseHTML(`
+    <div class="pdf-header" style="background:#991b1b">
+      <div class="pdf-header-type">Incident Report</div>
+      <div class="pdf-header-title">${incident.type_name || 'Incident'}</div>
+      <div class="pdf-header-sub">${dateStr}${incident.time ? ' · ' + incident.time : ''}${sev ? ' · ' + sev.toUpperCase() : ''}</div>
+    </div>
+    <div class="pdf-body">
+      ${section('Classification', `
+        <div class="pdf-fields">
+          ${field('Type', incident.type_name)}
+          ${field('Subtype', incident.incident_subtype ? incident.incident_subtype.replace(/_/g,' ') : '')}
+          <div class="pdf-field"><div class="pdf-field-label">Severity</div><div class="pdf-field-value">${sev ? '<span class="sev-pill ' + sevClass + '">' + sev + '</span>' : '—'}</div></div>
+          <div class="pdf-field"><div class="pdf-field-label">OSHA</div><div class="pdf-field-value">${incident.osha_recordable ? '<span class="osha-pill">OSHA Recordable</span>' : '—'}</div></div>
+        </div>
+      `)}
+      ${section('When & Where', `
+        <div class="pdf-fields">
+          ${field('Date', dateStr)}
+          ${field('Time', incident.time)}
+          ${field('Project', incident.project ? incident.project.name : '')}
+          ${field('Location', incident.location)}
+        </div>
+      `)}
+      ${section('People Involved', `
+        <div class="pdf-fields">
+          ${field('Employee', incident.employee_name)}
+          ${field('Phone', incident.phone)}
+          ${field('Reporter', incident.reporter_name)}
+        </div>
+      `)}
+      ${section('What Happened', `
+        <div class="pdf-fields full">
+          ${field('Details', incident.details)}
+          ${field('Immediate Cause', incident.immediate_cause)}
+          ${field('Contributing Factors', incident.contributing_factors)}
+          ${field('Root Cause', incident.root_cause)}
+        </div>
+      `)}
+      ${incident.anyone_injured ? section('Injury Details', `
+        <div class="pdf-fields">
+          ${field('Body Part', incident.body_part)}
+          ${field('Medical Treatment', incident.medical_treatment ? incident.medical_treatment.replace(/_/g,' ') : '')}
+          ${field('Hospitalized', incident.hospitalized ? 'Yes' : '')}
+          ${field('Days Away from Work', incident.days_away_from_work)}
+        </div>
+      `) : ''}
+      ${incident.notes ? section('Additional Notes', `<div class="pdf-text">${incident.notes}</div>`) : ''}
+      ${photoData ? section('Photo', `<img src="${photoData}" style="width:100%;border-radius:6px;display:block" />`) : ''}
+      ${section('Signature', sigHTML)}
+    </div>
+    ${footer()}
+  `)
 
-  y = sectionTitle(doc, y, 'What Happened', [180, 30, 30])
-  y = fieldRow(doc, y, 'Details', incident.details)
-  y = fieldRow(doc, y, 'Immediate Cause', incident.immediate_cause)
-  y = fieldRow(doc, y, 'Contributing Factors', incident.contributing_factors)
-  y = fieldRow(doc, y, 'Root Cause', incident.root_cause)
-
-  if (incident.anyone_injured) {
-    y = sectionTitle(doc, y, 'Injury Details', [180, 30, 30])
-    y = fieldRow(doc, y, 'Body Part', incident.body_part)
-    y = fieldRow(doc, y, 'Medical Treatment', incident.medical_treatment?.replace(/_/g, ' '))
-    if (incident.hospitalized) { y = checkPage(doc, y, 8); doc.setFontSize(10); doc.text('Hospitalized: Yes', MARGIN, y); y += 7 }
-    y = fieldRow(doc, y, 'Days Away from Work', incident.days_away_from_work)
-  }
-
-  if (incident.notes) {
-    y = sectionTitle(doc, y, 'Additional Notes', [180, 30, 30])
-    y = fieldRow(doc, y, '', incident.notes)
-  }
-
-  if (incident.photo_url) {
-    try {
-      doc.addPage(); y = MARGIN
-      y = sectionTitle(doc, y, 'Photo', [180, 30, 30])
-      const img = await loadImage(incident.photo_url)
-      const h = Math.min((img.height * WIDTH) / img.width, 160)
-      doc.addImage(img, 'JPEG', MARGIN, y, WIDTH, h)
-    } catch {}
-  }
-
-  if (incident.signature_url) {
-    try {
-      y = checkPage(doc, y, 46)
-      y = sectionTitle(doc, y, 'Signature', [180, 30, 30])
-      const img = await loadImage(incident.signature_url)
-      doc.addImage(img, 'PNG', MARGIN, y, 78, 34)
-    } catch {}
-  }
-
-  const incidentSlug = (incident.type_name || 'report').replace(/\s+/g, '-')
-  const incidentDate = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
-  doc.save('incident-' + incidentSlug + '-' + incidentDate + '.pdf')
+  const slug = (incident.type_name || 'incident').replace(/\s+/g, '-')
+  const datePart = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
+  await renderHTMLtoPDF(html, 'incident-' + slug + '-' + datePart + '.pdf')
 }
 
 // ─── Safety Topic PDF ─────────────────────────────────────────────────────────
 
-export const generateSafetyTopicPDF = (topic) => {
-  const doc = new jsPDF()
-  const riskColors = {
-    low: [22, 163, 74],
-    medium: [202, 138, 4],
-    high: [234, 88, 12],
-    critical: [220, 38, 38],
-  }
-  const bg = riskColors[topic.risk_level] || [80, 80, 80]
+export const generateSafetyTopicPDF = async (topic) => {
+  const riskClass = {
+    low: 'risk-low', medium: 'risk-medium', high: 'risk-high', critical: 'risk-critical'
+  }[topic.risk_level] || 'risk-medium'
 
-  let y = pageHeader(doc, 'Safety Topic', topic.category || '', bg)
+  const headerBg = {
+    low: '#15803d', medium: '#854d0e', high: '#9a3412', critical: '#991b1b'
+  }[topic.risk_level] || '#171717'
 
-  doc.setFontSize(16)
-  doc.setFont(undefined, 'bold')
-  doc.setTextColor(23, 23, 23)
-  y = checkPage(doc, y, 14)
-  const nameLines = doc.splitTextToSize(topic.name, WIDTH)
-  nameLines.forEach(l => { doc.text(l, MARGIN, y); y += 8 })
-  doc.setFont(undefined, 'normal')
-  y += 2
+  const imgData = topic.image_url ? await toDataURL(topic.image_url) : null
 
-  if (topic.osha_reference) y = fieldRow(doc, y, 'OSHA Reference', topic.osha_reference)
-  y = fieldRow(doc, y, 'Risk Level', topic.risk_level ? topic.risk_level.charAt(0).toUpperCase() + topic.risk_level.slice(1) : '')
+  const html = baseHTML(`
+    <div class="pdf-header" style="background:${headerBg}">
+      <div class="pdf-header-type">Safety Topic · ${topic.category || ''}</div>
+      <div class="pdf-header-title">${topic.name}</div>
+      <div class="pdf-header-sub">${topic.osha_reference ? 'OSHA ' + topic.osha_reference : ''}</div>
+    </div>
+    ${imgData ? `<img src="${imgData}" style="width:100%;max-height:220px;object-fit:cover;display:block" />` : ''}
+    <div class="pdf-body">
+      ${section('Details', `
+        <div class="pdf-fields">
+          <div class="pdf-field"><div class="pdf-field-label">Risk Level</div><div class="pdf-field-value"><span class="risk-pill ${riskClass}">${topic.risk_level || '—'}</span></div></div>
+          ${field('OSHA Reference', topic.osha_reference)}
+          ${field('Category', topic.category)}
+        </div>
+      `)}
+      ${topic.description ? section('Description', `<div class="pdf-text">${topic.description}</div>`) : ''}
+    </div>
+    ${footer()}
+  `)
 
-  if (topic.description) {
-    y = sectionTitle(doc, y, 'Description', bg)
-    const lines = doc.splitTextToSize(topic.description, WIDTH)
-    doc.setFontSize(11); doc.setTextColor(23, 23, 23)
-    lines.forEach(line => { y = checkPage(doc, y, 6); doc.text(line, MARGIN, y); y += 6 })
-  }
-
-  const topicSlug = topic.name.replace(/\s+/g, '-').toLowerCase()
-  doc.save('safety-topic-' + topicSlug + '.pdf')
+  const slug = topic.name.replace(/\s+/g, '-').toLowerCase()
+  await renderHTMLtoPDF(html, 'safety-topic-' + slug + '.pdf')
 }
 
-// ─── Checklist PDF ─────────────────────────────────────────────────────────────
+// ─── Checklist PDF ────────────────────────────────────────────────────────────
 
-export const generateChecklistPDF = (checklist, items = []) => {
-  const doc = new jsPDF()
-  let y = pageHeader(doc, 'Safety Checklist', checklist.category || '', [30, 120, 80])
+export const generateChecklistPDF = async (checklist, items) => {
+  const checklistItems = items || []
+  const sorted = [...checklistItems].sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
 
-  doc.setFontSize(15)
-  doc.setFont(undefined, 'bold')
-  doc.setTextColor(23, 23, 23)
-  y = checkPage(doc, y, 12)
-  const nameLines = doc.splitTextToSize(checklist.name, WIDTH)
-  nameLines.forEach(l => { doc.text(l, MARGIN, y); y += 7 })
-  doc.setFont(undefined, 'normal')
-  y += 2
-
-  if (checklist.trades && checklist.trades.length > 0)
-    y = fieldRow(doc, y, 'Trades', checklist.trades.join(', '))
-  if (checklist.description)
-    y = fieldRow(doc, y, 'Description', checklist.description)
-
-  if (items.length > 0) {
-    y = sectionTitle(doc, y, `Checklist Items (${items.length})`, [30, 120, 80])
-    const sorted = [...items].sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-    let itemNum = 0
-    for (const item of sorted) {
-      y = checkPage(doc, y, 10)
-      if (item.is_section_header) {
-        doc.setFontSize(11); doc.setFont(undefined, 'bold'); doc.setTextColor(30, 120, 80)
-        doc.text(item.text || item.title || item.item_text || '', MARGIN, y)
-        doc.setFont(undefined, 'normal'); doc.setTextColor(23, 23, 23)
-        y += 7
-      } else {
-        itemNum++
-        // Checkbox square
-        doc.setDrawColor(150, 150, 150)
-        doc.rect(MARGIN, y - 4, 4, 4)
-        doc.setFontSize(10); doc.setTextColor(23, 23, 23)
+  const itemsHTML = sorted.length > 0 ? `
+    <div style="border:1px solid ${BORDER};border-radius:8px;overflow:hidden">
+      ${sorted.map(item => {
         const text = item.text || item.title || item.item_text || ''
-        const lines = doc.splitTextToSize(`${itemNum}.  ${text}`, WIDTH - 8)
-        lines.forEach((l, li) => {
-          y = checkPage(doc, y, 6)
-          doc.text(l, MARGIN + 7, y)
-          y += 6
-        })
-        y += 1
-      }
-    }
-  }
+        if (item.is_section_header) {
+          return `<div class="pdf-item-header">${text}</div>`
+        }
+        return `<div class="pdf-item"><div class="pdf-item-box"></div><div class="pdf-item-text">${text}</div></div>`
+      }).join('')}
+    </div>
+  ` : '<p style="color:#9ca3af;font-size:13px">No items</p>'
 
-  // Signature block at the bottom
-  y = checkPage(doc, y, 40)
-  y += 6
-  doc.setDrawColor(180, 180, 180)
-  doc.line(MARGIN, y, MARGIN + 80, y)
-  doc.setFontSize(9); doc.setTextColor(110, 110, 110)
-  doc.text('Completed by (signature)', MARGIN, y + 5)
-  doc.line(MARGIN + 110, y, MARGIN + 150, y)
-  doc.text('Date', MARGIN + 110, y + 5)
+  const html = baseHTML(`
+    <div class="pdf-header" style="background:#14532d">
+      <div class="pdf-header-type">Safety Checklist · ${checklist.category || ''}</div>
+      <div class="pdf-header-title">${checklist.name}</div>
+      <div class="pdf-header-sub">${checklist.trades && checklist.trades.length > 0 ? checklist.trades.join(' · ') : ''}</div>
+    </div>
+    <div class="pdf-body">
+      ${checklist.description || (checklist.trades && checklist.trades.length > 0) ? section('Info', `
+        <div class="pdf-fields">
+          ${field('Description', checklist.description)}
+          ${field('Trades', checklist.trades && checklist.trades.length > 0 ? checklist.trades.join(', ') : '')}
+        </div>
+      `) : ''}
+      ${section('Checklist Items (' + sorted.length + ')', itemsHTML)}
+      ${section('Sign-off', `
+        <div class="pdf-sig-block">
+          <div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Completed by (signature)</div></div>
+          <div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div>
+        </div>
+      `)}
+    </div>
+    ${footer()}
+  `)
 
-  const checklistSlug = checklist.name.replace(/\s+/g, '-').toLowerCase()
-  doc.save('checklist-' + checklistSlug + '.pdf')
+  const slug = checklist.name.replace(/\s+/g, '-').toLowerCase()
+  await renderHTMLtoPDF(html, 'checklist-' + slug + '.pdf')
 }
