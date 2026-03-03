@@ -632,6 +632,10 @@ export default function MeetingForm() {
       // ── Signature upload ──────────────────────────────────────────────
       let signatureUrl = id ? undefined : null  // undefined = preserve existing on edit
 
+      console.log('[SIG] chosenDefaultSigUrl:', chosenDefaultSigUrl)
+      console.log('[SIG] signatureRef:', !!signatureRef.current, '| isEmpty:', signatureRef.current ? signatureRef.current.isEmpty() : 'no ref')
+      console.log('[SIG] showSignaturePanel:', showSignaturePanel, '| leaderDefaultSignature:', !!leaderDefaultSignature)
+
       if (chosenDefaultSigUrl) {
         // Leader picked their default signature — use URL directly, no canvas ops
         signatureUrl = chosenDefaultSigUrl
