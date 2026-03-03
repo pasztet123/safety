@@ -631,32 +631,37 @@ export default function MeetingForm() {
 
       // Upload signature if present
       let signatureUrl = id ? undefined : null  // undefined = don't overwrite on edit
-      if (signatureDrawn) {
-        if (useDefaultSig && leaderDefaultSignature) {
-          // Default sig selected — use existing URL directly, no canvas ops needed
-          signatureUrl = leaderDefaultSignature
-        } else if (signatureRef.current) {
-          try {
-            const dataUrl = signatureRef.current.getTrimmedCanvas().toDataURL('image/png')
-            const signatureBlob = await fetch(dataUrl).then(r => r.blob())
-            const signatureFile = `signature-${Date.now()}.png`
+      const hasManualSig = signatureRef.current && !signatureRef.current.isEmpty()
+      console.log('[SIG] useDefaultSig:', useDefaultSig, '| leaderDefaultSignature:', !!leaderDefaultSignature, '| hasManualSig:', hasManualSig, '| showSignaturePanel:', showSignaturePanel)
 
-            const { error: uploadError } = await supabase.storage
+      if (useDefaultSig && leaderDefaultSignature) {
+        // Default sig — use existing URL directly, canvas is tainted so we never call toDataURL
+        signatureUrl = leaderDefaultSignature
+        console.log('[SIG] Using default sig URL:', signatureUrl)
+      } else if (hasManualSig) {
+        try {
+          const dataUrl = signatureRef.current.getTrimmedCanvas().toDataURL('image/png')
+          const signatureBlob = await fetch(dataUrl).then(r => r.blob())
+          const signatureFile = `signature-${Date.now()}.png`
+
+          const { error: uploadError } = await supabase.storage
+            .from('safety-photos')
+            .upload(signatureFile, signatureBlob)
+
+          if (!uploadError) {
+            const { data } = supabase.storage
               .from('safety-photos')
-              .upload(signatureFile, signatureBlob)
-
-            if (!uploadError) {
-              const { data } = supabase.storage
-                .from('safety-photos')
-                .getPublicUrl(signatureFile)
-              signatureUrl = data.publicUrl
-            } else {
-              console.error('Signature upload error:', uploadError)
-            }
-          } catch (canvasErr) {
-            console.error('Signature canvas error:', canvasErr)
+              .getPublicUrl(signatureFile)
+            signatureUrl = data.publicUrl
+            console.log('[SIG] Manual sig uploaded:', signatureUrl)
+          } else {
+            console.error('[SIG] Upload error:', uploadError)
           }
+        } catch (canvasErr) {
+          console.error('[SIG] Canvas toDataURL error:', canvasErr)
         }
+      } else {
+        console.log('[SIG] No signature — skipping upload')
       }
 
       // Insert or update meeting
