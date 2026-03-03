@@ -129,7 +129,9 @@ export const generateMeetingPDF = async (meeting) => {
     } catch {}
   }
 
-  doc.save(`meeting-${(meeting.topic || 'report').replace(/\s+/g, '-')}-${new Date(meeting.date).toISOString().split('T')[0]}.pdf`)
+  const meetingSlug = (meeting.topic || 'report').replace(/\s+/g, '-')
+  const meetingDate = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
+  doc.save('meeting-' + meetingSlug + '-' + meetingDate + '.pdf')
 }
 
 // ─── Incident PDF ─────────────────────────────────────────────────────────────
@@ -204,7 +206,9 @@ export const generateIncidentPDF = async (incident) => {
     } catch {}
   }
 
-  doc.save(`incident-${(incident.type_name || 'report').replace(/\s+/g, '-')}-${new Date(incident.date).toISOString().split('T')[0]}.pdf`)
+  const incidentSlug = (incident.type_name || 'report').replace(/\s+/g, '-')
+  const incidentDate = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
+  doc.save('incident-' + incidentSlug + '-' + incidentDate + '.pdf')
 }
 
 // ─── Safety Topic PDF ─────────────────────────────────────────────────────────
@@ -240,7 +244,8 @@ export const generateSafetyTopicPDF = (topic) => {
     lines.forEach(line => { y = checkPage(doc, y, 6); doc.text(line, MARGIN, y); y += 6 })
   }
 
-  doc.save(`safety-topic-${topic.name.replace(/\s+/g, '-').toLowerCase()}.pdf`)
+  const topicSlug = topic.name.replace(/\s+/g, '-').toLowerCase()
+  doc.save('safety-topic-' + topicSlug + '.pdf')
 }
 
 // ─── Checklist PDF ─────────────────────────────────────────────────────────────
@@ -302,5 +307,6 @@ export const generateChecklistPDF = (checklist, items = []) => {
   doc.line(MARGIN + 110, y, MARGIN + 150, y)
   doc.text('Date', MARGIN + 110, y + 5)
 
-  doc.save(`checklist-${checklist.name.replace(/\s+/g, '-').toLowerCase()}.pdf`)
+  const checklistSlug = checklist.name.replace(/\s+/g, '-').toLowerCase()
+  doc.save('checklist-' + checklistSlug + '.pdf')
 }
