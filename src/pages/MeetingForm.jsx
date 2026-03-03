@@ -60,6 +60,8 @@ export default function MeetingForm() {
   const [showSignaturePanel, setShowSignaturePanel] = useState(false)
   // chosenDefaultSigUrl: URL of leader's default sig if they picked it; null = draw manually
   const [chosenDefaultSigUrl, setChosenDefaultSigUrl] = useState(null)
+  // manualSigDataUrl: stores the drawn signature as data URL on every stroke
+  const [manualSigDataUrl, setManualSigDataUrl] = useState(null)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
 
@@ -632,20 +634,23 @@ export default function MeetingForm() {
       // ── Signature upload ──────────────────────────────────────────────
       let signatureUrl = id ? undefined : null  // undefined = preserve existing on edit
 
-      console.log('[SIG] chosenDefaultSigUrl:', chosenDefaultSigUrl)
-      console.log('[SIG] signatureRef:', !!signatureRef.current, '| isEmpty:', signatureRef.current ? signatureRef.current.isEmpty() : 'no ref')
-      console.log('[SIG] showSignaturePanel:', showSignaturePanel, '| leaderDefaultSignature:', !!leaderDefaultSignature)
-
       if (chosenDefaultSigUrl) {
         // Leader picked their default signature — use URL directly, no canvas ops
         signatureUrl = chosenDefaultSigUrl
 
-      } else if (signatureRef.current && !signatureRef.current.isEmpty()) {
-        // Leader drew manually — canvas is clean (not tainted), toBlob works fine
-        const trimmedCanvas = signatureRef.current.getTrimmedCanvas()
-        const blob = await new Promise((resolve) =>
-          trimmedCanvas.toBlob(resolve, 'image/png')
-        )
+      } else if (manualSigDataUrl) {
+        // Leader drew manually — data URL stored in state on each stroke, safe to use
+        const blob = await new Promise((resolve) => {
+          const img = new Image()
+          img.onload = () => {
+            const canvas = document.createElement('canvas')
+            canvas.width = img.width
+            canvas.height = img.height
+            canvas.getContext('2d').drawImage(img, 0, 0)
+            canvas.toBlob(resolve, 'image/png')
+          }
+          img.src = manualSigDataUrl
+        })
         if (blob) {
           const fileName = `leader-sig-${Date.now()}.png`
           const { error: uploadErr } = await supabase.storage
@@ -1261,6 +1266,7 @@ export default function MeetingForm() {
                   if (!e.target.checked) {
                     signatureRef.current?.clear()
                     setChosenDefaultSigUrl(null)
+                    setManualSigDataUrl(null)
                   }
                 }} />
               <span>Add digital signature</span>
@@ -1286,11 +1292,16 @@ export default function MeetingForm() {
                   ? <img src={chosenDefaultSigUrl} alt="Default signature"
                       style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff' }} />
                   : <SignatureCanvas ref={signatureRef}
-                      canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }} />
+                      canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }}
+                      onEnd={() => {
+                        if (signatureRef.current) {
+                          setManualSigDataUrl(signatureRef.current.toDataURL())
+                        }
+                      }} />
                 }
                 {!chosenDefaultSigUrl && (
                   <button type="button" className="btn btn-secondary btn-sm"
-                    onClick={() => signatureRef.current?.clear()}>
+                    onClick={() => { signatureRef.current?.clear(); setManualSigDataUrl(null) }}>
                     Clear Signature
                   </button>
                 )}
