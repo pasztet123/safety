@@ -59,6 +59,7 @@ export default function MeetingForm() {
   const [showPhotosPanel, setShowPhotosPanel] = useState(false)
   const [showSignaturePanel, setShowSignaturePanel] = useState(false)
   const [signatureDrawn, setSignatureDrawn] = useState(false)
+  const [useDefaultSig, setUseDefaultSig] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
 
@@ -630,26 +631,31 @@ export default function MeetingForm() {
 
       // Upload signature if present
       let signatureUrl = id ? undefined : null  // undefined = don't overwrite on edit
-      if (signatureRef.current && signatureDrawn) {
-        try {
-          const dataUrl = signatureRef.current.getTrimmedCanvas().toDataURL('image/png')
-          const signatureBlob = await fetch(dataUrl).then(r => r.blob())
-          const signatureFile = `signature-${Date.now()}.png`
+      if (signatureDrawn) {
+        if (useDefaultSig && leaderDefaultSignature) {
+          // Default sig selected — use existing URL directly, no canvas ops needed
+          signatureUrl = leaderDefaultSignature
+        } else if (signatureRef.current) {
+          try {
+            const dataUrl = signatureRef.current.getTrimmedCanvas().toDataURL('image/png')
+            const signatureBlob = await fetch(dataUrl).then(r => r.blob())
+            const signatureFile = `signature-${Date.now()}.png`
 
-          const { error: uploadError } = await supabase.storage
-            .from('safety-photos')
-            .upload(signatureFile, signatureBlob)
-
-          if (!uploadError) {
-            const { data } = supabase.storage
+            const { error: uploadError } = await supabase.storage
               .from('safety-photos')
-              .getPublicUrl(signatureFile)
-            signatureUrl = data.publicUrl
+              .upload(signatureFile, signatureBlob)
+
+            if (!uploadError) {
+              const { data } = supabase.storage
+                .from('safety-photos')
+                .getPublicUrl(signatureFile)
+              signatureUrl = data.publicUrl
+            } else {
+              console.error('Signature upload error:', uploadError)
+            }
+          } catch (canvasErr) {
+            console.error('Signature canvas error:', canvasErr)
           }
-        } catch (canvasErr) {
-          // Canvas tainted by cross-origin default signature — reuse the default sig URL directly
-          console.warn('Canvas toDataURL failed, using default signature URL:', canvasErr)
-          if (leaderDefaultSignature) signatureUrl = leaderDefaultSignature
         }
       }
 
@@ -1251,6 +1257,7 @@ export default function MeetingForm() {
                   if (!e.target.checked) {
                     signatureRef.current?.clear()
                     setSignatureDrawn(false)
+                    setUseDefaultSig(false)
                   }
                 }} />
               <span>Add digital signature</span>
@@ -1261,20 +1268,29 @@ export default function MeetingForm() {
                   <label className="mf-verify-item">
                     <input type="checkbox"
                       onChange={(e) => {
-                        if (e.target.checked && leaderDefaultSignature && signatureRef.current) {
-                          const img = new Image()
-                          img.crossOrigin = 'anonymous'
-                          img.onload = () => {
-                            const ctx = signatureRef.current.getCanvas().getContext('2d')
-                            const cel = signatureRef.current.getCanvas()
-                            signatureRef.current.clear()
-                            const scale = Math.min(cel.width / img.width, cel.height / img.height)
-                            const sw = img.width * scale; const sh = img.height * scale
-                            const x = (cel.width - sw) / 2; const y = (cel.height - sh) / 2
-                            ctx.drawImage(img, x, y, sw, sh)
-                            setSignatureDrawn(true)
+                        if (e.target.checked && leaderDefaultSignature) {
+                          setUseDefaultSig(true)
+                          setSignatureDrawn(true)
+                          // Draw into canvas purely for visual preview (may taint canvas, but upload bypasses canvas)
+                          if (signatureRef.current) {
+                            const img = new Image()
+                            img.onload = () => {
+                              try {
+                                const ctx = signatureRef.current.getCanvas().getContext('2d')
+                                const cel = signatureRef.current.getCanvas()
+                                signatureRef.current.clear()
+                                const scale = Math.min(cel.width / img.width, cel.height / img.height)
+                                const sw = img.width * scale; const sh = img.height * scale
+                                const x = (cel.width - sw) / 2; const y = (cel.height - sh) / 2
+                                ctx.drawImage(img, x, y, sw, sh)
+                              } catch (_) {}
+                            }
+                            img.src = leaderDefaultSignature
                           }
-                          img.src = leaderDefaultSignature
+                        } else {
+                          setUseDefaultSig(false)
+                          setSignatureDrawn(false)
+                          signatureRef.current?.clear()
                         }
                       }} />
                     <span>Use my default signature</span>
