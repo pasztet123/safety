@@ -180,6 +180,7 @@ a {
   background-position: right 16px center;
   padding-right: 44px;
   cursor: pointer;
+  color-scheme: light;
 }
 
 .form-input:focus,
@@ -193,6 +194,20 @@ a {
 .form-textarea {
   min-height: 120px;
   resize: vertical;
+}
+
+.form-input--locked {
+  background-color: #f3f4f6 !important;
+  color: var(--color-text-secondary) !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
+.form-locked-badge {
+  font-size: 12px;
+  margin-left: 6px;
+  opacity: 0.5;
+  vertical-align: middle;
 }
 
 /* Card styles */

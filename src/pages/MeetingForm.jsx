@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignatureCanvas from 'react-signature-canvas'
+import MapPicker from '../components/MapPicker'
 import './MeetingForm.css'
 
 export default function MeetingForm() {
@@ -34,6 +35,8 @@ export default function MeetingForm() {
     date: new Date().toISOString().split('T')[0],
     time: new Date().toTimeString().slice(0, 5),
     location: '',
+    latitude: null,
+    longitude: null,
     leader_id: '',
     leader_name: '',
     topic: '',
@@ -89,6 +92,8 @@ export default function MeetingForm() {
           date: formData.date,
           time: formData.time,
           location: formData.location,
+          latitude: formData.latitude,
+          longitude: formData.longitude,
           leader_id: formData.leader_id,
           leader_name: formData.leader_name,
           topic: formData.topic,
@@ -479,6 +484,8 @@ export default function MeetingForm() {
         date: data.date.split('T')[0],
         time: data.time,
         location: data.location || '',
+        latitude: data.latitude ?? null,
+        longitude: data.longitude ?? null,
         leader_id: data.leader_id || '',
         leader_name: data.leader_name,
         topic: data.topic,
@@ -644,6 +651,8 @@ export default function MeetingForm() {
         date: formData.date,
         time: formData.time,
         location: formData.location || null,
+        latitude: formData.latitude ?? null,
+        longitude: formData.longitude ?? null,
         // Don't include leader_id if it's not set properly - use only leader_name
         ...(formData.leader_id ? { leader_id: formData.leader_id } : {}),
         leader_name: formData.leader_name,
@@ -821,7 +830,7 @@ export default function MeetingForm() {
 
       {/* ── Page header ── */}
       <div className="mf-page-header">
-        <h2 className="page-title">{id ? 'Edit Meeting' : 'New Safety Meeting'}</h2>
+        <h2 className="page-title">{id ? 'Edit Meeting' : 'New Daily Safety Meeting'}</h2>
         {!id && localStorage.getItem('meeting-draft') && (
           <button type="button" className="btn btn-secondary btn-sm"
             onClick={() => { if (confirm('Clear saved draft?')) { localStorage.removeItem('meeting-draft'); window.location.reload() } }}>
@@ -870,19 +879,25 @@ export default function MeetingForm() {
           <div className="mf-row-3">
             <div className="form-group">
               <label className="form-label">Date *</label>
-              <input type="date" className="form-input" value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })} required />
+              <input type="date" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.date}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })} required readOnly={!isAdmin && !id} />
             </div>
             <div className="form-group">
               <label className="form-label">Time *</label>
-              <input type="time" className="form-input" value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })} step="60" required />
+              <input type="time" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.time}
+                onChange={(e) => setFormData({ ...formData, time: e.target.value })} step="60" required readOnly={!isAdmin && !id} />
             </div>
             <div className="form-group">
               <label className="form-label">Location</label>
               <input type="text" className="form-input" value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 placeholder="Address or GPS auto-filled" />
+              <MapPicker
+                latitude={formData.latitude}
+                longitude={formData.longitude}
+                onCoordinatesChange={({ lat, lng }) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+                onLocationTextChange={(text) => setFormData(prev => ({ ...prev, location: text }))}
+              />
             </div>
           </div>
 

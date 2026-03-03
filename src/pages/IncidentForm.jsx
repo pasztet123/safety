@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignatureCanvas from 'react-signature-canvas'
+import MapPicker from '../components/MapPicker'
 import './IncidentForm.css'
 
 const SEVERITY_OPTIONS = [
@@ -97,6 +98,7 @@ export default function IncidentForm() {
   const signatureRef = useRef()
 
   const [loading, setLoading] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [projects, setProjects] = useState([])
   const [incidentTypes, setIncidentTypes] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
@@ -107,6 +109,8 @@ export default function IncidentForm() {
     date: new Date().toISOString().split('T')[0],
     time: new Date().toTimeString().slice(0, 5),
     location: '',
+    latitude: null,
+    longitude: null,
     type_name: '',
     incident_type_id: '',
     incident_subtype: '',
@@ -148,12 +152,20 @@ export default function IncidentForm() {
   const [newAction, setNewAction] = useState({ description: '', responsible_person_id: '', due_date: '', status: 'open' })
 
   useEffect(() => {
-    fetchProjects()
-    fetchIncidentTypes()
-    fetchInvolvedPersons()
-    fetchPredefinedActions()
-    if (id) fetchIncident()
-    else autoGps()
+    const init = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase.from('users').select('is_admin').eq('id', user.id).single()
+        setIsAdmin(data?.is_admin || false)
+      }
+      fetchProjects()
+      fetchIncidentTypes()
+      fetchInvolvedPersons()
+      fetchPredefinedActions()
+      if (id) fetchIncident()
+      else autoGps()
+    }
+    init()
   }, [id])
 
   const autoGps = () => {
@@ -196,6 +208,8 @@ export default function IncidentForm() {
         date: data.date?.split('T')[0] || '',
         time: data.time || '',
         location: data.location || '',
+        latitude: data.latitude ?? null,
+        longitude: data.longitude ?? null,
         type_name: data.type_name || '',
         incident_type_id: data.incident_type_id || '',
         incident_subtype: data.incident_subtype || '',
@@ -324,6 +338,8 @@ export default function IncidentForm() {
       date: formData.date,
       time: formData.time,
       location: formData.location || null,
+      latitude: formData.latitude ?? null,
+      longitude: formData.longitude ?? null,
       type_name: formData.type_name,
       incident_type_id: formData.incident_type_id || null,
       incident_subtype: formData.incident_subtype || null,
@@ -407,8 +423,8 @@ export default function IncidentForm() {
       <div className="if-mode-bar">
         <h2 className="page-title" style={{ margin: 0 }}>{id ? 'Edit Incident' : 'Report Incident'}</h2>
         <div className="if-mode-pills">
-          <button type="button" className={`if-mode-pill ${reportMode === 'quick' ? 'is-active' : ''}`} onClick={() => setReportMode('quick')}>&#9889; Quick Report</button>
-          <button type="button" className={`if-mode-pill ${reportMode === 'full' ? 'is-active' : ''}`} onClick={() => setReportMode('full')}>&#128203; Full Investigation</button>
+          <button type="button" className={`if-mode-pill ${reportMode === 'quick' ? 'is-active' : ''}`} onClick={() => setReportMode('quick')}>Quick Report</button>
+          <button type="button" className={`if-mode-pill ${reportMode === 'full' ? 'is-active' : ''}`} onClick={() => setReportMode('full')}>Full Investigation</button>
         </div>
       </div>
 
@@ -480,11 +496,11 @@ export default function IncidentForm() {
           <div className="if-row-3">
             <div className="form-group">
               <label className="form-label">Date *</label>
-              <input type="date" className="form-input" value={formData.date} onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))} required />
+              <input type="date" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.date} onChange={e => setFormData(prev => ({ ...prev, date: e.target.value }))} required readOnly={!isAdmin && !id} />
             </div>
             <div className="form-group">
               <label className="form-label">Time *</label>
-              <input type="time" className="form-input" value={formData.time} onChange={e => setFormData(prev => ({ ...prev, time: e.target.value }))} step="60" required />
+              <input type="time" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.time} onChange={e => setFormData(prev => ({ ...prev, time: e.target.value }))} step="60" required readOnly={!isAdmin && !id} />
             </div>
             <div className="form-group">
               <label className="form-label">Project</label>
@@ -500,6 +516,12 @@ export default function IncidentForm() {
               <input type="text" className="form-input" value={formData.location} onChange={e => setFormData(prev => ({ ...prev, location: e.target.value }))} placeholder="Address or GPS auto-filled" />
               <button type="button" className="if-gps-btn" onClick={handleGps} title="Use current location">&#128205;</button>
             </div>
+            <MapPicker
+              latitude={formData.latitude}
+              longitude={formData.longitude}
+              onCoordinatesChange={({ lat, lng }) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
+              onLocationTextChange={(text) => setFormData(prev => ({ ...prev, location: text }))}
+            />
           </div>
         </div>
 

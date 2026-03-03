@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import LocationMap from '../components/LocationMap'
 
 export default function Incidents() {
   const navigate = useNavigate()
@@ -159,6 +160,7 @@ export default function Incidents() {
                 {incident.location && (
                   <div className="incident-detail-item">
                     <strong>Location:</strong> {incident.location}
+                    <LocationMap latitude={incident.latitude} longitude={incident.longitude} height={180} />
                   </div>
                 )}
                 <div className="incident-detail-item">

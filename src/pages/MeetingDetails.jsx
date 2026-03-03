@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import LocationMap from '../components/LocationMap'
 import './MeetingForm.css'
 
 export default function MeetingDetails() {
@@ -112,6 +113,7 @@ export default function MeetingDetails() {
         <div className="form-group">
           <label className="form-label">Location</label>
           <p className="detail-value">{meeting.location || 'Not specified'}</p>
+          <LocationMap latitude={meeting.latitude} longitude={meeting.longitude} />
         </div>
 
         <div className="form-group">
