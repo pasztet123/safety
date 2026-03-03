@@ -889,15 +889,16 @@ export default function MeetingForm() {
             </div>
             <div className="form-group">
               <label className="form-label">Location</label>
-              <input type="text" className="form-input" value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                placeholder="Address or GPS auto-filled" />
               <MapPicker
                 latitude={formData.latitude}
                 longitude={formData.longitude}
                 onCoordinatesChange={({ lat, lng }) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
                 onLocationTextChange={(text) => setFormData(prev => ({ ...prev, location: text }))}
-              />
+              >
+                <input type="text" className="form-input" value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="Address or GPS auto-filled" />
+              </MapPicker>
             </div>
           </div>
 

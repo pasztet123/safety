@@ -30,15 +30,17 @@ function ClickHandler({ onClick }) {
 }
 
 /**
- * MapPicker — optional interactive location pin selector
+ * MapPicker — wraps a location input, adds an inline red "Pick on Map" button,
+ * and an expandable interactive map below.
  *
  * Props:
- *   latitude          {number|null}
- *   longitude         {number|null}
- *   onCoordinatesChange   ({ lat, lng }) => void
- *   onLocationTextChange  (text: string) => void   — called with reverse-geocoded address
+ *   children                — the location <input> (or any input row) rendered inline
+ *   latitude                {number|null}
+ *   longitude               {number|null}
+ *   onCoordinatesChange     ({ lat, lng }) => void
+ *   onLocationTextChange    (text: string) => void
  */
-export default function MapPicker({ latitude, longitude, onCoordinatesChange, onLocationTextChange }) {
+export default function MapPicker({ children, latitude, longitude, onCoordinatesChange, onLocationTextChange }) {
   const hasPin = latitude != null && longitude != null
   const [expanded, setExpanded] = useState(hasPin)
 
@@ -69,23 +71,19 @@ export default function MapPicker({ latitude, longitude, onCoordinatesChange, on
 
   return (
     <div className="map-picker">
-      <div className="map-picker-header">
+      <div className="map-picker-row">
+        <div className="map-picker-input-wrap">
+          {children}
+        </div>
         <button
           type="button"
-          className={`map-picker-toggle${hasPin ? ' has-pin' : ''}`}
+          className={`map-picker-btn${hasPin ? ' has-pin' : ''}`}
           onClick={() => setExpanded((v) => !v)}
         >
-          <span className="map-picker-icon">🗺️</span>
-          {expanded
-            ? 'Ukryj mapę'
-            : hasPin
-            ? 'Zmień lokalizację na mapie'
-            : 'Wybierz lokalizację na mapie'}
-          {!hasPin && <span className="map-picker-optional">(opcjonalne)</span>}
-          {hasPin && !expanded && <span className="map-picker-check">✓</span>}
+          {expanded ? 'Hide Map' : hasPin ? 'Change Pin' : 'Pick on Map'}
         </button>
         {hasPin && (
-          <button type="button" className="map-picker-clear" onClick={handleClear} title="Usuń pinezkę">
+          <button type="button" className="map-picker-clear" onClick={handleClear} title="Remove pin">
             ✕
           </button>
         )}
@@ -96,7 +94,7 @@ export default function MapPicker({ latitude, longitude, onCoordinatesChange, on
           <MapContainer
             center={initCenter}
             zoom={initZoom}
-            style={{ height: 280, width: '100%', borderRadius: '0 0 8px 8px' }}
+            style={{ height: 280, width: '100%' }}
             scrollWheelZoom
           >
             <TileLayer
@@ -115,8 +113,8 @@ export default function MapPicker({ latitude, longitude, onCoordinatesChange, on
           </MapContainer>
           <p className="map-picker-hint">
             {hasPin
-              ? `📍 ${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)} · kliknij lub przeciągnij pinezkę, aby zmienić`
-              : 'Kliknij na mapie, żeby ustawić pinezkę. Adres zostanie automatycznie wpisany powyżej.'}
+              ? `📍 ${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)} — click or drag the pin to move it`
+              : 'Click anywhere on the map to drop a pin. The address will be auto-filled above.'}
           </p>
         </div>
       )}
