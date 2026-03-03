@@ -58,6 +58,7 @@ export default function MeetingForm() {
   const [showNotesPanel, setShowNotesPanel] = useState(false)
   const [showPhotosPanel, setShowPhotosPanel] = useState(false)
   const [showSignaturePanel, setShowSignaturePanel] = useState(false)
+  const [signatureDrawn, setSignatureDrawn] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
 
@@ -629,19 +630,26 @@ export default function MeetingForm() {
 
       // Upload signature if present
       let signatureUrl = id ? undefined : null  // undefined = don't overwrite on edit
-      if (signatureRef.current && !signatureRef.current.isEmpty()) {
-        const signatureBlob = await fetch(signatureRef.current.toDataURL()).then(r => r.blob())
-        const signatureFile = `signature-${Date.now()}.png`
-        
-        const { error: uploadError } = await supabase.storage
-          .from('safety-photos')
-          .upload(signatureFile, signatureBlob)
+      if (signatureRef.current && signatureDrawn) {
+        try {
+          const dataUrl = signatureRef.current.getTrimmedCanvas().toDataURL('image/png')
+          const signatureBlob = await fetch(dataUrl).then(r => r.blob())
+          const signatureFile = `signature-${Date.now()}.png`
 
-        if (!uploadError) {
-          const { data } = supabase.storage
+          const { error: uploadError } = await supabase.storage
             .from('safety-photos')
-            .getPublicUrl(signatureFile)
-          signatureUrl = data.publicUrl
+            .upload(signatureFile, signatureBlob)
+
+          if (!uploadError) {
+            const { data } = supabase.storage
+              .from('safety-photos')
+              .getPublicUrl(signatureFile)
+            signatureUrl = data.publicUrl
+          }
+        } catch (canvasErr) {
+          // Canvas tainted by cross-origin default signature — reuse the default sig URL directly
+          console.warn('Canvas toDataURL failed, using default signature URL:', canvasErr)
+          if (leaderDefaultSignature) signatureUrl = leaderDefaultSignature
         }
       }
 
@@ -1238,7 +1246,13 @@ export default function MeetingForm() {
             </label>
             <label className="mf-verify-item">
               <input type="checkbox" checked={showSignaturePanel}
-                onChange={(e) => setShowSignaturePanel(e.target.checked)} />
+                onChange={(e) => {
+                  setShowSignaturePanel(e.target.checked)
+                  if (!e.target.checked) {
+                    signatureRef.current?.clear()
+                    setSignatureDrawn(false)
+                  }
+                }} />
               <span>Add digital signature</span>
             </label>
             {showSignaturePanel && (
@@ -1258,6 +1272,7 @@ export default function MeetingForm() {
                             const sw = img.width * scale; const sh = img.height * scale
                             const x = (cel.width - sw) / 2; const y = (cel.height - sh) / 2
                             ctx.drawImage(img, x, y, sw, sh)
+                            setSignatureDrawn(true)
                           }
                           img.src = leaderDefaultSignature
                         }
@@ -1266,9 +1281,10 @@ export default function MeetingForm() {
                   </label>
                 )}
                 <SignatureCanvas ref={signatureRef}
-                  canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }} />
+                  canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }}
+                  onEnd={() => setSignatureDrawn(true)} />
                 <button type="button" className="btn btn-secondary btn-sm"
-                  onClick={() => signatureRef.current?.clear()}>
+                  onClick={() => { signatureRef.current?.clear(); setSignatureDrawn(false) }}>
                   Clear Signature
                 </button>
               </div>
