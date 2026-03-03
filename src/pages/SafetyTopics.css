@@ -186,6 +186,19 @@
 .btn-edit-topic:hover  { background: var(--color-info-bg); }
 .btn-delete-topic { color: var(--color-danger); font-size: 20px; }
 .btn-delete-topic:hover { background: var(--color-danger-bg); }
+.btn-pdf-topic {
+  background: none;
+  border: 1px solid #d1d5db;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  transition: background-color 0.15s;
+  line-height: 1.4;
+}
+.btn-pdf-topic:hover { background: #f3f4f6; }
 
 /* Empty / summary */
 .no-results {

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { generateMeetingPDF } from '../lib/pdfGenerator'
 import './Meetings.css'
 
 export default function Meetings() {
@@ -8,6 +9,7 @@ export default function Meetings() {
   const [meetings, setMeetings] = useState([])
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(null)
 
   useEffect(() => {
     checkAdmin()
@@ -85,6 +87,27 @@ export default function Meetings() {
       alert('Error deleting meeting: ' + error.message)
     } else {
       fetchMeetings()
+    }
+  }
+
+  const handlePDF = async (meeting) => {
+    setPdfLoading(meeting.id)
+    try {
+      const { data } = await supabase
+        .from('meetings')
+        .select(`
+          *,
+          project:projects(name),
+          attendees:meeting_attendees(name, signature_url, signed_with_checkbox),
+          photos:meeting_photos(photo_url)
+        `)
+        .eq('id', meeting.id)
+        .single()
+      if (data) await generateMeetingPDF(data)
+    } catch (e) {
+      alert('Error generating PDF')
+    } finally {
+      setPdfLoading(null)
     }
   }
 
@@ -168,12 +191,22 @@ export default function Meetings() {
                 )}
               </div>
 
-              <button 
-                className="btn btn-secondary"
-                onClick={() => navigate(`/meetings/${meeting.id}`)}
-              >
-                View Details
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button 
+                  className="btn btn-secondary"
+                  onClick={() => navigate(`/meetings/${meeting.id}`)}
+                >
+                  View Details
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handlePDF(meeting)}
+                  disabled={pdfLoading === meeting.id}
+                  style={{ minWidth: '70px' }}
+                >
+                  {pdfLoading === meeting.id ? '…' : 'PDF'}
+                </button>
+              </div>
             </div>
           ))
         )}

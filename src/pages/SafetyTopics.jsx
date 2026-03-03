@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
+import { generateSafetyTopicPDF } from '../lib/pdfGenerator'
 import './SafetyTopics.css'
 
 export default function SafetyTopics() {
@@ -389,6 +390,11 @@ export default function SafetyTopics() {
                       <span className={`risk-badge ${getRiskBadgeClass(topic.risk_level)}`}>
                         {topic.risk_level}
                       </span>
+                      <button
+                        className="btn-pdf-topic"
+                        onClick={() => generateSafetyTopicPDF(topic)}
+                        title="Download PDF"
+                      >PDF</button>
                       {isAdmin && (
                         <>
                           <button className="btn-edit-topic" onClick={() => handleEdit(topic)} title="Edit topic">✎</button>
@@ -433,6 +439,11 @@ export default function SafetyTopics() {
             <div className="modal-header">
               <h2>{selectedTopic.name}</h2>
               <div className="modal-header-actions">
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 14px', fontSize: '13px' }}
+                  onClick={() => generateSafetyTopicPDF(selectedTopic)}
+                >PDF</button>
                 {isAdmin && (
                   <button 
                     className="btn-edit-modal"

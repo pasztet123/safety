@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { generateChecklistPDF } from '../lib/pdfGenerator'
 
 export default function Checklists() {
   const navigate = useNavigate()
   const [checklists, setChecklists] = useState([])
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(null)
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [categories, setCategories] = useState([])
   const [searchTerm, setSearchTerm] = useState('')
@@ -92,6 +94,22 @@ export default function Checklists() {
       alert('Error deleting checklist: ' + error.message)
     } else {
       fetchChecklists()
+    }
+  }
+
+  const handlePDF = async (checklist) => {
+    setPdfLoading(checklist.id)
+    try {
+      const { data: items } = await supabase
+        .from('checklist_items')
+        .select('*')
+        .eq('checklist_id', checklist.id)
+        .order('display_order')
+      generateChecklistPDF(checklist, items || [])
+    } catch (e) {
+      alert('Error generating PDF')
+    } finally {
+      setPdfLoading(null)
     }
   }
 
@@ -271,6 +289,14 @@ export default function Checklists() {
                   onClick={() => navigate(`/checklists/${checklist.id}`)}
                 >
                   View/Edit
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handlePDF(checklist)}
+                  disabled={pdfLoading === checklist.id}
+                  style={{ minWidth: '70px' }}
+                >
+                  {pdfLoading === checklist.id ? '…' : 'PDF'}
                 </button>
               </div>
             </div>
