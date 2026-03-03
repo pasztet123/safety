@@ -147,12 +147,17 @@ const baseHTML = (content) => `
   <div class="pdf-wrap">${content}</div>
 `
 
-const footer = () => `
-  <div class="pdf-footer">
-    <div class="pdf-footer-logo">Roof<span>Chimp</span> Safety</div>
-    <div>Generated ${new Date().toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})}</div>
-  </div>
-`
+const footer = () => {
+  const now = new Date()
+  const date = now.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})
+  const time = now.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})
+  return `
+    <div class="pdf-footer">
+      <div></div>
+      <div>Generated ${date} at ${time}</div>
+    </div>
+  `
+}
 
 const field = (label, value) => {
   if (!value) return ''
