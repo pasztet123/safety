@@ -154,9 +154,9 @@ a {
 
 .form-label {
   display: block;
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 8px;
-  font-size: 15px;
+  font-size: 16px;
   color: var(--color-text);
 }
 
