@@ -189,22 +189,6 @@ export const generateMeetingPDF = async (meeting) => {
   const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
   const timeStr = meeting.time ? meeting.time.substring(0, 5) : ''
 
-  // Pre-load signature images as data URLs
-  const attImages = {}
-  if (meeting.attendees) {
-    for (const att of meeting.attendees) {
-      if (att.signature_url) attImages[att.signature_url] = await toDataURL(att.signature_url)
-    }
-  }
-  const leaderSigData = meeting.signature_url ? await toDataURL(meeting.signature_url) : null
-  const photoDataURLs = []
-  if (meeting.photos) {
-    for (const p of meeting.photos) {
-      const d = await toDataURL(p.photo_url)
-      if (d) photoDataURLs.push(d)
-    }
-  }
-
   const attendeesHTML = meeting.attendees && meeting.attendees.length > 0 ? `
     ${meeting.attendees.map((att, i) => `
       <div class="pdf-attendee">
@@ -212,21 +196,19 @@ export const generateMeetingPDF = async (meeting) => {
         <div style="flex:1">
           <div class="pdf-attendee-name">${att.name || ''}</div>
           ${att.signed_with_checkbox ? '<span class="pdf-attendee-badge badge-confirmed">✓ Confirmed attendance</span>' : ''}
-          ${att.signature_url && attImages[att.signature_url] ? `<div><span class="pdf-attendee-badge badge-signed" style="margin-top:4px">Signed</span><br><img class="pdf-sig-img" src="${attImages[att.signature_url]}" /></div>` : ''}
+          ${att.signature_url ? `<div><span class="pdf-attendee-badge badge-signed" style="margin-top:4px">Signed</span><br><img class="pdf-sig-img" src="${att.signature_url}" crossorigin="anonymous" /></div>` : ''}
         </div>
       </div>
     `).join('')}
   ` : '<p style="color:#9ca3af;font-size:13px">No attendees recorded</p>'
 
-  const photosHTML = photoDataURLs.length > 0 ? `
-    ${photoDataURLs.map(d => `<div style="margin-bottom:12px"><img src="${d}" style="width:100%;border-radius:6px;display:block" /></div>`).join('')}
+  const photosHTML = meeting.photos && meeting.photos.length > 0 ? `
+    ${meeting.photos.map(p => `<div style="margin-bottom:12px"><img src="${p.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" /></div>`).join('')}
   ` : ''
 
-  const leaderSigHTML = leaderSigData ? `
-    <div style="margin-top:8px">
-      <img src="${leaderSigData}" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" />
-    </div>
-  ` : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+  const leaderSigHTML = meeting.signature_url
+    ? `<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+    : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
   const html = baseHTML(`
     <div class="pdf-header">
@@ -245,7 +227,7 @@ export const generateMeetingPDF = async (meeting) => {
       `)}
       ${meeting.notes ? section('Notes', `<div class="pdf-text">${meeting.notes}</div>`) : ''}
       ${section('Attendees (' + (meeting.attendees ? meeting.attendees.length : 0) + ')', attendeesHTML)}
-      ${photoDataURLs.length > 0 ? section('Photos', photosHTML) : ''}
+      ${meeting.photos && meeting.photos.length > 0 ? section('Photos', photosHTML) : ''}
       ${section('Leader Signature', leaderSigHTML)}
     </div>
     ${footer()}
@@ -263,12 +245,13 @@ export const generateIncidentPDF = async (incident) => {
   const sev = incident.severity || ''
   const sevClass = 'sev-' + (sev.toLowerCase() || 'medium')
 
-  const sigData = incident.signature_url ? await toDataURL(incident.signature_url) : null
-  const photoData = incident.photo_url ? await toDataURL(incident.photo_url) : null
-
-  const sigHTML = sigData
-    ? `<div style="margin-top:8px"><img src="${sigData}" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+  const sigHTML = incident.signature_url
+    ? `<div style="margin-top:8px"><img src="${incident.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
     : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Reporter signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+
+  const photoHTML = incident.photo_url
+    ? `<img src="${incident.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" />`
+    : ''
 
   const html = baseHTML(`
     <div class="pdf-header" style="background:#991b1b">
@@ -317,7 +300,7 @@ export const generateIncidentPDF = async (incident) => {
         </div>
       `) : ''}
       ${incident.notes ? section('Additional Notes', `<div class="pdf-text">${incident.notes}</div>`) : ''}
-      ${photoData ? section('Photo', `<img src="${photoData}" style="width:100%;border-radius:6px;display:block" />`) : ''}
+      ${incident.photo_url ? section('Photo', photoHTML) : ''}
       ${section('Signature', sigHTML)}
     </div>
     ${footer()}
@@ -339,15 +322,13 @@ export const generateSafetyTopicPDF = async (topic) => {
     low: '#15803d', medium: '#854d0e', high: '#9a3412', critical: '#991b1b'
   }[topic.risk_level] || '#171717'
 
-  const imgData = topic.image_url ? await toDataURL(topic.image_url) : null
-
   const html = baseHTML(`
     <div class="pdf-header" style="background:${headerBg}">
       <div class="pdf-header-type">Safety Topic · ${topic.category || ''}</div>
       <div class="pdf-header-title">${topic.name}</div>
       <div class="pdf-header-sub">${topic.osha_reference ? 'OSHA ' + topic.osha_reference : ''}</div>
     </div>
-    ${imgData ? `<img src="${imgData}" style="width:100%;max-height:220px;object-fit:cover;display:block" />` : ''}
+    ${topic.image_url ? `<img src="${topic.image_url}" crossorigin="anonymous" style="width:100%;max-height:220px;object-fit:cover;display:block" />` : ''}
     <div class="pdf-body">
       ${section('Details', `
         <div class="pdf-fields">

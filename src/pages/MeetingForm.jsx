@@ -628,7 +628,7 @@ export default function MeetingForm() {
       }
 
       // Upload signature if present
-      let signatureUrl = null
+      let signatureUrl = id ? undefined : null  // undefined = don't overwrite on edit
       if (signatureRef.current && !signatureRef.current.isEmpty()) {
         const signatureBlob = await fetch(signatureRef.current.toDataURL()).then(r => r.blob())
         const signatureFile = `signature-${Date.now()}.png`
@@ -658,7 +658,7 @@ export default function MeetingForm() {
         leader_name: formData.leader_name,
         topic: formData.topic,
         notes: formData.notes || null,
-        signature_url: signatureUrl,
+        ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
         completed: formData.completed,
         created_by: user.id,
       }
