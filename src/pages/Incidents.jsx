@@ -11,6 +11,7 @@ export default function Incidents() {
   const [correctiveActions, setCorrectiveActions] = useState({})
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
+  const [pdfLoading, setPdfLoading] = useState(null)
 
   useEffect(() => {
     checkAdminAndFetchData()
@@ -79,7 +80,12 @@ export default function Incidents() {
   }
 
   const handleGeneratePDF = async (incident) => {
-    await generateIncidentPDF(incident)
+    setPdfLoading(incident.id)
+    try {
+      await generateIncidentPDF(incident)
+    } finally {
+      setPdfLoading(null)
+    }
   }
   
   const handleToggleActionStatus = async (actionId, currentStatus) => {
@@ -137,11 +143,11 @@ export default function Incidents() {
                     <p className="incident-project">Project: {incident.project.name}</p>
                   )}
                 </div>
-                <button 
-                  className="btn btn-accent"
-                  onClick={() => handleGeneratePDF(incident)}
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => navigate(`/incidents/${incident.id}/edit`)}
                 >
-                  📄 PDF
+                  Edit
                 </button>
               </div>
 
@@ -178,39 +184,39 @@ export default function Incidents() {
                     <strong>Photo:</strong> Attached
                   </div>
                 )}
+                {incident.signature_url && (
+                  <div className="incident-detail-item">
+                    <strong>Signature:</strong> Signed by {incident.reporter_name}
+                  </div>
+                )}
               </div>
 
               {correctiveActions[incident.id] && correctiveActions[incident.id].length > 0 && (
-                <div className="corrective-actions-section">
-                  <h4>Corrective Actions ({correctiveActions[incident.id].length})</h4>
-                  <div className="actions-list">
+                <div className="ica-section">
+                  <p className="ica-title">Corrective Actions <span className="ica-count">{correctiveActions[incident.id].length}</span></p>
+                  <div className="ica-list">
                     {correctiveActions[incident.id].map(action => (
-                      <div key={action.id} className={`action-item ${action.status}`}>
-                        <div className="action-status-checkbox">
-                          <input
-                            type="checkbox"
-                            checked={action.status === 'completed'}
-                            onChange={() => handleToggleActionStatus(action.id, action.status)}
-                            disabled={!isAdmin}
-                          />
-                        </div>
-                        <div className="action-content">
-                          <p className="action-text">{action.description}</p>
-                          <div className="action-meta">
+                      <div key={action.id} className={`ica-row ${action.status}`}>
+                        <input
+                          type="checkbox"
+                          className="ica-checkbox"
+                          checked={action.status === 'completed'}
+                          onChange={() => handleToggleActionStatus(action.id, action.status)}
+                          disabled={!isAdmin}
+                        />
+                        <div className="ica-body">
+                          <p className="ica-desc">{action.description}</p>
+                          <div className="ica-meta">
                             {action.responsible_person_id && (
-                              <span className="action-responsible">
-                                👤 {involvedPersons.find(p => p.id === action.responsible_person_id)?.name || 'Unknown'}
+                              <span className="ica-tag">
+                                {involvedPersons.find(p => p.id === action.responsible_person_id)?.name || 'Unknown'}
                               </span>
                             )}
                             {action.due_date && (
-                              <span className="action-due-date">
-                                📅 Due: {new Date(action.due_date).toLocaleDateString()}
-                              </span>
+                              <span className="ica-tag ica-tag--date">Due {new Date(action.due_date).toLocaleDateString()}</span>
                             )}
                             {action.completion_date && (
-                              <span className="action-completed-date">
-                                ✅ Completed: {new Date(action.completion_date).toLocaleDateString()}
-                              </span>
+                              <span className="ica-tag ica-tag--done">Completed {new Date(action.completion_date).toLocaleDateString()}</span>
                             )}
                           </div>
                         </div>
@@ -220,12 +226,22 @@ export default function Incidents() {
                 </div>
               )}
 
-              <button 
-                className="btn btn-secondary"
-                onClick={() => navigate(`/incidents/${incident.id}`)}
-              >
-                Edit Incident
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => navigate(`/incidents/${incident.id}`)}
+                >
+                  View Details
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => handleGeneratePDF(incident)}
+                  disabled={pdfLoading === incident.id}
+                  style={{ minWidth: '70px' }}
+                >
+                  {pdfLoading === incident.id ? '…' : 'PDF'}
+                </button>
+              </div>
             </div>
           ))
         )}

@@ -62,6 +62,10 @@ export default function MeetingForm() {
   const [chosenDefaultSigUrl, setChosenDefaultSigUrl] = useState(null)
   // manualSigDataUrl: stores the drawn signature as data URL on every stroke
   const [manualSigDataUrl, setManualSigDataUrl] = useState(null)
+  // existingSignatureUrl: signature already saved in DB when editing
+  const [existingSignatureUrl, setExistingSignatureUrl] = useState(null)
+  // removeExistingSig: user explicitly asked to delete the existing signature
+  const [removeExistingSig, setRemoveExistingSig] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
 
@@ -496,9 +500,21 @@ export default function MeetingForm() {
         notes: data.notes || '',
         completed: data.completed || false,
       })
-      setAttendees(data.attendees || [])
+      setAttendees(
+        (data.attendees || []).map(a => ({
+          ...a,
+          // Pre-open the signature panel for attendees who already have a saved signature
+          show_signature_field: a.show_signature_field || !!a.signature_url,
+        }))
+      )
       setPhotos(data.photos || [])
-      
+
+      // Load existing signature (edit mode)
+      if (data.signature_url) {
+        setExistingSignatureUrl(data.signature_url)
+        setShowSignaturePanel(true)
+      }
+
       // Load topic details if available
       if (data.topic) {
         handleTopicChange(data.topic)
@@ -603,6 +619,14 @@ export default function MeetingForm() {
         
         // Draw the image with proper scaling and centering
         ctx.drawImage(img, x, y, scaledWidth, scaledHeight)
+
+        // Capture the drawn default signature so handleSubmit will upload it
+        const dataUrl = canvas.toDataURL()
+        setAttendees(prev => {
+          const n = [...prev]
+          n[index] = { ...n[index], drawn_sig_data_url: dataUrl }
+          return n
+        })
       }
       img.onerror = (error) => {
         console.error('Error loading signature image:', error)
@@ -634,7 +658,10 @@ export default function MeetingForm() {
       // ── Signature upload ──────────────────────────────────────────────
       let signatureUrl = id ? undefined : null  // undefined = preserve existing on edit
 
-      if (chosenDefaultSigUrl) {
+      if (removeExistingSig) {
+        signatureUrl = null  // user explicitly removed the existing signature
+
+      } else if (chosenDefaultSigUrl) {
         // Leader picked their default signature — use URL directly, no canvas ops
         signatureUrl = chosenDefaultSigUrl
 
@@ -725,10 +752,9 @@ export default function MeetingForm() {
           attendees.map(async (attendee, index) => {
             let signatureUrl = attendee.signature_url || null
             
-            // Upload signature if present for this attendee
-            const sigRef = attendeeSignatureRefs.current[index]
-            if (sigRef && !sigRef.isEmpty()) {
-              const signatureBlob = await fetch(sigRef.toDataURL()).then(r => r.blob())
+            // Upload drawn signature if present (stored in state on each stroke)
+            if (attendee.drawn_sig_data_url) {
+              const signatureBlob = await fetch(attendee.drawn_sig_data_url).then(r => r.blob())
               const signatureFile = `attendee-signature-${Date.now()}-${index}.png`
               
               const { error: uploadError } = await supabase.storage
@@ -1237,9 +1263,27 @@ export default function MeetingForm() {
                           <SignatureCanvas
                             ref={(ref) => { attendeeSignatureRefs.current[index] = ref }}
                             canvasProps={{ width: 800, height: 160, className: 'signature-canvas' }}
+                            onEnd={() => {
+                              const ref = attendeeSignatureRefs.current[index]
+                              if (ref) {
+                                const dataUrl = ref.toDataURL()
+                                setAttendees(prev => {
+                                  const n = [...prev]
+                                  n[index] = { ...n[index], drawn_sig_data_url: dataUrl }
+                                  return n
+                                })
+                              }
+                            }}
                           />
                           <button type="button" className="btn btn-secondary btn-sm"
-                            onClick={() => attendeeSignatureRefs.current[index]?.clear()}>
+                            onClick={() => {
+                              attendeeSignatureRefs.current[index]?.clear()
+                              setAttendees(prev => {
+                                const n = [...prev]
+                                n[index] = { ...n[index], drawn_sig_data_url: null }
+                                return n
+                              })
+                            }}>
                             Clear
                           </button>
                         </>
@@ -1267,12 +1311,31 @@ export default function MeetingForm() {
                     signatureRef.current?.clear()
                     setChosenDefaultSigUrl(null)
                     setManualSigDataUrl(null)
+                    setRemoveExistingSig(false)
                   }
                 }} />
               <span>Add digital signature</span>
             </label>
             {showSignaturePanel && (
               <div className="mf-signature-panel">
+                {/* Existing signature preview (edit mode) */}
+                {id && existingSignatureUrl && !removeExistingSig && !chosenDefaultSigUrl && !manualSigDataUrl && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: '13px', color: '#666', margin: '0 0 6px 0' }}>Current signature:</p>
+                    <img src={existingSignatureUrl} alt="Current signature"
+                      style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff', display: 'block' }} />
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 8 }}
+                      onClick={() => setRemoveExistingSig(true)}>
+                      Remove signature
+                    </button>
+                  </div>
+                )}
+                {id && removeExistingSig && (
+                  <p style={{ fontSize: '13px', color: '#dc2626', margin: '0 0 10px 0' }}>
+                    Signature will be removed.{' '}
+                    <button type="button" className="mf-link-btn" onClick={() => setRemoveExistingSig(false)}>Undo</button>
+                  </p>
+                )}
                 {leaderDefaultSignature && (
                   <label className="mf-verify-item">
                     <input type="checkbox"
@@ -1281,8 +1344,10 @@ export default function MeetingForm() {
                         if (e.target.checked) {
                           setChosenDefaultSigUrl(leaderDefaultSignature)
                           signatureRef.current?.clear()
+                          setManualSigDataUrl(null)
                         } else {
                           setChosenDefaultSigUrl(null)
+                          setManualSigDataUrl(null)
                         }
                       }} />
                     <span>Use my default signature</span>

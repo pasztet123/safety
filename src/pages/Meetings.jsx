@@ -93,7 +93,7 @@ export default function Meetings() {
   const handlePDF = async (meeting) => {
     setPdfLoading(meeting.id)
     try {
-      const { data } = await supabase
+      const { data, error: meetingErr } = await supabase
         .from('meetings')
         .select(`
           *,
@@ -103,8 +103,74 @@ export default function Meetings() {
         `)
         .eq('id', meeting.id)
         .single()
-      if (data) await generateMeetingPDF(data)
+
+      if (!data || meetingErr) {
+        console.error('Error loading meeting:', meetingErr)
+        alert('Error loading meeting data')
+        return
+      }
+
+      // Fetch checklists for this meeting (separate queries to avoid PostgREST deep-join 400)
+      const { data: mcRows } = await supabase
+        .from('meeting_checklists')
+        .select('checklist_id')
+        .eq('meeting_id', data.id)
+
+      let checklists = []
+      if (mcRows && mcRows.length > 0) {
+        const checklistIds = mcRows.map(r => r.checklist_id)
+        const { data: clData } = await supabase
+          .from('checklists')
+          .select('id, name, category')
+          .in('id', checklistIds)
+        const { data: itemsData } = await supabase
+          .from('checklist_items')
+          .select('id, checklist_id, title, description, display_order, is_section_header')
+          .in('checklist_id', checklistIds)
+        checklists = (clData || []).map(cl => ({
+          ...cl,
+          items: (itemsData || []).filter(it => it.checklist_id === cl.id)
+        }))
+      }
+      data.checklists = checklists
+
+      // Fetch topic details (topic is stored as a name string, not FK)
+      let topicDetails = null
+      if (data.topic) {
+        const { data: td } = await supabase
+          .from('safety_topics')
+          .select('name, description, osha_reference, risk_level, category')
+          .eq('name', data.topic)
+          .single()
+        topicDetails = td || null
+      }
+
+      // Fetch checklist completions linked to this meeting (flat query, no nested)
+      const { data: completions } = await supabase
+        .from('checklist_completions')
+        .select('id, checklist_id, notes')
+        .eq('meeting_id', data.id)
+
+      let checklistCompletions = []
+      if (completions && completions.length > 0) {
+        const completionIds = completions.map(c => c.id)
+        const { data: ciData } = await supabase
+          .from('checklist_completion_items')
+          .select('completion_id, checklist_item_id, is_checked, notes')
+          .in('completion_id', completionIds)
+
+        // Attach items to their parent completion; rename key to item_id for PDF generator
+        checklistCompletions = completions.map(c => ({
+          ...c,
+          items: (ciData || [])
+            .filter(ci => ci.completion_id === c.id)
+            .map(ci => ({ ...ci, item_id: ci.checklist_item_id }))
+        }))
+      }
+
+      await generateMeetingPDF({ ...data, topicDetails, checklistCompletions })
     } catch (e) {
+      console.error('Error generating PDF:', e)
       alert('Error generating PDF')
     } finally {
       setPdfLoading(null)

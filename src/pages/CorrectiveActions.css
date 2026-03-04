@@ -322,7 +322,7 @@
   margin: 0 8px;
 }
 
-.incident-project::before {
+.incident-reference .incident-project::before {
   content: "•";
   margin: 0 8px;
 }

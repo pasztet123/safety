@@ -12,9 +12,9 @@ const BORDER   = '#e5e5e5'
 const renderHTMLtoPDF = async (html, filename) => {
   // Mount hidden container
   const wrap = document.createElement('div')
-  wrap.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff;z-index:-1'
-  wrap.innerHTML = html
+  wrap.style.cssText = 'position:absolute;top:0;left:-9999px;width:794px;background:#fff;z-index:-1'
   document.body.appendChild(wrap)
+  wrap.innerHTML = html
 
   try {
     const canvas = await html2canvas(wrap, {
@@ -25,24 +25,98 @@ const renderHTMLtoPDF = async (html, filename) => {
       logging: false,
     })
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.92)
-    const pxW = canvas.width
+    const A4W_MM = 210
+    const A4H_MM = 297
+    const pxW = canvas.width   // 794 * 2 = 1588 canvas px
     const pxH = canvas.height
-    const A4W = 210
-    const A4H = 297
-    const pxPerMm = pxW / A4W
-    const mmH = pxH / pxPerMm
+    // Page height in canvas pixels (scale:2 → each CSS px = 2 canvas px)
+    const pageHpx = Math.round(pxH > 0 ? (A4H_MM / A4W_MM) * pxW : 2246)
 
+    // Read the entire canvas once into a flat RGBA array — avoids per-row getImageData calls
+    const ctx = canvas.getContext('2d')
+    const allPixels = ctx.getImageData(0, 0, pxW, pxH).data // Uint8ClampedArray
+
+    /**
+     * Finds the best page cut point near `nominalRow`.
+     * Strategy: find the WIDEST contiguous band of fully-white rows
+     * within the scan window, then cut in the middle of it.
+     * Wider white bands = space between sections (18px CSS / 36px canvas).
+     * Narrower bands = padding inside items (8px CSS / 16px canvas).
+     * This avoids cutting through list items.
+     */
+    const findSafeCutRow = (nominalRow) => {
+      const scanPx   = 700
+      const scanStart = Math.max(0, nominalRow - scanPx)
+
+      // 1. Build a boolean array: isWhite[y] = true if row y has NO dark pixels
+      //    "dark" = any pixel whose brightness < 230 (catches text, borders, icons)
+      const isWhite = new Uint8Array(nominalRow - scanStart + 1)
+      for (let y = scanStart; y <= nominalRow; y++) {
+        const offset = y * pxW * 4
+        let pure = true
+        for (let x = 0; x < pxW; x++) {
+          const i = offset + x * 4
+          const bright = (allPixels[i] + allPixels[i + 1] + allPixels[i + 2]) / 3
+          if (bright < 230) { pure = false; break }
+        }
+        isWhite[y - scanStart] = pure ? 1 : 0
+      }
+
+      // 2. Find all contiguous white runs, keep track of (start, length)
+      let bestMidRow  = nominalRow
+      let bestRunLen  = 0
+      let runStart    = -1
+
+      const evaluateRun = (runEnd) => {
+        const len = runEnd - runStart
+        if (len > bestRunLen) {
+          bestRunLen = len
+          bestMidRow = runStart + Math.floor(len / 2) + scanStart
+        }
+      }
+
+      for (let j = 0; j <= (nominalRow - scanStart); j++) {
+        if (isWhite[j]) {
+          if (runStart === -1) runStart = j
+        } else {
+          if (runStart !== -1) { evaluateRun(j); runStart = -1 }
+        }
+      }
+      if (runStart !== -1) evaluateRun(nominalRow - scanStart + 1)
+
+      return bestMidRow
+    }
+
+    // Build pages using A4 mm dimensions for accuracy
     const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+    const A4W_PX_doc = A4W_MM  // 210mm
+    const A4H_PX_doc = A4H_MM  // 297mm
 
-    // Slice into A4 pages
-    let sliceTop = 0
-    let page = 0
-    while (sliceTop < mmH) {
-      if (page > 0) doc.addPage()
-      doc.addImage(imgData, 'JPEG', 0, -sliceTop, A4W, mmH)
-      sliceTop += A4H
-      page++
+    let cutTop    = 0
+    let pageIndex = 0
+
+    while (cutTop < pxH) {
+      const nominalBottom = cutTop + pageHpx
+      const cutBottom     = nominalBottom >= pxH ? pxH : findSafeCutRow(nominalBottom)
+      const sliceH        = cutBottom - cutTop
+      if (sliceH <= 0) break
+
+      // Render this slice onto a temp canvas
+      const pageCanvas  = document.createElement('canvas')
+      pageCanvas.width  = pxW
+      pageCanvas.height = sliceH
+      pageCanvas.getContext('2d').drawImage(canvas, 0, cutTop, pxW, sliceH, 0, 0, pxW, sliceH)
+
+      const imgData = pageCanvas.toDataURL('image/jpeg', 0.92)
+
+      // Image height in mm, proportional to A4 width (keeps aspect ratio, never taller than A4)
+      const imgHmm = Math.min((sliceH / pxW) * A4W_PX_doc, A4H_PX_doc)
+
+      if (pageIndex > 0) doc.addPage()
+      doc.addImage(imgData, 'JPEG', 0, 0, A4W_PX_doc, imgHmm)
+
+      cutTop = cutBottom
+      pageIndex++
     }
 
     doc.save(filename)
@@ -210,6 +284,60 @@ export const generateMeetingPDF = async (meeting) => {
     ? `<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
     : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
+  // ── Topic Details section ──────────────────────────────────────────────────
+  const td = meeting.topicDetails
+  const topicSectionHTML = td ? section('Topic Guidelines', `
+    ${td.description ? `
+      <div class="pdf-field" style="margin-bottom:10px">
+        <div class="pdf-field-label">Description</div>
+        <div class="pdf-field-value" style="white-space:pre-wrap;line-height:1.7">${td.description.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      </div>
+    ` : ''}
+    <div class="pdf-fields" style="margin-top:${td.description ? '4px' : '0'}">
+      ${td.osha_reference ? `<div class="pdf-field"><div class="pdf-field-label">OSHA Reference</div><div class="pdf-field-value"><span class="osha-pill">${td.osha_reference}</span></div></div>` : ''}
+      ${td.risk_level ? `<div class="pdf-field"><div class="pdf-field-label">Risk Level</div><div class="pdf-field-value"><span class="risk-pill risk-${td.risk_level}">${td.risk_level.toUpperCase()}</span></div></div>` : ''}
+    </div>
+  `) : ''
+
+  // ── Checklists section ────────────────────────────────────────────────────
+  const meetingChecklists = (meeting.checklists || []).filter(Boolean)
+  const checklistCompletions = meeting.checklistCompletions || []
+
+  const checklistsHTML = meetingChecklists.length > 0 ? section(
+    'Checklists (' + meetingChecklists.length + ')',
+    meetingChecklists.map(cl => {
+      const completion = checklistCompletions.find(c => c.checklist_id === cl.id)
+      const itemMap = {}
+      completion?.items?.forEach(it => { itemMap[it.item_id] = it })
+      const sorted = [...(cl.items || [])].sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+
+      return `
+        <div class="checklist-pdf-block" style="margin-bottom:18px;border:1px solid ${BORDER};border-radius:8px;overflow:hidden">
+          <div style="background:#f3f4f6;padding:10px 14px;border-bottom:1px solid ${BORDER}">
+            <div style="font-size:13px;font-weight:700;color:${PRIMARY}">${cl.name}</div>
+            ${cl.category ? `<div style="font-size:11px;color:${GRAY};margin-top:2px">${cl.category}</div>` : ''}
+            ${completion ? '<div style="font-size:11px;color:#15803d;font-weight:600;margin-top:3px">✓ Completed</div>' : ''}
+          </div>
+          ${sorted.map(item => {
+            if (item.is_section_header) {
+              return `<div class="pdf-item-header">${item.title || ''}</div>`
+            }
+            const ci = itemMap[item.id]
+            const checked = ci?.is_checked ?? false
+            return `<div class="pdf-item">
+              <div class="pdf-item-box" style="${checked ? 'background:#16a34a;border-color:#16a34a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700' : ''}">${checked ? '✓' : ''}</div>
+              <div class="pdf-item-text" style="${checked ? 'color:#15803d' : ''}">
+                ${(item.title || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+                ${ci?.notes ? `<div style="font-size:11px;color:${GRAY};margin-top:2px;font-style:italic">${ci.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+              </div>
+            </div>`
+          }).join('')}
+          ${completion?.notes ? `<div style="padding:10px 14px;border-top:1px solid ${BORDER};font-size:12px;color:${GRAY}"><strong>Notes:</strong> ${completion.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+        </div>
+      `
+    }).join('')
+  ) : ''
+
   const html = baseHTML(`
     <div class="pdf-header">
       <div class="pdf-header-type">Toolbox Safety Meeting</div>
@@ -220,12 +348,14 @@ export const generateMeetingPDF = async (meeting) => {
       ${section('Meeting Info', `
         <div class="pdf-fields">
           ${field('Leader', meeting.leader_name)}
-          ${field('Location', meeting.location)}
+          ${field('Location', meeting.location || '—')}
           ${field('Project', meeting.project ? meeting.project.name : '')}
           ${field('Date', dateStr + (timeStr ? ' at ' + timeStr : ''))}
         </div>
       `)}
+      ${topicSectionHTML}
       ${meeting.notes ? section('Notes', `<div class="pdf-text">${meeting.notes}</div>`) : ''}
+      ${checklistsHTML}
       ${section('Attendees (' + (meeting.attendees ? meeting.attendees.length : 0) + ')', attendeesHTML)}
       ${meeting.photos && meeting.photos.length > 0 ? section('Photos', photosHTML) : ''}
       ${section('Leader Signature', leaderSigHTML)}
@@ -244,6 +374,16 @@ export const generateIncidentPDF = async (incident) => {
   const dateStr = incident.date ? new Date(incident.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
   const sev = incident.severity || ''
   const sevClass = 'sev-' + (sev.toLowerCase() || 'medium')
+  const SEV_LABELS = {
+    lost_time: 'Lost Time Injury',
+    first_aid: 'First Aid Only',
+    near_miss: 'Near Miss',
+    property_damage: 'Property Damage',
+    medical_treatment: 'Medical Treatment',
+    recordable: 'Recordable Injury',
+    fatality: 'Fatality',
+  }
+  const sevLabel = sev ? (SEV_LABELS[sev.toLowerCase()] || sev.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())) : ''
 
   const sigHTML = incident.signature_url
     ? `<div style="margin-top:8px"><img src="${incident.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
@@ -257,14 +397,14 @@ export const generateIncidentPDF = async (incident) => {
     <div class="pdf-header" style="background:#991b1b">
       <div class="pdf-header-type">Incident Report</div>
       <div class="pdf-header-title">${incident.type_name || 'Incident'}</div>
-      <div class="pdf-header-sub">${dateStr}${incident.time ? ' · ' + incident.time : ''}${sev ? ' · ' + sev.toUpperCase() : ''}</div>
+      <div class="pdf-header-sub">${dateStr}${incident.time ? ' · ' + incident.time : ''}${sevLabel ? ' · ' + sevLabel : ''}</div>
     </div>
     <div class="pdf-body">
       ${section('Classification', `
         <div class="pdf-fields">
           ${field('Type', incident.type_name)}
           ${field('Subtype', incident.incident_subtype ? incident.incident_subtype.replace(/_/g,' ') : '')}
-          <div class="pdf-field"><div class="pdf-field-label">Severity</div><div class="pdf-field-value">${sev ? '<span class="sev-pill ' + sevClass + '">' + sev + '</span>' : '—'}</div></div>
+          <div class="pdf-field"><div class="pdf-field-label">Severity</div><div class="pdf-field-value">${sev ? '<span class="sev-pill ' + sevClass + '">' + sevLabel + '</span>' : '—'}</div></div>
           <div class="pdf-field"><div class="pdf-field-label">OSHA</div><div class="pdf-field-value">${incident.osha_recordable ? '<span class="osha-pill">OSHA Recordable</span>' : '—'}</div></div>
         </div>
       `)}

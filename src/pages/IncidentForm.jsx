@@ -102,7 +102,13 @@ export default function IncidentForm() {
   const [projects, setProjects] = useState([])
   const [incidentTypes, setIncidentTypes] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
+  const [leaders, setLeaders] = useState([])
   const [predefinedActions, setPredefinedActions] = useState([])
+  const [reporterDefaultSignature, setReporterDefaultSignature] = useState(null)
+  const [chosenDefaultSigUrl, setChosenDefaultSigUrl] = useState(null)
+  const [manualSigDataUrl, setManualSigDataUrl] = useState(null)
+  const [existingSignatureUrl, setExistingSignatureUrl] = useState(null)
+  const [removeExistingSig, setRemoveExistingSig] = useState(false)
 
   const [formData, setFormData] = useState({
     project_id: '',
@@ -161,6 +167,7 @@ export default function IncidentForm() {
       fetchProjects()
       fetchIncidentTypes()
       fetchInvolvedPersons()
+      fetchLeaders()
       fetchPredefinedActions()
       if (id) fetchIncident()
       else autoGps()
@@ -190,8 +197,26 @@ export default function IncidentForm() {
   }
 
   const fetchInvolvedPersons = async () => {
-    const { data } = await supabase.from('involved_persons').select('id, name').order('name')
+    const { data } = await supabase.from('involved_persons').select('id, name, default_signature_url').order('name')
     if (data) setInvolvedPersons(data)
+  }
+
+  const fetchLeaders = async () => {
+    const { data } = await supabase.from('leaders').select('id, name, default_signature_url').order('name')
+    if (data) setLeaders(data)
+  }
+
+  const handleReporterSelect = (name) => {
+    setFormData(prev => ({ ...prev, reporter_name: name }))
+    if (!name) { setReporterDefaultSignature(null); return }
+    const allPeople = [
+      ...leaders.map(l => ({ name: l.name, default_signature_url: l.default_signature_url })),
+      ...involvedPersons.map(p => ({ name: p.name, default_signature_url: p.default_signature_url }))
+    ]
+    const found = allPeople.find(p => p.name === name)
+    setReporterDefaultSignature(found?.default_signature_url || null)
+    setChosenDefaultSigUrl(null)
+    setManualSigDataUrl(null)
   }
 
   const fetchPredefinedActions = async () => {
@@ -234,6 +259,10 @@ export default function IncidentForm() {
       })
       setReportMode(data.report_mode || 'full')
       if (data.photo_url) setExistingPhotoUrl(data.photo_url)
+      if (data.signature_url) {
+        setExistingSignatureUrl(data.signature_url)
+        setShowSignaturePanel(true)
+      }
       const { data: acts } = await supabase.from('corrective_actions').select('*').eq('incident_id', id)
       if (acts) setCorrectiveActions(acts)
       const { data: wits } = await supabase.from('incident_witnesses').select('*').eq('incident_id', id)
@@ -241,6 +270,18 @@ export default function IncidentForm() {
     }
     setLoading(false)
   }
+
+  // When editing, sync reporter's default signature once people lists are loaded
+  useEffect(() => {
+    if (formData.reporter_name && (leaders.length > 0 || involvedPersons.length > 0)) {
+      const allPeople = [
+        ...leaders.map(l => ({ name: l.name, default_signature_url: l.default_signature_url })),
+        ...involvedPersons.map(p => ({ name: p.name, default_signature_url: p.default_signature_url }))
+      ]
+      const found = allPeople.find(p => p.name === formData.reporter_name)
+      if (found?.default_signature_url) setReporterDefaultSignature(found.default_signature_url)
+    }
+  }, [leaders, involvedPersons])
 
   const handleTypeSelect = (typeName) => {
     const dbType = incidentTypes.find(t => t.name === typeName)
@@ -323,9 +364,13 @@ export default function IncidentForm() {
         photoUrl = ud.publicUrl
       }
     }
-    let signatureUrl = null
-    if (signatureRef.current && !signatureRef.current.isEmpty()) {
-      const blob = await fetch(signatureRef.current.toDataURL()).then(r => r.blob())
+    let signatureUrl = id ? undefined : null
+    if (removeExistingSig) {
+      signatureUrl = null
+    } else if (chosenDefaultSigUrl) {
+      signatureUrl = chosenDefaultSigUrl
+    } else if (manualSigDataUrl) {
+      const blob = await fetch(manualSigDataUrl).then(r => r.blob())
       const sigName = `signature-${Date.now()}.png`
       const { error: sigErr } = await supabase.storage.from('safety-photos').upload(sigName, blob)
       if (!sigErr) {
@@ -362,7 +407,7 @@ export default function IncidentForm() {
       root_cause: formData.root_cause || null,
       report_mode: reportMode,
       photo_url: photoUrl,
-      signature_url: signatureUrl,
+      ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
       created_by: user.id,
     }
     let incidentId = id
@@ -621,7 +666,23 @@ export default function IncidentForm() {
             </div>
             <div className="form-group">
               <label className="form-label">Reporter *</label>
-              <input type="text" className="form-input" value={formData.reporter_name} onChange={e => setFormData(prev => ({ ...prev, reporter_name: e.target.value }))} required placeholder="Name of person filing report" />
+              <select className="form-select" value={formData.reporter_name}
+                onChange={e => handleReporterSelect(e.target.value)}>
+                <option value="">Select reporter</option>
+                {leaders.length > 0 && (
+                  <optgroup label="Leaders">
+                    {leaders.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
+                  </optgroup>
+                )}
+                {involvedPersons.length > 0 && (
+                  <optgroup label="Involved Persons">
+                    {involvedPersons.map(p => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </optgroup>
+                )}
+              </select>
+              <input type="text" className="form-input" style={{ marginTop: 8 }} value={formData.reporter_name}
+                onChange={e => handleReporterSelect(e.target.value)}
+                required placeholder="Or type name manually" />
               {reportMode === 'full' && (
                 <input type="tel" className="form-input" style={{ marginTop: 8 }} value={formData.phone} onChange={e => setFormData(prev => ({ ...prev, phone: e.target.value }))} placeholder="Phone (optional)" />
               )}
@@ -775,14 +836,62 @@ export default function IncidentForm() {
             </label>
           </div>
           <div className="if-sig-toggle">
-            <button type="button" className="if-link-btn" onClick={() => setShowSignaturePanel(v => !v)}>
-              {showSignaturePanel ? '&#9660; Hide signature' : '&#9658; Add digital signature (optional)'}
-            </button>
+            <label className="if-verify-item">
+              <input type="checkbox" checked={showSignaturePanel} onChange={e => {
+                setShowSignaturePanel(e.target.checked)
+                if (!e.target.checked) {
+                  signatureRef.current?.clear()
+                  setChosenDefaultSigUrl(null)
+                  setManualSigDataUrl(null)
+                  setRemoveExistingSig(false)
+                }
+              }} />
+              Add digital signature (optional)
+            </label>
           </div>
           {showSignaturePanel && (
             <div className="if-sig-panel">
-              <SignatureCanvas ref={signatureRef} canvasProps={{ className: 'signature-canvas' }} />
-              <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }} onClick={() => signatureRef.current?.clear()}>Clear Signature</button>
+              {id && existingSignatureUrl && !removeExistingSig && !chosenDefaultSigUrl && !manualSigDataUrl && (
+                <div style={{ marginBottom: 12 }}>
+                  <p style={{ fontSize: '13px', color: '#666', margin: '0 0 6px 0' }}>Current signature:</p>
+                  <img src={existingSignatureUrl} alt="Current signature"
+                    style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff', display: 'block' }} />
+                  <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }}
+                    onClick={() => setRemoveExistingSig(true)}>Remove signature</button>
+                </div>
+              )}
+              {id && removeExistingSig && (
+                <p style={{ fontSize: '13px', color: '#dc2626', margin: '0 0 10px 0' }}>
+                  Signature will be removed.{' '}
+                  <button type="button" className="if-link-btn" onClick={() => setRemoveExistingSig(false)}>Undo</button>
+                </p>
+              )}
+              {reporterDefaultSignature && (
+                <label className="if-verify-item" style={{ marginBottom: 10 }}>
+                  <input type="checkbox"
+                    checked={!!chosenDefaultSigUrl}
+                    onChange={e => {
+                      if (e.target.checked) {
+                        setChosenDefaultSigUrl(reporterDefaultSignature)
+                        signatureRef.current?.clear()
+                        setManualSigDataUrl(null)
+                      } else {
+                        setChosenDefaultSigUrl(null)
+                      }
+                    }} />
+                  Use my default signature
+                </label>
+              )}
+              {chosenDefaultSigUrl
+                ? <img src={chosenDefaultSigUrl} alt="Default signature"
+                    style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff', display: 'block', marginBottom: 8 }} />
+                : <>
+                    <SignatureCanvas ref={signatureRef} canvasProps={{ className: 'signature-canvas' }}
+                      onEnd={() => setManualSigDataUrl(signatureRef.current?.toDataURL() || null)} />
+                    <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }}
+                      onClick={() => { signatureRef.current?.clear(); setManualSigDataUrl(null) }}>Clear Signature</button>
+                  </>
+              }
             </div>
           )}
           {reportMode === 'full' && (

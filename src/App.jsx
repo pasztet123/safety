@@ -8,6 +8,7 @@ import Meetings from './pages/Meetings'
 import MeetingForm from './pages/MeetingForm'
 import MeetingDetails from './pages/MeetingDetails'
 import Incidents from './pages/Incidents'
+import IncidentDetails from './pages/IncidentDetails'
 import IncidentForm from './pages/IncidentForm'
 import Checklists from './pages/Checklists'
 import ChecklistForm from './pages/ChecklistForm'
@@ -61,7 +62,8 @@ function App() {
           <Route path="/corrective-actions" element={<CorrectiveActions />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<IncidentForm />} />
-          <Route path="/incidents/:id" element={<IncidentForm />} />
+          <Route path="/incidents/:id" element={<IncidentDetails />} />
+          <Route path="/incidents/:id/edit" element={<IncidentForm />} />
           <Route path="/checklists" element={<Checklists />} />
           <Route path="/checklists/new" element={<ChecklistForm />} />
           <Route path="/checklists/:id" element={<ChecklistForm />} />
