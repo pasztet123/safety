@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import SignatureCanvas from 'react-signature-canvas'
+import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import './IncidentForm.css'
 
@@ -886,7 +886,7 @@ export default function IncidentForm() {
                 ? <img src={chosenDefaultSigUrl} alt="Default signature"
                     style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff', display: 'block', marginBottom: 8 }} />
                 : <>
-                    <SignatureCanvas ref={signatureRef} canvasProps={{ className: 'signature-canvas' }}
+                    <SignaturePad ref={signatureRef} className="signature-canvas" height={160}
                       onEnd={() => setManualSigDataUrl(signatureRef.current?.toDataURL() || null)} />
                     <button type="button" className="btn btn-secondary" style={{ marginTop: 8 }}
                       onClick={() => { signatureRef.current?.clear(); setManualSigDataUrl(null) }}>Clear Signature</button>

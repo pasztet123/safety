@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import SignatureCanvas from 'react-signature-canvas'
+import { SAFETY_CATEGORIES } from '../lib/categories'
+import SignaturePad from '../components/SignaturePad'
 import './AdminPanel.css'
 
 export default function AdminPanel() {
@@ -18,6 +19,25 @@ export default function AdminPanel() {
   const [tcSuggestions, setTcSuggestions] = useState([])
   const [tcTopicSearch, setTcTopicSearch] = useState('')
   const [tcChecklistSearch, setTcChecklistSearch] = useState('')
+  const [tcEditingTradesId, setTcEditingTradesId] = useState('')
+  const [tcTradeInput, setTcTradeInput] = useState('')
+  const [tcPendingTrades, setTcPendingTrades] = useState([])
+
+  // ── Settings: Featured Categories ──
+  const [settingsAllCategories, setSettingsAllCategories] = useState([]) // all unique cats from safety_topics
+  const [settingsFeatured, setSettingsFeatured] = useState([]) // [{id, category, display_order}] from DB
+  const [settingsSaving, setSettingsSaving] = useState(false)
+
+  // ── Settings: Featured Topics ──
+  const [settingsAllTopics, setSettingsAllTopics] = useState([]) // all topics from safety_topics
+  const [settingsFeaturedTopics, setSettingsFeaturedTopics] = useState([]) // [{topic_id, topic:{id,name,category}, display_order}]
+  const [settingsTopicSearch, setSettingsTopicSearch] = useState('')
+  const [settingsTopicsSaving, setSettingsTopicsSaving] = useState(false)
+
+  // ── Settings: Featured Trades ──
+  const [settingsAllTrades, setSettingsAllTrades] = useState([]) // all trade names from trades table
+  const [settingsFeaturedTrades, setSettingsFeaturedTrades] = useState([]) // [{id, trade, display_order}]
+  const [settingsTradesSaving, setSettingsTradesSaving] = useState(false)
   const [meetings, setMeetings] = useState([])
   const [incidents, setIncidents] = useState([])
   const [users, setUsers] = useState([])
@@ -106,6 +126,8 @@ export default function AdminPanel() {
       if (data) setCompanies(data)
     } else if (activeTab === 'topic-checklists') {
       await fetchTcData()
+    } else if (activeTab === 'settings') {
+      await fetchSettingsData()
     }
     
     setLoading(false)
@@ -113,11 +135,165 @@ export default function AdminPanel() {
 
   const fetchTcData = async () => {
     const [{ data: topics }, { data: cls }] = await Promise.all([
-      supabase.from('safety_topics').select('id, name, category').order('category').order('name'),
+      supabase.from('safety_topics').select('id, name, category, trades').order('category').order('name'),
       supabase.from('checklists').select('id, name, category').order('name')
     ])
     if (topics) setTcTopics(topics)
     if (cls) setTcChecklists(cls)
+  }
+
+  const fetchSettingsData = async () => {
+    const [{ data: featCatData }, { data: featTopicsData }, { data: allTopicsData }, { data: featTradesData }, { data: allTradesData }] = await Promise.all([
+      supabase.from('featured_categories').select('*').order('display_order'),
+      supabase.from('featured_topics').select('topic_id, display_order, topic:safety_topics(id, name, category)').order('display_order'),
+      supabase.from('safety_topics').select('id, name, category').order('category').order('name'),
+      supabase.from('featured_trades').select('*').order('display_order'),
+      supabase.from('trades').select('name').order('name')
+    ])
+    setSettingsAllCategories(SAFETY_CATEGORIES)
+    if (featCatData) setSettingsFeatured(featCatData)
+    if (featTopicsData) setSettingsFeaturedTopics(featTopicsData.filter(r => r.topic))
+    if (allTopicsData) setSettingsAllTopics(allTopicsData)
+    if (featTradesData) setSettingsFeaturedTrades(featTradesData)
+    if (allTradesData) setSettingsAllTrades(allTradesData.map(r => r.name))
+  }
+
+  const settingsToggleFeatured = (cat) => {
+    const existing = settingsFeatured.find(f => f.category === cat)
+    if (existing) {
+      // Remove from featured
+      setSettingsFeatured(prev => prev.filter(f => f.category !== cat)
+        .map((f, i) => ({ ...f, display_order: i })))
+    } else {
+      // Add at end
+      setSettingsFeatured(prev => [...prev, { id: null, category: cat, display_order: prev.length }])
+    }
+  }
+
+  const settingsMoveUp = (idx) => {
+    if (idx === 0) return
+    setSettingsFeatured(prev => {
+      const arr = [...prev]
+      ;[arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsMoveDown = (idx) => {
+    setSettingsFeatured(prev => {
+      if (idx >= prev.length - 1) return prev
+      const arr = [...prev]
+      ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsSave = async () => {
+    setSettingsSaving(true)
+    // Delete all existing, then re-insert in order
+    await supabase.from('featured_categories').delete().gte('display_order', 0)
+    if (settingsFeatured.length > 0) {
+      await supabase.from('featured_categories').insert(
+        settingsFeatured.map((f, i) => ({ category: f.category, display_order: i }))
+      )
+    }
+    setSettingsSaving(false)
+    await fetchSettingsData()
+    alert('Featured categories saved!')
+  }
+
+  const settingsToggleFeaturedTopic = (topic) => {
+    const exists = settingsFeaturedTopics.find(f => f.topic_id === topic.id)
+    if (exists) {
+      setSettingsFeaturedTopics(prev => prev.filter(f => f.topic_id !== topic.id).map((f, i) => ({ ...f, display_order: i })))
+    } else {
+      setSettingsFeaturedTopics(prev => [...prev, { topic_id: topic.id, topic: { id: topic.id, name: topic.name, category: topic.category }, display_order: prev.length }])
+    }
+  }
+
+  const settingsTopicMoveUp = (idx) => {
+    if (idx === 0) return
+    setSettingsFeaturedTopics(prev => {
+      const arr = [...prev]
+      ;[arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsTopicMoveDown = (idx) => {
+    setSettingsFeaturedTopics(prev => {
+      if (idx >= prev.length - 1) return prev
+      const arr = [...prev]
+      ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsSaveTopics = async () => {
+    setSettingsTopicsSaving(true)
+    await supabase.from('featured_topics').delete().gte('display_order', 0)
+    if (settingsFeaturedTopics.length > 0) {
+      await supabase.from('featured_topics').insert(
+        settingsFeaturedTopics.map((f, i) => ({ topic_id: f.topic_id, display_order: i }))
+      )
+    }
+    setSettingsTopicsSaving(false)
+    await fetchSettingsData()
+    alert('Featured topics saved!')
+  }
+
+  const settingsToggleFeaturedTrade = (trade) => {
+    const exists = settingsFeaturedTrades.find(f => f.trade === trade)
+    if (exists) {
+      setSettingsFeaturedTrades(prev => prev.filter(f => f.trade !== trade).map((f, i) => ({ ...f, display_order: i })))
+    } else {
+      setSettingsFeaturedTrades(prev => [...prev, { id: null, trade, display_order: prev.length }])
+    }
+  }
+
+  const settingsTradeMoveUp = (idx) => {
+    if (idx === 0) return
+    setSettingsFeaturedTrades(prev => {
+      const arr = [...prev]
+      ;[arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsTradeMoveDown = (idx) => {
+    setSettingsFeaturedTrades(prev => {
+      if (idx >= prev.length - 1) return prev
+      const arr = [...prev]
+      ;[arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]]
+      return arr.map((f, i) => ({ ...f, display_order: i }))
+    })
+  }
+
+  const settingsSaveTrades = async () => {
+    setSettingsTradesSaving(true)
+    await supabase.from('featured_trades').delete().gte('display_order', 0)
+    if (settingsFeaturedTrades.length > 0) {
+      await supabase.from('featured_trades').insert(
+        settingsFeaturedTrades.map((f, i) => ({ trade: f.trade, display_order: i }))
+      )
+    }
+    setSettingsTradesSaving(false)
+    await fetchSettingsData()
+    alert('Featured trades saved!')
+  }
+
+  const saveTcTopicTrades = async (topicId, trades) => {
+    const { error } = await supabase
+      .from('safety_topics')
+      .update({ trades })
+      .eq('id', topicId)
+    if (!error) {
+      setTcTopics(prev => prev.map(t => t.id === topicId ? { ...t, trades } : t))
+      setTcEditingTradesId('')
+      setTcTradeInput('')
+    } else {
+      alert('Error saving trades: ' + error.message)
+    }
   }
 
   const fetchTcSuggestions = async (topicId) => {
@@ -654,6 +830,12 @@ export default function AdminPanel() {
         >
           Topic Checklists
         </button>
+        <button
+          className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
+          onClick={() => setActiveTab('settings')}
+        >
+          Settings
+        </button>
       </div>
 
       {loading ? (
@@ -864,17 +1046,10 @@ export default function AdminPanel() {
                         borderRadius: '8px',
                         marginTop: '8px'
                       }}>
-                        <SignatureCanvas
+                        <SignaturePad
                           ref={newUserSignatureRef}
-                          canvasProps={{
-                            width: 800,
-                            height: 200,
-                            style: { 
-                              width: '100%', 
-                              height: '150px',
-                              borderRadius: '8px'
-                            }
-                          }}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
                         />
                       </div>
                       <button
@@ -1007,17 +1182,10 @@ export default function AdminPanel() {
                         borderRadius: '8px',
                         marginTop: '8px'
                       }}>
-                        <SignatureCanvas
+                        <SignaturePad
                           ref={newLeaderSignatureRef}
-                          canvasProps={{
-                            width: 800,
-                            height: 200,
-                            style: { 
-                              width: '100%', 
-                              height: '150px',
-                              borderRadius: '8px'
-                            }
-                          }}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
                         />
                       </div>
                       <button
@@ -1104,17 +1272,10 @@ export default function AdminPanel() {
                         borderRadius: '8px',
                         marginTop: '8px'
                       }}>
-                        <SignatureCanvas
+                        <SignaturePad
                           ref={editLeaderSignatureRef}
-                          canvasProps={{
-                            width: 800,
-                            height: 200,
-                            style: { 
-                              width: '100%', 
-                              height: '150px',
-                              borderRadius: '8px'
-                            }
-                          }}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
                         />
                       </div>
                       <button
@@ -1272,17 +1433,10 @@ export default function AdminPanel() {
                         borderRadius: '8px',
                         marginTop: '8px'
                       }}>
-                        <SignatureCanvas
+                        <SignaturePad
                           ref={newInvolvedPersonSignatureRef}
-                          canvasProps={{
-                            width: 800,
-                            height: 200,
-                            style: { 
-                              width: '100%', 
-                              height: '150px',
-                              borderRadius: '8px'
-                            }
-                          }}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
                         />
                       </div>
                       <button
@@ -1383,17 +1537,10 @@ export default function AdminPanel() {
                         borderRadius: '8px',
                         marginTop: '8px'
                       }}>
-                        <SignatureCanvas
+                        <SignaturePad
                           ref={editInvolvedPersonSignatureRef}
-                          canvasProps={{
-                            width: 800,
-                            height: 200,
-                            style: { 
-                              width: '100%', 
-                              height: '150px',
-                              borderRadius: '8px'
-                            }
-                          }}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
                         />
                       </div>
                       <button
@@ -1618,15 +1765,86 @@ export default function AdminPanel() {
                     {tcTopics
                       .filter(t => !tcTopicSearch || t.name.toLowerCase().includes(tcTopicSearch.toLowerCase()))
                       .map(topic => (
-                        <button
-                          key={topic.id}
-                          type="button"
-                          className={`tc-topic-item ${tcSelectedTopicId === topic.id ? 'is-selected' : ''}`}
-                          onClick={() => { setTcSelectedTopicId(topic.id); fetchTcSuggestions(topic.id) }}
-                        >
-                          <span className="tc-topic-name">{topic.name}</span>
-                          {topic.category && <span className="tc-topic-cat">{topic.category}</span>}
-                        </button>
+                        <div key={topic.id} className="tc-topic-item-wrap">
+                          <button
+                            type="button"
+                            className={`tc-topic-item ${tcSelectedTopicId === topic.id ? 'is-selected' : ''}`}
+                            onClick={() => { setTcSelectedTopicId(topic.id); fetchTcSuggestions(topic.id) }}
+                          >
+                            <span className="tc-topic-name">{topic.name}</span>
+                            {topic.category && <span className="tc-topic-cat">{topic.category}</span>}
+                            {topic.trades && topic.trades.length > 0 && (
+                              <div className="tc-topic-trades">
+                                {topic.trades.map(t => <span key={t} className="tc-trade-badge">{t}</span>)}
+                              </div>
+                            )}
+                          </button>
+                          <button
+                            type="button"
+                            className="tc-trades-edit-btn"
+                            title="Edit trades"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (tcEditingTradesId === topic.id) {
+                                setTcEditingTradesId('')
+                                setTcTradeInput('')
+                              } else {
+                                setTcEditingTradesId(topic.id)
+                                setTcPendingTrades(topic.trades || [])
+                                setTcTradeInput('')
+                              }
+                            }}
+                          >✎</button>
+                          {tcEditingTradesId === topic.id && (
+                            <div className="tc-trades-editor">
+                              <div className="tc-trades-pills">
+                                {tcPendingTrades.map(t => (
+                                  <span key={t} className="tc-trade-pill">
+                                    {t}
+                                    <button
+                                      type="button"
+                                      onClick={() => setTcPendingTrades(prev => prev.filter(x => x !== t))}
+                                    >×</button>
+                                  </span>
+                                ))}
+                                <input
+                                  type="text"
+                                  className="tc-trade-input"
+                                  placeholder="Add trade…"
+                                  value={tcTradeInput}
+                                  onChange={(e) => setTcTradeInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if ((e.key === 'Enter' || e.key === ',') && tcTradeInput.trim()) {
+                                      e.preventDefault()
+                                      const val = tcTradeInput.trim().replace(/,$/, '')
+                                      if (val && !tcPendingTrades.includes(val)) {
+                                        setTcPendingTrades(prev => [...prev, val])
+                                      }
+                                      setTcTradeInput('')
+                                    }
+                                  }}
+                                />
+                              </div>
+                              <div className="tc-trades-actions">
+                                <button
+                                  type="button"
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => {
+                                    const finalTrades = tcTradeInput.trim()
+                                      ? [...tcPendingTrades, tcTradeInput.trim()]
+                                      : tcPendingTrades
+                                    saveTcTopicTrades(topic.id, finalTrades)
+                                  }}
+                                >Save</button>
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => { setTcEditingTradesId(''); setTcTradeInput('') }}
+                                >Cancel</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ))}
                   </div>
                 </div>
@@ -1671,6 +1889,280 @@ export default function AdminPanel() {
                 </div>
               </div>
             </div>
+          )}
+
+          {/* ── Settings tab ── */}
+          {activeTab === 'settings' && (
+            <div>
+              <h3 className="section-title">Topic Category Settings</h3>
+              <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
+                Choose which categories appear at the top of the Topic Picker in the meeting form.
+                Drag or use arrows to reorder. Categories not listed here appear below the divider, alphabetically.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+
+                {/* Featured list */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '12px' }}>
+                    Featured (shown first)
+                  </div>
+                  {settingsFeatured.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', border: '1.5px dashed #e2e8f0', borderRadius: '10px', fontSize: '14px' }}>
+                      No featured categories yet — click a category on the right to add it
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {settingsFeatured.map((f, idx) => (
+                        <li key={f.category} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: '#eff6ff', borderRadius: '8px', border: '1.5px solid #bfdbfe' }}>
+                          <span style={{ width: '22px', height: '22px', background: '#3b82f6', borderRadius: '50%', color: 'white', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                          <span style={{ flex: 1, fontSize: '14px', fontWeight: 500, color: '#1e40af' }}>{f.category}</span>
+                          <button type="button" onClick={() => settingsMoveUp(idx)} disabled={idx === 0}
+                            style={{ background: 'none', border: '1px solid #93c5fd', borderRadius: '5px', cursor: idx === 0 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === 0 ? 0.4 : 1 }}>↑</button>
+                          <button type="button" onClick={() => settingsMoveDown(idx)} disabled={idx === settingsFeatured.length - 1}
+                            style={{ background: 'none', border: '1px solid #93c5fd', borderRadius: '5px', cursor: idx === settingsFeatured.length - 1 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === settingsFeatured.length - 1 ? 0.4 : 1 }}>↓</button>
+                          <button type="button" onClick={() => settingsToggleFeatured(f.category)}
+                            style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: '5px', cursor: 'pointer', padding: '3px 8px', fontSize: '12px', color: '#dc2626' }}>✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={settingsSave}
+                    disabled={settingsSaving}
+                    style={{ marginTop: '20px' }}
+                  >
+                    {settingsSaving ? 'Saving…' : 'Save Featured Categories'}
+                  </button>
+                </div>
+
+                {/* All categories list */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '12px' }}>
+                    All Categories — click to feature
+                  </div>
+                  <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+                    {settingsAllCategories.map(cat => {
+                      const isFeatured = settingsFeatured.some(f => f.category === cat)
+                      return (
+                        <li key={cat}>
+                          <button
+                            type="button"
+                            onClick={() => settingsToggleFeatured(cat)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                              padding: '9px 14px', borderRadius: '8px', border: '1.5px solid',
+                              borderColor: isFeatured ? '#bfdbfe' : '#e2e8f0',
+                              background: isFeatured ? '#eff6ff' : 'white',
+                              cursor: 'pointer', fontFamily: 'inherit', fontSize: '14px',
+                              color: isFeatured ? '#1d4ed8' : '#374151', textAlign: 'left',
+                              transition: 'background 0.1s, border-color 0.1s',
+                              fontWeight: isFeatured ? 600 : 400
+                            }}
+                          >
+                            <span style={{ fontSize: '14px' }}>{isFeatured ? '★' : '☆'}</span>
+                            <span style={{ flex: 1 }}>{cat}</span>
+                            {isFeatured && (
+                              <span style={{ fontSize: '11px', color: '#3b82f6', fontWeight: 700 }}>
+                                #{settingsFeatured.findIndex(f => f.category === cat) + 1}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </div>
+
+              </div>
+
+            {/* ── Featured Topics ── */}
+            <div style={{ marginTop: '40px' }}>
+              <h3 className="section-title">Featured Topics (Quick Picks)</h3>
+              <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
+                Pin specific topics that appear as large chip buttons at the very top of the Topic Picker — before the category accordion.
+                Use this for the most common daily topics your crew actually uses.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+
+                {/* Featured topics list */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '12px' }}>
+                    Quick Picks (shown first)
+                  </div>
+                  {settingsFeaturedTopics.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', border: '1.5px dashed #e2e8f0', borderRadius: '10px', fontSize: '14px' }}>
+                      No featured topics yet — click a topic on the right to feature it
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {settingsFeaturedTopics.map((f, idx) => (
+                        <li key={f.topic_id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: '#fefce8', borderRadius: '8px', border: '1.5px solid #fde68a' }}>
+                          <span style={{ width: '22px', height: '22px', background: '#f59e0b', borderRadius: '50%', color: 'white', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: '14px', fontWeight: 600, color: '#92400e', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.topic?.name}</div>
+                            {f.topic?.category && <div style={{ fontSize: '11px', color: '#a16207' }}>{f.topic.category}</div>}
+                          </div>
+                          <button type="button" onClick={() => settingsTopicMoveUp(idx)} disabled={idx === 0}
+                            style={{ background: 'none', border: '1px solid #fcd34d', borderRadius: '5px', cursor: idx === 0 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === 0 ? 0.4 : 1 }}>↑</button>
+                          <button type="button" onClick={() => settingsTopicMoveDown(idx)} disabled={idx === settingsFeaturedTopics.length - 1}
+                            style={{ background: 'none', border: '1px solid #fcd34d', borderRadius: '5px', cursor: idx === settingsFeaturedTopics.length - 1 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === settingsFeaturedTopics.length - 1 ? 0.4 : 1 }}>↓</button>
+                          <button type="button" onClick={() => settingsToggleFeaturedTopic(f.topic)}
+                            style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: '5px', cursor: 'pointer', padding: '3px 8px', fontSize: '12px', color: '#dc2626' }}>✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={settingsSaveTopics}
+                    disabled={settingsTopicsSaving}
+                    style={{ marginTop: '20px' }}
+                  >
+                    {settingsTopicsSaving ? 'Saving…' : 'Save Quick Picks'}
+                  </button>
+                </div>
+
+                {/* All topics list with search */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '10px' }}>
+                    All Topics — click to feature
+                  </div>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="Search topics…"
+                    value={settingsTopicSearch}
+                    onChange={(e) => setSettingsTopicSearch(e.target.value)}
+                    style={{ marginBottom: '10px' }}
+                  />
+                  <div style={{ maxHeight: '420px', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                    {settingsAllTopics
+                      .filter(t => !settingsTopicSearch || t.name.toLowerCase().includes(settingsTopicSearch.toLowerCase()) || (t.category && t.category.toLowerCase().includes(settingsTopicSearch.toLowerCase())))
+                      .map(topic => {
+                        const isFeatured = settingsFeaturedTopics.some(f => f.topic_id === topic.id)
+                        return (
+                          <button
+                            key={topic.id}
+                            type="button"
+                            onClick={() => settingsToggleFeaturedTopic(topic)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                              padding: '9px 14px', border: 'none', borderBottom: '1px solid #f1f5f9',
+                              background: isFeatured ? '#fefce8' : 'white',
+                              cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                              transition: 'background 0.1s',
+                            }}
+                          >
+                            <span style={{ fontSize: '14px', flexShrink: 0 }}>{isFeatured ? '✦' : '○'}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: '13px', fontWeight: isFeatured ? 600 : 400, color: isFeatured ? '#92400e' : '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{topic.name}</div>
+                              {topic.category && <div style={{ fontSize: '11px', color: '#9ca3af' }}>{topic.category}</div>}
+                            </div>
+                            {isFeatured && (
+                              <span style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 700, flexShrink: 0 }}>
+                                #{settingsFeaturedTopics.findIndex(f => f.topic_id === topic.id) + 1}
+                              </span>
+                            )}
+                          </button>
+                        )
+                      })}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* ── Featured Trades ── */}
+            <div style={{ marginTop: '40px' }}>
+              <h3 className="section-title">Featured Trades</h3>
+              <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
+                Choose which trades appear as quick-pick chips above the Trade dropdown in the meeting form.
+                Use this for the most common trades your crew works with daily.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+
+                {/* Featured trades list */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '12px' }}>
+                    Featured (shown as chips)
+                  </div>
+                  {settingsFeaturedTrades.length === 0 ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af', border: '1.5px dashed #e2e8f0', borderRadius: '10px', fontSize: '14px' }}>
+                      No featured trades yet — click a trade on the right to feature it
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {settingsFeaturedTrades.map((f, idx) => (
+                        <li key={f.trade} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 14px', background: '#f0fdf4', borderRadius: '8px', border: '1.5px solid #bbf7d0' }}>
+                          <span style={{ width: '22px', height: '22px', background: '#16a34a', borderRadius: '50%', color: 'white', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+                          <span style={{ flex: 1, fontSize: '14px', fontWeight: 600, color: '#14532d' }}>{f.trade}</span>
+                          <button type="button" onClick={() => settingsTradeMoveUp(idx)} disabled={idx === 0}
+                            style={{ background: 'none', border: '1px solid #86efac', borderRadius: '5px', cursor: idx === 0 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === 0 ? 0.4 : 1 }}>↑</button>
+                          <button type="button" onClick={() => settingsTradeMoveDown(idx)} disabled={idx === settingsFeaturedTrades.length - 1}
+                            style={{ background: 'none', border: '1px solid #86efac', borderRadius: '5px', cursor: idx === settingsFeaturedTrades.length - 1 ? 'not-allowed' : 'pointer', padding: '3px 7px', fontSize: '12px', opacity: idx === settingsFeaturedTrades.length - 1 ? 0.4 : 1 }}>↓</button>
+                          <button type="button" onClick={() => settingsToggleFeaturedTrade(f.trade)}
+                            style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: '5px', cursor: 'pointer', padding: '3px 8px', fontSize: '12px', color: '#dc2626' }}>✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={settingsSaveTrades}
+                    disabled={settingsTradesSaving}
+                    style={{ marginTop: '20px' }}
+                  >
+                    {settingsTradesSaving ? 'Saving…' : 'Save Featured Trades'}
+                  </button>
+                </div>
+
+                {/* All trades list */}
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px', color: '#374151', marginBottom: '10px' }}>
+                    All Trades — click to feature
+                  </div>
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                    {settingsAllTrades.map(trade => {
+                      const isFeatured = settingsFeaturedTrades.some(f => f.trade === trade)
+                      return (
+                        <button
+                          key={trade}
+                          type="button"
+                          onClick={() => settingsToggleFeaturedTrade(trade)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+                            padding: '10px 14px', border: 'none', borderBottom: '1px solid #f1f5f9',
+                            background: isFeatured ? '#f0fdf4' : 'white',
+                            cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                            transition: 'background 0.1s',
+                          }}
+                        >
+                          <span style={{ fontSize: '15px', flexShrink: 0 }}>{isFeatured ? '✦' : '○'}</span>
+                          <span style={{ flex: 1, fontSize: '13px', fontWeight: isFeatured ? 600 : 400, color: isFeatured ? '#14532d' : '#374151' }}>{trade}</span>
+                          {isFeatured && (
+                            <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 700, flexShrink: 0 }}>
+                              #{settingsFeaturedTrades.findIndex(f => f.trade === trade) + 1}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
           )}
         </div>
       )}

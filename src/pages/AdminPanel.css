@@ -315,6 +315,103 @@ tbody tr:last-child td {
 .tc-topic-name { font-size: 14px; font-weight: 500; color: var(--color-primary); }
 .tc-topic-cat  { font-size: 11px; color: var(--color-text-secondary); }
 
+/* Topic item wrapper (topic button + trades edit btn) */
+.tc-topic-item-wrap {
+  position: relative;
+  border-bottom: 1px solid var(--color-border);
+}
+.tc-topic-item-wrap:last-child { border-bottom: none; }
+.tc-topic-item-wrap .tc-topic-item { border-bottom: none; }
+
+.tc-trades-edit-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 2px 5px;
+}
+.tc-topic-item-wrap:hover .tc-trades-edit-btn { opacity: 1; }
+
+.tc-topic-trades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.tc-trade-badge {
+  font-size: 11px;
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+/* Inline trades editor */
+.tc-trades-editor {
+  padding: 8px 12px 10px;
+  background: #f0f7ff;
+  border-top: 1px solid #dbeafe;
+}
+
+.tc-trades-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 6px;
+  background: #fff;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.tc-trade-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 7px;
+  background: #dbeafe;
+  color: #1e40af;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.tc-trade-pill button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: #1e40af;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0.7;
+}
+.tc-trade-pill button:hover { opacity: 1; }
+
+.tc-trade-input {
+  flex: 1;
+  min-width: 80px;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  background: transparent;
+  padding: 0;
+}
+
+.tc-trades-actions {
+  display: flex;
+  gap: 6px;
+}
+
 .tc-checklist-row {
   display: flex;
   align-items: flex-start;

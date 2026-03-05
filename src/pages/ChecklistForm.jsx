@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { fetchTrades, ensureTrade } from '../lib/trades'
+import { SAFETY_CATEGORIES } from '../lib/categories'
 import './ChecklistForm.css'
 
 export default function ChecklistForm() {
@@ -19,20 +21,23 @@ export default function ChecklistForm() {
   const [newItemIsSection, setNewItemIsSection] = useState(false)
   const [completions, setCompletions] = useState([])
   const [showCompletions, setShowCompletions] = useState(false)
-  const [categories, setCategories] = useState([])
   const [allChecklists, setAllChecklists] = useState([])
   const [selectedTemplateId, setSelectedTemplateId] = useState('')
   const [draggedIndex, setDraggedIndex] = useState(null)
+  const [tradeInput, setTradeInput] = useState('')
+  const [tradeDropdownOpen, setTradeDropdownOpen] = useState(false)
+  const [availableTrades, setAvailableTrades] = useState([])
 
   useEffect(() => {
-    fetchCategories()
+    fetchChecklists()
+    fetchTrades().then(setAvailableTrades)
     if (id) {
       fetchChecklist()
       fetchCompletions()
     }
   }, [id])
 
-  const fetchCategories = async () => {
+  const fetchChecklists = async () => {
     const { data, error } = await supabase
       .from('checklists')
       .select('*')
@@ -40,14 +45,12 @@ export default function ChecklistForm() {
       .order('name')
     
     if (error) {
-      console.error('Error fetching categories:', error)
+      console.error('Error fetching checklists:', error)
       return
     }
     
     if (data) {
       setAllChecklists(data)
-      const uniqueCategories = [...new Set(data.map(c => c.category).filter(Boolean))]
-      setCategories(uniqueCategories.sort())
     }
   }
 
@@ -274,7 +277,7 @@ export default function ChecklistForm() {
                   }}
                 >
                   <option value="">Select Category</option>
-                  {categories.map(cat => (
+                  {SAFETY_CATEGORIES.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
                 </select>
@@ -322,22 +325,72 @@ export default function ChecklistForm() {
 
           <div className="form-group">
             <label className="form-label">Trades / Tags</label>
-            <input
-              type="text"
-              className="form-input"
-              value={formData.trades.join(', ')}
-              onChange={(e) => {
-                const tradesArray = e.target.value
-                  .split(',')
-                  .map(t => t.trim())
-                  .filter(t => t.length > 0)
-                setFormData({ ...formData, trades: tradesArray })
-              }}
-              placeholder="e.g., Roofing, Electrical, HVAC (comma-separated)"
-            />
-            <small style={{ color: '#666', marginTop: '4px', display: 'block' }}>
-              Add multiple trades separated by commas
-            </small>
+            <div className="st-trades-editor">
+              {formData.trades.map(t => (
+                <span key={t} className="st-trade-pill">
+                  {t}
+                  <button
+                    type="button"
+                    className="st-trade-pill-remove"
+                    onClick={() => setFormData({ ...formData, trades: formData.trades.filter(x => x !== t) })}
+                  >×</button>
+                </span>
+              ))}
+              <div className="st-trade-input-wrap">
+                <input
+                  type="text"
+                  className="st-trade-input"
+                  placeholder="Add trade…"
+                  value={tradeInput}
+                  autoComplete="off"
+                  onChange={(e) => { setTradeInput(e.target.value); setTradeDropdownOpen(true) }}
+                  onFocus={() => setTradeDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setTradeDropdownOpen(false), 150)}
+                  onKeyDown={async (e) => {
+                    if ((e.key === 'Enter' || e.key === ',') && tradeInput.trim()) {
+                      e.preventDefault()
+                      const val = tradeInput.trim().replace(/,$/, '')
+                      if (val && !formData.trades.includes(val)) {
+                        setFormData({ ...formData, trades: [...formData.trades, val] })
+                        // Register new trade in canonical table if it doesn't exist yet
+                        if (!availableTrades.includes(val)) {
+                          await ensureTrade(val)
+                          setAvailableTrades(prev => [...prev, val].sort())
+                        }
+                      }
+                      setTradeInput('')
+                      setTradeDropdownOpen(false)
+                    }
+                    if (e.key === 'Escape') setTradeDropdownOpen(false)
+                  }}
+                />
+                {tradeDropdownOpen && (
+                  <div className="st-trade-dropdown">
+                    {availableTrades
+                      .filter(t =>
+                        !formData.trades.includes(t) &&
+                        (!tradeInput.trim() || t.toLowerCase().includes(tradeInput.toLowerCase()))
+                      )
+                      .map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          className="st-trade-option"
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            if (!formData.trades.includes(t)) {
+                              setFormData({ ...formData, trades: [...formData.trades, t] })
+                            }
+                            setTradeInput('')
+                            setTradeDropdownOpen(false)
+                          }}
+                        >{t}</button>
+                      ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <p className="form-hint">Press Enter or comma to add. Matches with topic trades for smart sorting in meetings.</p>
           </div>
 
           {id && (
@@ -349,7 +402,7 @@ export default function ChecklistForm() {
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
               >
                 <option value="">Select Category</option>
-                {categories.map(cat => (
+                {SAFETY_CATEGORIES.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>

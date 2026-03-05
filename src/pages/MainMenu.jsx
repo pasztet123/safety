@@ -307,7 +307,7 @@ export default function MainMenu() {
           </div>
           <div className="spotlight-grid">
             {spotlightTopics.map(topic => (
-              <button key={topic.id} className="spotlight-card" onClick={() => navigate('/safety-topics')}>
+              <button key={topic.id} className="spotlight-card" onClick={() => navigate('/safety-topics', { state: { openTopicId: topic.id } })}>
                 <div className="spotlight-card-image">
                   {topic.image_url
                     ? <img src={topic.image_url} alt={topic.name} />

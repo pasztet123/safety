@@ -121,6 +121,13 @@ export default function MeetingDetails() {
           <p className="detail-value">{meeting.leader_name}</p>
         </div>
 
+        {meeting.trade && (
+          <div className="form-group">
+            <label className="form-label">Trade</label>
+            <p className="detail-value">{meeting.trade}</p>
+          </div>
+        )}
+
         <div className="form-group">
           <label className="form-label">Topic</label>
           <p className="detail-value">{meeting.topic}</p>

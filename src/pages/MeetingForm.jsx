@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import SignatureCanvas from 'react-signature-canvas'
+import { scoreChecklist, tradeBadgeLabel } from '../lib/suggestChecklists'
+import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
+import TopicPicker from '../components/TopicPicker'
+import { fetchTrades } from '../lib/trades'
 import './MeetingForm.css'
 
 export default function MeetingForm() {
@@ -39,6 +42,7 @@ export default function MeetingForm() {
     longitude: null,
     leader_id: '',
     leader_name: '',
+    trade: '',
     topic: '',
     notes: '',
     completed: false,
@@ -68,6 +72,10 @@ export default function MeetingForm() {
   const [removeExistingSig, setRemoveExistingSig] = useState(false)
   const [attendeeSearch, setAttendeeSearch] = useState('')
   const [attendeeDropdownOpen, setAttendeeDropdownOpen] = useState(false)
+  const [allTrades, setAllTrades] = useState([])
+  const [featuredCategories, setFeaturedCategories] = useState([])
+  const [featuredTopics, setFeaturedTopics] = useState([])
+  const [featuredTrades, setFeaturedTrades] = useState([])
 
   useEffect(() => {
     checkAdminAndLoadData()
@@ -104,6 +112,7 @@ export default function MeetingForm() {
           longitude: formData.longitude,
           leader_id: formData.leader_id,
           leader_name: formData.leader_name,
+          trade: formData.trade,
           topic: formData.topic,
           notes: formData.notes
         },
@@ -139,6 +148,10 @@ export default function MeetingForm() {
     fetchLeaders()
     fetchSafetyTopics()
     fetchChecklists()
+    fetchAllTrades()
+    fetchFeaturedCategories()
+    fetchFeaturedTopics()
+    fetchFeaturedTrades()
     
     // Fetch users and involved persons, then build signature map
     Promise.all([fetchUsers(), fetchInvolvedPersons()]).then(([usersData, involvedPersonsData]) => {
@@ -262,6 +275,14 @@ export default function MeetingForm() {
     if (data) setSafetyTopics(data)
   }
 
+  const handleTradeChange = (newTrade) => {
+    setFormData(prev => ({ ...prev, trade: newTrade, topic: '' }))
+    setShowCustomTopic(false)
+    setSelectedTopicDetails(null)
+    setSuggestedChecklists([])
+    setShowTopicContent(false)
+  }
+
   const handleTopicChange = (topicName) => {
     if (topicName === 'custom' || !topicName) {
       setSelectedTopicDetails(null)
@@ -335,6 +356,35 @@ export default function MeetingForm() {
       .select('id, name, category, trades')
       .order('name')
     if (data) setChecklists(data)
+  }
+
+  const fetchAllTrades = async () => {
+    const trades = await fetchTrades()
+    setAllTrades(trades)
+  }
+
+  const fetchFeaturedCategories = async () => {
+    const { data } = await supabase
+      .from('featured_categories')
+      .select('category')
+      .order('display_order')
+    if (data) setFeaturedCategories(data.map(r => r.category))
+  }
+
+  const fetchFeaturedTopics = async () => {
+    const { data } = await supabase
+      .from('featured_topics')
+      .select('topic_id, display_order, topic:safety_topics(id, name, category, risk_level, trades)')
+      .order('display_order')
+    if (data) setFeaturedTopics(data.map(r => r.topic).filter(Boolean))
+  }
+
+  const fetchFeaturedTrades = async () => {
+    const { data } = await supabase
+      .from('featured_trades')
+      .select('trade')
+      .order('display_order')
+    if (data) setFeaturedTrades(data.map(r => r.trade))
   }
 
   const openChecklistForFilling = async (checklistId) => {
@@ -496,6 +546,7 @@ export default function MeetingForm() {
         longitude: data.longitude ?? null,
         leader_id: data.leader_id || '',
         leader_name: data.leader_name,
+        trade: data.trade || '',
         topic: data.topic,
         notes: data.notes || '',
         completed: data.completed || false,
@@ -706,6 +757,7 @@ export default function MeetingForm() {
         // Don't include leader_id if it's not set properly - use only leader_name
         ...(formData.leader_id ? { leader_id: formData.leader_id } : {}),
         leader_name: formData.leader_name,
+        trade: formData.trade || null,
         topic: formData.topic,
         notes: formData.notes || null,
         ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
@@ -951,42 +1003,62 @@ export default function MeetingForm() {
             </div>
           </div>
 
-          <div className="form-group">
-            <label className="form-label">Topic *</label>
-            <select className="form-select" value={formData.topic}
-              onChange={(e) => {
-                const value = e.target.value
-                if (value === 'custom') {
-                  setShowCustomTopic(true)
-                  setFormData({ ...formData, topic: '' })
-                  setSelectedTopicDetails(null)
-                  setSuggestedChecklists([])
-                } else {
-                  setShowCustomTopic(false)
-                  setFormData({ ...formData, topic: value })
-                  handleTopicChange(value)
-                }
-              }}
-              required={!showCustomTopic}>
-              <option value="">Select a topic</option>
-              {Object.entries(
-                safetyTopics.reduce((acc, t) => {
-                  const cat = t.category || 'Other'
-                  if (!acc[cat]) acc[cat] = []
-                  acc[cat].push(t)
-                  return acc
-                }, {})
-              ).map(([category, topics]) => (
-                <optgroup key={category} label={category}>
-                  {topics.map(t => (
-                    <option key={t.id} value={t.name}>
-                      {t.name}{t.risk_level && t.risk_level !== 'medium' ? ` · ${t.risk_level.toUpperCase()}` : ''}
-                    </option>
+          <div className="mf-row-2">
+            <div className="form-group">
+              <label className="form-label">Trade</label>
+              {featuredTrades.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                  {featuredTrades.map(trade => (
+                    <button
+                      key={trade}
+                      type="button"
+                      onClick={() => handleTradeChange(formData.trade === trade ? '' : trade)}
+                      style={{
+                        padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600,
+                        border: formData.trade === trade ? '2px solid #16a34a' : '1.5px solid #d1fae5',
+                        background: formData.trade === trade ? '#16a34a' : '#f0fdf4',
+                        color: formData.trade === trade ? 'white' : '#166534',
+                        cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      {trade}
+                    </button>
                   ))}
-                </optgroup>
-              ))}
-              <option value="custom">+ Custom Topic</option>
-            </select>
+                </div>
+              )}
+              <select
+                className="form-select"
+                value={formData.trade}
+                onChange={(e) => handleTradeChange(e.target.value)}
+              >
+                <option value="">— Not specified —</option>
+                {allTrades.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Topic *</label>
+              <TopicPicker
+                topics={safetyTopics}
+                selectedTrade={formData.trade}
+                featuredCategories={featuredCategories}
+                featuredTopics={featuredTopics}
+                value={showCustomTopic ? 'custom' : formData.topic}
+                onChange={(value) => {
+                  if (value === 'custom') {
+                    setShowCustomTopic(true)
+                    setFormData({ ...formData, topic: '' })
+                    setSelectedTopicDetails(null)
+                    setSuggestedChecklists([])
+                  } else {
+                    setShowCustomTopic(false)
+                    setFormData({ ...formData, topic: value })
+                    handleTopicChange(value)
+                  }
+                }}
+              />
+            </div>
           </div>
 
           {showCustomTopic && (
@@ -1073,12 +1145,23 @@ export default function MeetingForm() {
                         || (c.category && c.category.toLowerCase().includes(s))
                         || (c.trades && c.trades.some(t => t.toLowerCase().includes(s)))
                     })
-                    const sorted = [
-                      ...filtered.filter(c => suggestedChecklists.includes(c.id)),
-                      ...filtered.filter(c => !suggestedChecklists.includes(c.id))
-                    ]
-                    return sorted.map(checklist => (
-                      <div key={checklist.id} className={`mf-checklist-row${selectedChecklists.includes(checklist.id) ? ' is-selected' : ''}`}>
+                    const topicTrades = selectedTopicDetails?.trades || []
+                    const tier1 = filtered.filter(c => suggestedChecklists.includes(c.id))
+
+                    // Score-based Tier 2: any checklist with trade (+ optional category) overlap
+                    const tier2WithScores = filtered
+                      .filter(c => !suggestedChecklists.includes(c.id))
+                      .map(c => ({ c, score: scoreChecklist(selectedTopicDetails || {}, c) }))
+                      .filter(r => r.score > 0)
+                      .sort((a, b) => b.score - a.score)
+
+                    const tier2Ids = new Set(tier2WithScores.map(r => r.c.id))
+                    const tier3 = filtered.filter(c =>
+                      !suggestedChecklists.includes(c.id) && !tier2Ids.has(c.id)
+                    )
+
+                    const renderRow = (checklist, isTradeRelated, score) => (
+                      <div key={checklist.id} className={`mf-checklist-row${selectedChecklists.includes(checklist.id) ? ' is-selected' : ''}${isTradeRelated ? ' is-trade-related' : ''}`}>
                         <label className="mf-checklist-label">
                           <input type="checkbox" checked={selectedChecklists.includes(checklist.id)}
                             onChange={(e) => {
@@ -1091,19 +1174,39 @@ export default function MeetingForm() {
                               {checklist.category && <span className="mf-checklist-cat">{checklist.category}</span>}
                               {checklist.trades?.map(t => <span key={t} className="mf-checklist-trade">{t}</span>)}
                               {suggestedChecklists.includes(checklist.id) && <span className="mf-badge mf-badge--suggested">Suggested</span>}
+                              {isTradeRelated && <span className={`mf-badge ${score >= 60 ? 'mf-badge--trade-plus' : 'mf-badge--trade'}`}>{tradeBadgeLabel(score)}</span>}
                               {completedChecklists[checklist.id] && <span className="mf-badge mf-badge--filled">✓ Filled</span>}
                             </div>
                           </div>
                         </label>
                         {selectedChecklists.includes(checklist.id) && (
                           <button type="button"
-                            className={`btn btn-sm ${completedChecklists[checklist.id] ? 'btn-primary' : 'btn-secondary'}`}
+                            className={`mf-fill-btn${completedChecklists[checklist.id] ? ' mf-fill-btn--done' : ''}`}
                             onClick={() => openChecklistForFilling(checklist.id)}>
-                            {completedChecklists[checklist.id] ? 'Edit' : 'Fill'}
+                            {completedChecklists[checklist.id] ? '✎ Edit' : '▶ Fill'}
                           </button>
                         )}
                       </div>
-                    ))
+                    )
+
+                    return (
+                      <>
+                        {tier1.map(c => renderRow(c, false, 0))}
+                        {tier2WithScores.length > 0 && (
+                          <>
+                            {tier1.length > 0 && <div className="mf-checklist-separator" />}
+                            <div className="mf-checklist-group-label">
+                              Related to: {topicTrades.join(', ')}
+                            </div>
+                            {tier2WithScores.map(({ c, score }) => renderRow(c, true, score))}
+                          </>
+                        )}
+                        {tier3.length > 0 && (tier1.length > 0 || tier2WithScores.length > 0) && (
+                          <div className="mf-checklist-separator" />
+                        )}
+                        {tier3.map(c => renderRow(c, false, 0))}
+                      </>
+                    )
                   })()}
                 </div>
               </div>
@@ -1260,9 +1363,9 @@ export default function MeetingForm() {
                         </>
                       ) : (
                         <>
-                          <SignatureCanvas
+                          <SignaturePad
                             ref={(ref) => { attendeeSignatureRefs.current[index] = ref }}
-                            canvasProps={{ width: 800, height: 160, className: 'signature-canvas' }}
+                            className="signature-canvas" height={160}
                             onEnd={() => {
                               const ref = attendeeSignatureRefs.current[index]
                               if (ref) {
@@ -1356,8 +1459,8 @@ export default function MeetingForm() {
                 {chosenDefaultSigUrl
                   ? <img src={chosenDefaultSigUrl} alt="Default signature"
                       style={{ maxHeight: 100, border: '1px solid #ddd', borderRadius: 4, padding: 8, background: '#fff' }} />
-                  : <SignatureCanvas ref={signatureRef}
-                      canvasProps={{ width: 800, height: 180, className: 'signature-canvas' }}
+                  : <SignaturePad ref={signatureRef}
+                      className="signature-canvas" height={180}
                       onEnd={() => {
                         if (signatureRef.current) {
                           setManualSigDataUrl(signatureRef.current.toDataURL())

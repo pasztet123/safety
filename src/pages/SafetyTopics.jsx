@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { fetchTrades, ensureTrade } from '../lib/trades'
+import { SAFETY_CATEGORIES } from '../lib/categories'
+import { getSuggestedChecklists } from '../lib/suggestChecklists'
 import { generateSafetyTopicPDF } from '../lib/pdfGenerator'
 import './SafetyTopics.css'
 
 export default function SafetyTopics() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [topics, setTopics] = useState([])
   const [filteredTopics, setFilteredTopics] = useState([])
   const [loading, setLoading] = useState(true)
@@ -12,8 +18,14 @@ export default function SafetyTopics() {
   const [searchTerm, setSearchTerm] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [riskFilter, setRiskFilter] = useState('all')
+  const [tradeFilter, setTradeFilter] = useState('all')
   const [selectedTopic, setSelectedTopic] = useState(null)
   const [editingTopic, setEditingTopic] = useState(null)
+  const [tradeInput, setTradeInput] = useState('')
+  const [tradeDropdownOpen, setTradeDropdownOpen] = useState(false)
+  const [availableTrades, setAvailableTrades] = useState([])
+  const [allChecklists, setAllChecklists] = useState([])
+  const [checklistsLoaded, setChecklistsLoaded] = useState(false)
   
   const [formData, setFormData] = useState({
     name: '',
@@ -21,7 +33,8 @@ export default function SafetyTopics() {
     osha_reference: '',
     description: '',
     risk_level: 'medium',
-    image_url: ''
+    image_url: '',
+    trades: []
   })
 
   useEffect(() => {
@@ -30,7 +43,14 @@ export default function SafetyTopics() {
 
   useEffect(() => {
     filterTopics()
-  }, [topics, searchTerm, categoryFilter, riskFilter])
+  }, [topics, searchTerm, categoryFilter, riskFilter, tradeFilter])
+
+  useEffect(() => {
+    const openTopicId = location.state?.openTopicId
+    if (!openTopicId || topics.length === 0) return
+    const topic = topics.find(t => t.id === openTopicId)
+    if (topic) handleOpenTopic(topic)
+  }, [topics, location.state])
 
   const checkAdminAndLoadTopics = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -45,6 +65,7 @@ export default function SafetyTopics() {
     }
     
     fetchTopics()
+    fetchTrades().then(setAvailableTrades)
   }
 
   const fetchTopics = async () => {
@@ -82,34 +103,41 @@ export default function SafetyTopics() {
     if (riskFilter !== 'all') {
       filtered = filtered.filter(topic => topic.risk_level === riskFilter)
     }
+
+    // Trade filter
+    if (tradeFilter === '__none__') {
+      filtered = filtered.filter(topic => !topic.trades || topic.trades.length === 0)
+    } else if (tradeFilter !== 'all') {
+      filtered = filtered.filter(topic => topic.trades?.includes(tradeFilter))
+    }
     
     setFilteredTopics(filtered)
   }
 
-  const getCategories = () => {
-    const categories = [...new Set(topics.map(t => t.category).filter(Boolean))]
-    return categories.sort()
-  }
+  const buildPayload = (fd) => ({
+    name: fd.name,
+    category: fd.category || null,
+    osha_reference: fd.osha_reference || null,
+    description: fd.description || null,
+    risk_level: fd.risk_level,
+    image_url: fd.image_url || null,
+    trades: fd.trades && fd.trades.length > 0 ? fd.trades : null,
+  })
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     
+    const emptyForm = { name: '', category: '', osha_reference: '', description: '', risk_level: 'medium', image_url: '', trades: [] }
     if (editingTopic) {
       // Update existing topic
       const { error } = await supabase
         .from('safety_topics')
-        .update(formData)
+        .update(buildPayload(formData))
         .eq('id', editingTopic.id)
       
       if (!error) {
-        setFormData({
-          name: '',
-          category: '',
-          osha_reference: '',
-          description: '',
-          risk_level: 'medium',
-          image_url: ''
-        })
+        setFormData(emptyForm)
+        setTradeInput('')
         setEditingTopic(null)
         setShowAddForm(false)
         fetchTopics()
@@ -123,19 +151,13 @@ export default function SafetyTopics() {
       const { error } = await supabase
         .from('safety_topics')
         .insert([{
-          ...formData,
+          ...buildPayload(formData),
           created_by: user.id
         }])
       
       if (!error) {
-        setFormData({
-          name: '',
-          category: '',
-          osha_reference: '',
-          description: '',
-          risk_level: 'medium',
-          image_url: ''
-        })
+        setFormData(emptyForm)
+        setTradeInput('')
         setShowAddForm(false)
         fetchTopics()
       } else {
@@ -151,10 +173,31 @@ export default function SafetyTopics() {
       osha_reference: topic.osha_reference || '',
       description: topic.description || '',
       risk_level: topic.risk_level,
-      image_url: topic.image_url || ''
+      image_url: topic.image_url || '',
+      trades: topic.trades || []
     })
+    setTradeInput('')
     setEditingTopic(topic)
     setShowAddForm(true)
+  }
+
+  // Lazy-load all checklists once the first topic modal is opened
+  const loadChecklistsIfNeeded = async () => {
+    if (checklistsLoaded) return
+    const { data } = await supabase
+      .from('checklists')
+      .select('id, name, category, trades, description')
+      .order('category')
+      .order('name')
+    if (data) {
+      setAllChecklists(data)
+      setChecklistsLoaded(true)
+    }
+  }
+
+  const handleOpenTopic = (topic) => {
+    setSelectedTopic(topic)
+    loadChecklistsIfNeeded()
   }
 
   const handleCancelEdit = () => {
@@ -164,8 +207,10 @@ export default function SafetyTopics() {
       osha_reference: '',
       description: '',
       risk_level: 'medium',
-      image_url: ''
+      image_url: '',
+      trades: []
     })
+    setTradeInput('')
     setEditingTopic(null)
     setShowAddForm(false)
   }
@@ -213,8 +258,11 @@ export default function SafetyTopics() {
                 category: '',
                 osha_reference: '',
                 description: '',
-                risk_level: 'medium'
+                risk_level: 'medium',
+                image_url: '',
+                trades: []
               })
+              setTradeInput('')
             }
             setShowAddForm(!showAddForm)
           }}
@@ -241,19 +289,16 @@ export default function SafetyTopics() {
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label">Category</label>
-                <input
-                  type="text"
-                  className="form-input"
+                <select
+                  className="form-select"
                   value={formData.category}
                   onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  list="categories"
-                  placeholder="e.g., Personal Protective Equipment"
-                />
-                <datalist id="categories">
-                  {getCategories().map(cat => (
-                    <option key={cat} value={cat} />
+                >
+                  <option value="">Select Category</option>
+                  {SAFETY_CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
                   ))}
-                </datalist>
+                </select>
               </div>
 
               <div className="form-group">
@@ -295,6 +340,76 @@ export default function SafetyTopics() {
             </div>
 
             <div className="form-group">
+              <label className="form-label">Trades</label>
+              <div className="st-trades-editor">
+                {formData.trades.map(t => (
+                  <span key={t} className="st-trade-pill">
+                    {t}
+                    <button
+                      type="button"
+                      className="st-trade-pill-remove"
+                      onClick={() => setFormData({ ...formData, trades: formData.trades.filter(x => x !== t) })}
+                    >×</button>
+                  </span>
+                ))}
+                <div className="st-trade-input-wrap">
+                  <input
+                    type="text"
+                    className="st-trade-input"
+                    placeholder="Add trade…"
+                    value={tradeInput}
+                    autoComplete="off"
+                    onChange={(e) => { setTradeInput(e.target.value); setTradeDropdownOpen(true) }}
+                    onFocus={() => setTradeDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setTradeDropdownOpen(false), 150)}
+                    onKeyDown={(e) => {
+                      if ((e.key === 'Enter' || e.key === ',') && tradeInput.trim()) {
+                        e.preventDefault()
+                        const val = tradeInput.trim().replace(/,$/, '')
+                        if (val && !formData.trades.includes(val)) {
+                          setFormData({ ...formData, trades: [...formData.trades, val] })
+                          // Register new trade in canonical table if it doesn't exist yet
+                          if (!availableTrades.includes(val)) {
+                            ensureTrade(val)
+                            setAvailableTrades(prev => [...prev, val].sort())
+                          }
+                        }
+                        setTradeInput('')
+                        setTradeDropdownOpen(false)
+                      }
+                      if (e.key === 'Escape') setTradeDropdownOpen(false)
+                    }}
+                  />
+                  {tradeDropdownOpen && (
+                    <div className="st-trade-dropdown">
+                      {availableTrades
+                        .filter(t =>
+                          !formData.trades.includes(t) &&
+                          (!tradeInput.trim() || t.toLowerCase().includes(tradeInput.toLowerCase()))
+                        )
+                        .map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            className="st-trade-option"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              if (!formData.trades.includes(t)) {
+                                setFormData({ ...formData, trades: [...formData.trades, t] })
+                              }
+                              setTradeInput('')
+                              setTradeDropdownOpen(false)
+                            }}
+                          >{t}</button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="form-hint">Press Enter or comma to add. Matches with checklist trades for smart sorting in meetings.</p>
+            </div>
+
+            <div className="form-group">
               <label className="form-label">Description</label>
               <textarea
                 className="form-textarea"
@@ -327,14 +442,14 @@ export default function SafetyTopics() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           
-          <div className="filter-row">
+          <div className="filter-row filter-row--3">
             <select
               className="form-select filter-select"
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
             >
               <option value="all">All Categories</option>
-              {getCategories().map(cat => (
+              {SAFETY_CATEGORIES.map(cat => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
@@ -349,6 +464,18 @@ export default function SafetyTopics() {
               <option value="medium">Medium</option>
               <option value="high">High</option>
               <option value="critical">Critical</option>
+            </select>
+
+            <select
+              className="form-select filter-select"
+              value={tradeFilter}
+              onChange={(e) => setTradeFilter(e.target.value)}
+            >
+              <option value="all">All Trades</option>
+              <option value="__none__">— No trade assigned</option>
+              {availableTrades.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -379,7 +506,7 @@ export default function SafetyTopics() {
                   <div className="topic-top-row">
                     <h3
                       className="topic-title topic-title-clickable"
-                      onClick={() => setSelectedTopic(topic)}
+                      onClick={() => handleOpenTopic(topic)}
                     >
                       {topic.name}
                     </h3>
@@ -408,12 +535,26 @@ export default function SafetyTopics() {
                     <span className="topic-category">{topic.category}</span>
                   )}
 
+                  {topic.trades && topic.trades.length > 0 && (
+                    <div className="topic-trades-row">
+                      {topic.trades.map(t => (
+                        <button
+                          key={t}
+                          type="button"
+                          className={`topic-trade-badge${tradeFilter === t ? ' is-active' : ''}`}
+                          onClick={() => setTradeFilter(tradeFilter === t ? 'all' : t)}
+                          title={`Filter by ${t}`}
+                        >{t}</button>
+                      ))}
+                    </div>
+                  )}
+
                   {topic.description && (
                     <p className="topic-description-preview">
                       {topic.description.split('\n')[0].substring(0, 150)}
                       {topic.description.length > 150 ? '...' : ''}
                       {topic.description.length > 150 && (
-                        <button className="btn-read-more" onClick={() => setSelectedTopic(topic)}>
+                        <button className="btn-read-more" onClick={() => handleOpenTopic(topic)}>
                           Read more
                         </button>
                       )}
@@ -478,6 +619,49 @@ export default function SafetyTopics() {
                   ))}
                 </div>
               )}
+
+              {/* Suggested checklists based on trade + category overlap */}
+              {(() => {
+                const suggestions = getSuggestedChecklists(selectedTopic, allChecklists, 5)
+                if (suggestions.length === 0) return null
+                return (
+                  <div className="topic-suggestions">
+                    <h4 className="topic-suggestions-title">Recommended Checklists</h4>
+                    <div className="topic-suggestions-list">
+                      {suggestions.map(({ checklist, score }) => (
+                        <div key={checklist.id} className="topic-suggestion-card">
+                          <div className="topic-suggestion-info">
+                            <span className="topic-suggestion-name">{checklist.name}</span>
+                            {checklist.category && (
+                              <span className="topic-suggestion-cat">{checklist.category}</span>
+                            )}
+                            {checklist.trades && checklist.trades.length > 0 && (
+                              <div className="topic-suggestion-trades">
+                                {checklist.trades.map(t => (
+                                  <span key={t} className="topic-trade-badge">{t}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          <div className="topic-suggestion-actions">
+                            <div className="topic-suggestion-score" title={`Match score: ${score}/100`}>
+                              <div className="topic-suggestion-score-bar">
+                                <div className="topic-suggestion-score-fill" style={{ width: `${score}%` }} />
+                              </div>
+                              <span className="topic-suggestion-score-label">{score}%</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              onClick={() => navigate(`/checklists/${checklist.id}/complete`)}
+                            >Fill</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>
