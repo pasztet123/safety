@@ -230,7 +230,6 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
 }
 .bi-topic-text {
   flex: 1;
@@ -278,4 +277,24 @@
   color: var(--color-muted);
   font-size: 13px;
   margin-top: 8px;
+}
+
+/* Editable select in preview table */
+.bi-select {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  background: #fff;
+  color: var(--color-text);
+  cursor: pointer;
+  max-width: 130px;
+}
+.bi-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bi-select--topic {
+  max-width: 210px;
+  flex: 1;
 }

@@ -6,6 +6,7 @@ import {
   groupIntoDraftMeetings,
   detectDuplicateDates,
   pickRandomTopic,
+  ALL_TRADES,
 } from '../lib/csvImport'
 import './BulkImport.css'
 
@@ -146,6 +147,24 @@ export default function BulkImport() {
       next[index] = { ...next[index], topic: pickRandomTopic(next[index].trade, safetyTopics) || next[index].topic }
       return next
     })
+  }
+
+  // Update trade and auto-pick a matching topic in one render
+  const updateTrade = (index, newTrade) => {
+    const newTopic = pickRandomTopic(newTrade, safetyTopics)
+    setDraftMeetings(prev => {
+      const next = [...prev]
+      next[index] = { ...next[index], trade: newTrade, ...(newTopic ? { topic: newTopic } : {}) }
+      return next
+    })
+  }
+
+  // Return topics available for a given trade (trade-specific + General fallback)
+  const topicsForTrade = (trade) => {
+    if (!trade || trade === 'General') return safetyTopics
+    return safetyTopics.filter(
+      t => !t.trades || t.trades.length === 0 || t.trades.includes(trade) || t.trades.includes('General')
+    )
   }
 
   const updateDraftField = (index, field, value) => {
@@ -408,9 +427,30 @@ export default function BulkImport() {
                       <td className="bi-cell-cost">
                         {d.costCodes.length > 0 ? d.costCodes.join(', ') : <em>—</em>}
                       </td>
-                      <td>{d.trade}</td>
+                      <td>
+                        <select
+                          className="bi-select"
+                          value={d.trade || ''}
+                          onChange={e => updateTrade(idx, e.target.value)}
+                          disabled={isSkipped}
+                        >
+                          {ALL_TRADES.map(t => (
+                            <option key={t} value={t}>{t}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className="bi-cell-topic">
-                        <span className="bi-topic-text">{d.topic || <em>— none —</em>}</span>
+                        <select
+                          className="bi-select bi-select--topic"
+                          value={d.topic || ''}
+                          onChange={e => updateDraftField(idx, 'topic', e.target.value)}
+                          disabled={isSkipped}
+                        >
+                          <option value="">— none —</option>
+                          {topicsForTrade(d.trade).map(t => (
+                            <option key={t.id} value={t.name}>{t.name}</option>
+                          ))}
+                        </select>
                         <button
                           type="button"
                           className="btn-icon bi-refresh-btn"

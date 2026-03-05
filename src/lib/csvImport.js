@@ -109,6 +109,20 @@ const COST_CODE_TRADE_MAP = {
   'Structural Steel': 'Metal Work',
 }
 
+/** Sorted list of all trade values used in the app */
+export const ALL_TRADES = [
+  'Carpentry',
+  'Drywall',
+  'Electrical',
+  'General',
+  'HVAC',
+  'Masonry',
+  'Metal Work',
+  'Painting',
+  'Plumbing',
+  'Roofing',
+]
+
 /**
  * Map a cost code string to a trade name.
  * Falls back to 'General' for unknown codes.

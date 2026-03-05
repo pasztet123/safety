@@ -575,6 +575,8 @@ export default function MeetingForm() {
           ...a,
           // Pre-open the signature panel for attendees who already have a saved signature
           show_signature_field: a.show_signature_field || !!a.signature_url,
+          // Draft meetings: always start with Confirmed unchecked
+          ...(data.is_draft ? { signed_with_checkbox: false } : {}),
         }))
       )
       setPhotos(data.photos || [])
