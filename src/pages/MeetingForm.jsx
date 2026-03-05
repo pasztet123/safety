@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { scoreChecklist, tradeBadgeLabel } from '../lib/suggestChecklists'
 import SignaturePad from '../components/SignaturePad'
@@ -11,6 +11,7 @@ import './MeetingForm.css'
 export default function MeetingForm() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const location = useLocation()
   const signatureRef = useRef()
   const attendeeSignatureRefs = useRef([])
   
@@ -80,6 +81,17 @@ export default function MeetingForm() {
   useEffect(() => {
     checkAdminAndLoadData()
   }, [id])
+
+  // Pre-fill project_id from URL query param (?project_id=...)
+  useEffect(() => {
+    if (!id) {
+      const params = new URLSearchParams(location.search)
+      const qProjectId = params.get('project_id')
+      if (qProjectId) {
+        setFormData(prev => ({ ...prev, project_id: qProjectId }))
+      }
+    }
+  }, [id, location.search])
 
   // Load from localStorage if creating new meeting
   useEffect(() => {
@@ -889,6 +901,25 @@ export default function MeetingForm() {
             }))
             await supabase.from('checklist_item_completions').insert(itemCompletions)
           }
+        }
+      }
+
+      // Auto-add the meeting's trade to the project's trades array
+      if (formData.trade && formData.project_id) {
+        try {
+          const { data: proj } = await supabase
+            .from('projects')
+            .select('trades')
+            .eq('id', formData.project_id)
+            .single()
+          if (proj && !proj.trades?.includes(formData.trade)) {
+            await supabase
+              .from('projects')
+              .update({ trades: [...(proj.trades || []), formData.trade] })
+              .eq('id', formData.project_id)
+          }
+        } catch (tradeErr) {
+          console.warn('Could not auto-add trade to project:', tradeErr)
         }
       }
 
