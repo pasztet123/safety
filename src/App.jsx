@@ -48,10 +48,8 @@ function App() {
     return <Login />
   }
 
-  const basename = import.meta.env.DEV ? '/' : '/app4'
-
   return (
-    <BrowserRouter basename={basename}>
+    <BrowserRouter>
       <Layout session={session}>
         <Routes>
           <Route path="/" element={<MainMenu />} />
