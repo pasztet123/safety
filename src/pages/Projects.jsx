@@ -217,7 +217,9 @@ export default function Projects() {
                       : `${meetings.length} meetings`}
                   </span>
                   <span className={`project-meetings-chevron ${isExpanded ? 'expanded' : ''}`}>
-                    ▼
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 5L7 9L11 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
                   </span>
                 </button>
 
@@ -234,7 +236,7 @@ export default function Projects() {
                           {m.topic && <span className="pmeet-topic">{m.topic}</span>}
                           {m.trade && <span className="pmeet-trade">{m.trade}</span>}
                           {m.leader_name && (
-                            <span className="pmeet-leader">👤 {m.leader_name}</span>
+                            <span className="pmeet-leader">{m.leader_name}</span>
                           )}
                           <span className={`pmeet-status ${m.completed ? 'pmeet-done' : 'pmeet-pending'}`}>
                             {m.completed ? 'Done' : 'In progress'}

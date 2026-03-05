@@ -78,6 +78,13 @@ export default function MeetingForm() {
   const [featuredTopics, setFeaturedTopics] = useState([])
   const [featuredTrades, setFeaturedTrades] = useState([])
 
+  // Draft mode — set when editing an is_draft=true meeting
+  const [isDraft, setIsDraft] = useState(false)
+  // approveMode — when true, submit sets is_draft=false + completed=true
+  // Use both state (for render) and ref (for synchronous read in handleSubmit)
+  const [approveMode, setApproveMode] = useState(false)
+  const approveModeRef = useRef(false)
+
   useEffect(() => {
     checkAdminAndLoadData()
   }, [id])
@@ -572,6 +579,9 @@ export default function MeetingForm() {
       )
       setPhotos(data.photos || [])
 
+      // Draft mode
+      setIsDraft(data.is_draft === true)
+
       // Load existing signature (edit mode)
       if (data.signature_url) {
         setExistingSignatureUrl(data.signature_url)
@@ -773,8 +783,10 @@ export default function MeetingForm() {
         topic: formData.topic,
         notes: formData.notes || null,
         ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
-        completed: formData.completed,
+        completed: approveModeRef.current ? true : formData.completed,
         created_by: user.id,
+        // Draft handling: preserve is_draft unless explicitly approving
+        ...(id && isDraft ? { is_draft: approveModeRef.current ? false : true } : {}),
       }
 
     let meetingId = id
@@ -962,7 +974,7 @@ export default function MeetingForm() {
 
       {/* ── Page header ── */}
       <div className="mf-page-header">
-        <h2 className="page-title">{id ? 'Edit Meeting' : 'New Daily Safety Meeting'}</h2>
+        <h2 className="page-title">{id ? (isDraft ? 'Review Draft Meeting' : 'Edit Meeting') : 'New Daily Safety Meeting'}</h2>
         {!id && localStorage.getItem('meeting-draft') && (
           <button type="button" className="btn btn-secondary btn-sm"
             onClick={() => { if (confirm('Clear saved draft?')) { localStorage.removeItem('meeting-draft'); window.location.reload() } }}>
@@ -970,6 +982,15 @@ export default function MeetingForm() {
           </button>
         )}
       </div>
+
+      {/* ── Draft banner ── */}
+      {isDraft && (
+        <div className="mf-draft-banner">
+          <span className="mf-draft-badge">DRAFT</span>
+          <span>This meeting was generated from a CSV import and is pending approval.</span>
+          <span className="mf-draft-hint">Review and edit below, then click <strong>Approve &amp; Save</strong> to publish.</span>
+        </div>
+      )}
 
       <form id="meeting-form-el" onSubmit={handleSubmit}>
 
@@ -1516,9 +1537,32 @@ export default function MeetingForm() {
         <button type="button" className="btn btn-secondary" onClick={() => navigate('/meetings')}>
           Cancel
         </button>
-        <button type="submit" form="meeting-form-el" className="btn btn-primary" disabled={loading}>
-          {loading ? 'Saving...' : id ? 'Update Meeting' : 'Create Meeting'}
-        </button>
+        {isDraft ? (
+          <>
+            <button
+              type="submit"
+              form="meeting-form-el"
+              className="btn btn-secondary"
+              disabled={loading}
+              onClick={() => { approveModeRef.current = false; setApproveMode(false) }}
+            >
+              {loading && !approveMode ? 'Saving...' : 'Save Draft'}
+            </button>
+            <button
+              type="submit"
+              form="meeting-form-el"
+              className="btn btn-approve"
+              disabled={loading}
+              onClick={() => { approveModeRef.current = true; setApproveMode(true) }}
+            >
+              {loading && approveMode ? 'Approving...' : 'Approve & Save'}
+            </button>
+          </>
+        ) : (
+          <button type="submit" form="meeting-form-el" className="btn btn-primary" disabled={loading}>
+            {loading ? 'Saving...' : id ? 'Update Meeting' : 'Create Meeting'}
+          </button>
+        )}
       </div>
 
       {/* ── Checklist Modal ── */}

@@ -1236,4 +1236,55 @@
   border: 1px solid #f87171;
 }
 
+/* ── Draft mode banner ── */
+.mf-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-left: 4px solid #f59e0b;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: #92400e;
+}
+.mf-draft-badge {
+  display: inline-block;
+  background: #f59e0b;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.mf-draft-hint {
+  color: #78350f;
+  font-size: 13px;
+}
+
+/* ── Approve & Save button ── */
+.btn-approve {
+  background: #16a34a;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-approve:hover:not(:disabled) {
+  background: #15803d;
+}
+.btn-approve:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 

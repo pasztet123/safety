@@ -111,14 +111,18 @@
 }
 
 .projects-sort {
-  padding: 10px 14px;
+  padding: 10px 36px 10px 14px;
   border: 1.5px solid #e5e7eb;
   border-radius: 8px;
   font-size: 14px;
-  background: #fff;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%236b7280'/%3E%3C/svg%3E") no-repeat right 12px center;
+  appearance: none;
+  -webkit-appearance: none;
   cursor: pointer;
   outline: none;
+  color: #374151;
   transition: border-color 0.2s;
+  white-space: nowrap;
 }
 .projects-sort:focus {
   border-color: var(--color-primary, #2563eb);
@@ -173,11 +177,12 @@
   font-weight: 500;
 }
 
-/* ── Meetings section ──────────────────────────────────────────────────── */
+/* ── Meetings section (flush card footer) ─────────────────────────────── */
 .project-meetings-section {
-  margin-top: 16px;
+  margin: auto -24px -24px;
   border-top: 1.5px solid #f3f4f6;
-  padding-top: 12px;
+  border-radius: 0 0 12px 12px;
+  overflow: hidden;
 }
 
 .project-meetings-toggle {
@@ -185,31 +190,39 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  background: none;
+  background: #fafafa;
   border: none;
-  padding: 0;
+  padding: 12px 24px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  color: #374151;
+  color: #6b7280;
   gap: 8px;
+  transition: background 0.15s, color 0.15s;
 }
 .project-meetings-toggle:hover {
-  color: var(--color-primary, #2563eb);
+  background: #f3f4f6;
+  color: #374151;
 }
 
 .project-meetings-chevron {
-  font-size: 11px;
-  transition: transform 0.2s;
-  display: inline-block;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
   color: #9ca3af;
+  transition: transform 0.2s;
+}
+.project-meetings-chevron svg {
+  display: block;
 }
 .project-meetings-chevron.expanded {
   transform: rotate(180deg);
 }
 
 .project-meetings-list {
-  margin-top: 10px;
+  padding: 12px 24px 16px;
+  background: #fafafa;
+  border-top: 1px solid #eeeff1;
   display: flex;
   flex-direction: column;
   gap: 6px;

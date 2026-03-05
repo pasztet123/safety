@@ -20,6 +20,7 @@ import AdminPanel from './pages/AdminPanel'
 import Projects from './pages/Projects'
 import SafetyTopics from './pages/SafetyTopics'
 import CorrectiveActions from './pages/CorrectiveActions'
+import BulkImport from './pages/BulkImport'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -72,6 +73,7 @@ function App() {
           <Route path="/checklist-history/:id" element={<ChecklistHistoryView />} />
           <Route path="/checklist-history/:id/edit" element={<ChecklistHistoryEdit />} />
           <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/bulk-import" element={<BulkImport />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Layout>

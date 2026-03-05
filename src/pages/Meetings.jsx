@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
+import ApproveDraftsModal from '../components/ApproveDraftsModal'
 import './Meetings.css'
 
 export default function Meetings() {
@@ -11,10 +12,20 @@ export default function Meetings() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
 
+  // Drafts (admin only)
+  const [draftMeetings, setDraftMeetings] = useState([])
+  const [selectedDraftIds, setSelectedDraftIds] = useState(new Set())
+  const [showApproveModal, setShowApproveModal] = useState(false)
+
   useEffect(() => {
     checkAdmin()
     fetchMeetings()
   }, [])
+
+  // Load drafts once we know we're admin
+  useEffect(() => {
+    if (isAdmin) fetchDraftMeetings()
+  }, [isAdmin])
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -29,6 +40,19 @@ export default function Meetings() {
     }
   }
 
+  const fetchDraftMeetings = async () => {
+    const { data } = await supabase
+      .from('meetings')
+      .select(`
+        *,
+        project:projects(name),
+        attendees:meeting_attendees(name)
+      `)
+      .eq('is_draft', true)
+      .order('date', { ascending: false })
+    setDraftMeetings(data || [])
+  }
+
   const fetchMeetings = async () => {
     setLoading(true)
     const { data, error } = await supabase
@@ -39,6 +63,7 @@ export default function Meetings() {
         attendees:meeting_attendees(name),
         photos:meeting_photos(photo_url)
       `)
+      .eq('is_draft', false)
       .order('date', { ascending: false })
       .order('time', { ascending: false })
 
@@ -71,6 +96,49 @@ export default function Meetings() {
       setMeetings(meetingsWithChecklists)
     }
     setLoading(false)
+  }
+
+  const toggleDraftSelect = (id) => {
+    setSelectedDraftIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllDrafts = () => {
+    if (selectedDraftIds.size === draftMeetings.length) {
+      setSelectedDraftIds(new Set())
+    } else {
+      setSelectedDraftIds(new Set(draftMeetings.map(d => d.id)))
+    }
+  }
+
+  const draftsToApprove = showApproveModal
+    ? draftMeetings.filter(d => selectedDraftIds.has(d.id))
+    : []
+
+  const handleApproveAll = () => {
+    setSelectedDraftIds(new Set(draftMeetings.map(d => d.id)))
+    setShowApproveModal(true)
+  }
+
+  const handleApproveSelected = () => {
+    if (selectedDraftIds.size === 0) return
+    setShowApproveModal(true)
+  }
+
+  const handleDraftApproved = () => {
+    setShowApproveModal(false)
+    setSelectedDraftIds(new Set())
+    fetchDraftMeetings()
+    fetchMeetings()
+  }
+
+  const handleDeleteDraft = async (meetingId, topic) => {
+    if (!confirm(`Delete draft "${topic}"? This cannot be undone.`)) return
+    await supabase.from('meetings').delete().eq('id', meetingId)
+    fetchDraftMeetings()
   }
 
   const handleDelete = async (meetingId, topic) => {
@@ -181,12 +249,112 @@ export default function Meetings() {
 
   return (
     <div>
+      {/* ── Approve Modal ── */}
+      {showApproveModal && draftsToApprove.length > 0 && (
+        <ApproveDraftsModal
+          drafts={draftsToApprove}
+          onClose={() => setShowApproveModal(false)}
+          onApproved={handleDraftApproved}
+        />
+      )}
+
       <div className="page-header">
         <h2 className="page-title">Toolbox Meetings</h2>
-        <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
-          + New Meeting
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {isAdmin && (
+            <button className="btn btn-secondary" onClick={() => navigate('/bulk-import')}>
+              ⬆ Import CSV
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
+            + New Meeting
+          </button>
+        </div>
       </div>
+
+      {/* ── DRAFTS SECTION (admin only) ── */}
+      {isAdmin && draftMeetings.length > 0 && (
+        <div className="drafts-section">
+          <div className="drafts-header">
+            <h3 className="drafts-title">
+              Drafts
+              <span className="drafts-badge">{draftMeetings.length}</span>
+            </h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {selectedDraftIds.size > 0 && (
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleApproveSelected}
+                >
+                  Approve Selected ({selectedDraftIds.size})
+                </button>
+              )}
+              <button className="btn btn-primary btn-sm" onClick={handleApproveAll}>
+                Approve All
+              </button>
+            </div>
+          </div>
+
+          <div className="drafts-table-wrap">
+            <table className="drafts-table">
+              <thead>
+                <tr>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={selectedDraftIds.size === draftMeetings.length && draftMeetings.length > 0}
+                      onChange={toggleSelectAllDrafts}
+                      title="Select all"
+                    />
+                  </th>
+                  <th>Date</th>
+                  <th>Project</th>
+                  <th>Time</th>
+                  <th>Trade</th>
+                  <th>Topic</th>
+                  <th>Attendees</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {draftMeetings.map(d => (
+                  <tr key={d.id} className={selectedDraftIds.has(d.id) ? 'draft-row--selected' : ''}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedDraftIds.has(d.id)}
+                        onChange={() => toggleDraftSelect(d.id)}
+                      />
+                    </td>
+                    <td className="draft-cell-date">{d.date}</td>
+                    <td>{d.project?.name || '—'}</td>
+                    <td>{d.time}</td>
+                    <td>{d.trade || '—'}</td>
+                    <td className="draft-cell-topic">{d.topic}</td>
+                    <td>{d.attendees?.length ?? 0}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => navigate(`/meetings/${d.id}/edit`)}
+                        >
+                          Review
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleDeleteDraft(d.id, d.topic)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="meetings-list">
         {meetings.length === 0 ? (
