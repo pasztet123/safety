@@ -42,7 +42,7 @@ export default function MeetingForm() {
     latitude: null,
     longitude: null,
     leader_id: '',
-    leader_name: '',
+    leader_name: 'Bo Mikuta',
     trade: '',
     topic: '',
     notes: '',
@@ -223,20 +223,15 @@ export default function MeetingForm() {
       .order('name')
     if (data) {
       setLeaders(data)
-      // Auto-select default leader for new meetings (no id in URL yet)
-      if (!id && !formData.leader_id) {
-        const defaultLeader =
-          data.find(l => l.name === 'Bo Mikuta') ||
-          (data.length === 1 ? data[0] : null)
-        if (defaultLeader) {
-          setFormData(prev => ({
-            ...prev,
-            leader_id: defaultLeader.id,
-            leader_name: defaultLeader.name,
-          }))
-          if (defaultLeader.default_signature_url) {
-            setLeaderDefaultSignature(defaultLeader.default_signature_url)
-          }
+      // If there's only one leader and no leader selected yet, auto-select it
+      if (data.length === 1 && !formData.leader_id) {
+        setFormData(prev => ({
+          ...prev,
+          leader_id: data[0].id,
+          leader_name: data[0].name,
+        }))
+        if (data[0].default_signature_url) {
+          setLeaderDefaultSignature(data[0].default_signature_url)
         }
       }
     }
