@@ -231,13 +231,6 @@
   align-items: center;
   gap: 6px;
 }
-.bi-topic-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .bi-refresh-btn {
   flex-shrink: 0;
   background: none;
@@ -279,22 +272,34 @@
   margin-top: 8px;
 }
 
-/* Editable select in preview table */
+/* Editable select in preview table — matches global .form-select */
 .bi-select {
-  padding: 4px 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.82rem;
-  background: #fff;
+  padding: 10px 40px 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: white;
   color: var(--color-text);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23374151' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
   cursor: pointer;
-  max-width: 130px;
+  color-scheme: light;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  max-width: 140px;
+}
+.bi-select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-light);
 }
 .bi-select:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 .bi-select--topic {
-  max-width: 210px;
+  max-width: 220px;
   flex: 1;
 }
