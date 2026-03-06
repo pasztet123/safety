@@ -153,6 +153,24 @@
   margin-bottom: 0;
 }
 
+.btn-icon-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-icon-edit:hover {
+  color: var(--color-primary);
+  background: #f3f4f6;
+}
+
 .project-detail-label {
   font-weight: 600;
   color: #374151;

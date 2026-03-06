@@ -20,6 +20,7 @@ export default function Projects() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingProject, setEditingProject] = useState(null)
   const [formData, setFormData] = useState({ ...EMPTY_FORM })
   const [availableTrades, setAvailableTrades] = useState([])
   const [tradeInput, setTradeInput] = useState('')
@@ -49,9 +50,30 @@ export default function Projects() {
     setLoading(false)
   }
 
+  const openEditForm = (e, project) => {
+    e.stopPropagation()
+    setEditingProject(project)
+    setFormData({
+      name: project.name || '',
+      description: project.description || '',
+      job_address: project.job_address || '',
+      client_name: project.client_name || '',
+      status: project.status || 'active',
+      trades: project.trades || [],
+    })
+    setTradeInput('')
+    setShowForm(true)
+  }
+
+  const closeForm = () => {
+    setShowForm(false)
+    setEditingProject(null)
+    setFormData({ ...EMPTY_FORM })
+    setTradeInput('')
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault()
-    const { data: { user } } = await supabase.auth.getUser()
     const payload = {
       name: formData.name,
       description: formData.description || null,
@@ -59,14 +81,14 @@ export default function Projects() {
       client_name: formData.client_name || null,
       status: formData.status,
       trades: formData.trades.length > 0 ? formData.trades : null,
-      user_id: user.id,
     }
-    const { error } = await supabase.from('projects').insert([payload])
-    if (!error) {
-      setShowForm(false)
-      setFormData({ ...EMPTY_FORM })
-      setTradeInput('')
-      fetchProjects()
+    if (editingProject) {
+      const { error } = await supabase.from('projects').update(payload).eq('id', editingProject.id)
+      if (!error) { closeForm(); fetchProjects() }
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      const { error } = await supabase.from('projects').insert([{ ...payload, user_id: user.id }])
+      if (!error) { closeForm(); fetchProjects() }
     }
   }
 
@@ -173,9 +195,21 @@ export default function Projects() {
               {/* Header */}
               <div className="project-card-header">
                 <h3 className="project-name">{project.name}</h3>
-                <span className={`project-status status-${project.status}`}>
-                  {project.status}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span className={`project-status status-${project.status}`}>
+                    {project.status}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn-icon-edit"
+                    title="Edit project"
+                    onClick={(e) => openEditForm(e, project)}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M14.7 2.3a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4L6.5 16.5l-4.5 1 1-4.5L14.7 2.3z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {/* Meta */}
@@ -264,11 +298,11 @@ export default function Projects() {
         })}
       </div>
 
-      {/* ── New Project Modal ── */}
+      {/* ── New / Edit Project Modal ── */}
       {showForm && (
-        <div className="modal-overlay" onClick={() => setShowForm(false)}>
+        <div className="modal-overlay" onClick={closeForm}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3 className="modal-title">New Project</h3>
+            <h3 className="modal-title">{editingProject ? 'Edit Project' : 'New Project'}</h3>
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label className="form-label">Project Name *</label>
@@ -383,12 +417,12 @@ export default function Projects() {
                 <button
                   type="button"
                   className="btn btn-secondary"
-                  onClick={() => { setShowForm(false); setFormData({ ...EMPTY_FORM }); setTradeInput('') }}
+                  onClick={closeForm}
                 >
                   Cancel
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  Create Project
+                  {editingProject ? 'Save Changes' : 'Create Project'}
                 </button>
               </div>
             </form>
