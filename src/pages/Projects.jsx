@@ -24,6 +24,7 @@ export default function Projects() {
   const [availableTrades, setAvailableTrades] = useState([])
   const [tradeInput, setTradeInput] = useState('')
   const [tradeDropdownOpen, setTradeDropdownOpen] = useState(false)
+  const [expandedProjects, setExpandedProjects] = useState(new Set())
   const [searchTerm, setSearchTerm] = useState('')
   const [sortBy, setSortBy] = useState('newest')
 
@@ -36,7 +37,10 @@ export default function Projects() {
     setLoading(true)
     const { data, error } = await supabase
       .from('projects')
-      .select('*')
+      .select(`
+        *,
+        meetings(id, date, trade, topic, leader_name, completed)
+      `)
       .order('created_at', { ascending: false })
 
     if (!error && data) {
@@ -80,6 +84,15 @@ export default function Projects() {
 
   const removeFormTrade = (t) =>
     setFormData({ ...formData, trades: formData.trades.filter(x => x !== t) })
+
+  const toggleExpand = (id, e) => {
+    e.stopPropagation()
+    setExpandedProjects(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
 
   // ── Filtered + sorted list ──────────────────────────────────────────────
   const displayedProjects = useMemo(() => {
@@ -150,7 +163,12 @@ export default function Projects() {
         {displayedProjects.length === 0 && (
           <p className="projects-empty">No projects match your search.</p>
         )}
-        {displayedProjects.map((project) => (
+        {displayedProjects.map((project) => {
+          const isExpanded = expandedProjects.has(project.id)
+          const meetings = project.meetings || []
+          const sortedMeetings = [...meetings].sort((a, b) => new Date(b.date) - new Date(a.date))
+
+          return (
             <div key={project.id} className="card project-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${project.id}`)}>  
               {/* Header */}
               <div className="project-card-header">
@@ -184,8 +202,66 @@ export default function Projects() {
                 </div>
               )}
 
+              {/* Meetings toggle */}
+              <div className="project-meetings-section" onClick={e => e.stopPropagation()}>
+                <button
+                  type="button"
+                  className="project-meetings-toggle"
+                  onClick={(e) => toggleExpand(project.id, e)}
+                >
+                  <span>
+                    {meetings.length === 1
+                      ? '1 meeting'
+                      : `${meetings.length} meetings`}
+                  </span>
+                  <span className={`project-meetings-chevron ${isExpanded ? 'expanded' : ''}`}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 5L7 9L11 5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  </span>
+                </button>
+
+                {isExpanded && (
+                  <div className="project-meetings-list">
+                    {sortedMeetings.length === 0 ? (
+                      <p className="project-meetings-empty">No meetings yet.</p>
+                    ) : (
+                      sortedMeetings.map(m => (
+                        <div key={m.id} className="project-meeting-item">
+                          <span className="pmeet-date">
+                            {new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                          {m.topic && <span className="pmeet-topic">{m.topic}</span>}
+                          {m.trade && <span className="pmeet-trade">{m.trade}</span>}
+                          {m.leader_name && (
+                            <span className="pmeet-leader">{m.leader_name}</span>
+                          )}
+                          <span className={`pmeet-status ${m.completed ? 'pmeet-done' : 'pmeet-pending'}`}>
+                            {m.completed ? 'Done' : 'In progress'}
+                          </span>
+                          <button
+                            type="button"
+                            className="pmeet-view-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/meetings/${m.id}`) }}
+                          >
+                            View
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-secondary project-add-meeting-btn"
+                      onClick={(e) => { e.stopPropagation(); navigate(`/meetings/new?project_id=${project.id}`) }}
+                    >
+                      + Add Meeting
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-        ))}
+          )
+        })}
       </div>
 
       {/* ── New Project Modal ── */}
