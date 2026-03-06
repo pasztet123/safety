@@ -16,7 +16,7 @@ export default function People() {
   const fetchPersons = async () => {
     setLoading(true)
 
-    const [workersRes, leadersRes] = await Promise.all([
+    const [workersRes, leadersRes, attendeesRes, leaderMeetingsRes] = await Promise.all([
       supabase
         .from('involved_persons')
         .select('id, name, email, phone, company:companies(name)')
@@ -25,19 +25,47 @@ export default function People() {
         .from('leaders')
         .select('id, name, email, phone')
         .order('name'),
+      supabase
+        .from('meeting_attendees')
+        .select('name, meeting:meetings(date, is_draft)'),
+      supabase
+        .from('meetings')
+        .select('leader_id, date')
+        .eq('is_draft', false)
+        .not('leader_id', 'is', null),
     ])
 
-    const workers = (workersRes.data || []).map((p) => ({
-      ...p,
-      _type: 'worker',
-      _companyName: p.company?.name || null,
-    }))
+    // Worker meeting stats: normalized name → { count, lastDate }
+    const workerMeetingMap = {}
+    ;(attendeesRes.data || []).forEach(({ name, meeting }) => {
+      if (!meeting || meeting.is_draft) return
+      const key = (name || '').toLowerCase().trim()
+      if (!workerMeetingMap[key]) workerMeetingMap[key] = { count: 0, lastDate: null }
+      workerMeetingMap[key].count++
+      if (!workerMeetingMap[key].lastDate || meeting.date > workerMeetingMap[key].lastDate) {
+        workerMeetingMap[key].lastDate = meeting.date
+      }
+    })
 
-    const leaders = (leadersRes.data || []).map((p) => ({
-      ...p,
-      _type: 'leader',
-      _companyName: null,
-    }))
+    // Leader meeting stats: leader_id → { count, lastDate }
+    const leaderMeetingMap = {}
+    ;(leaderMeetingsRes.data || []).forEach(({ leader_id, date }) => {
+      if (!leaderMeetingMap[leader_id]) leaderMeetingMap[leader_id] = { count: 0, lastDate: null }
+      leaderMeetingMap[leader_id].count++
+      if (!leaderMeetingMap[leader_id].lastDate || date > leaderMeetingMap[leader_id].lastDate) {
+        leaderMeetingMap[leader_id].lastDate = date
+      }
+    })
+
+    const workers = (workersRes.data || []).map((p) => {
+      const ms = workerMeetingMap[(p.name || '').toLowerCase().trim()] || { count: 0, lastDate: null }
+      return { ...p, _type: 'worker', _companyName: p.company?.name || null, _meetingCount: ms.count, _lastMeeting: ms.lastDate }
+    })
+
+    const leaders = (leadersRes.data || []).map((p) => {
+      const ms = leaderMeetingMap[p.id] || { count: 0, lastDate: null }
+      return { ...p, _type: 'leader', _companyName: null, _meetingCount: ms.count, _lastMeeting: ms.lastDate }
+    })
 
     // Merge and sort by name
     const merged = [...workers, ...leaders].sort((a, b) =>
@@ -120,6 +148,23 @@ export default function People() {
                   )}
                 </div>
               )}
+
+              <div className="person-card-meeting-stats">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                  <rect x="8" y="2" width="8" height="4" rx="1"/>
+                </svg>
+                <span className="person-card-meeting-count">
+                  {person._meetingCount === 0
+                    ? 'No meetings'
+                    : `${person._meetingCount} meeting${person._meetingCount !== 1 ? 's' : ''}`}
+                </span>
+                {person._lastMeeting && (
+                  <span className="person-card-meeting-last">
+                    · last {new Date(person._lastMeeting).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </span>
+                )}
+              </div>
             </button>
           ))}
         </div>
