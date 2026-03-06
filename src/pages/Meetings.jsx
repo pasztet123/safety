@@ -401,34 +401,31 @@ export default function Meetings() {
 
       {/* ── Filter bar ── */}
       <div className="filter-bar">
-        <div className="filter-bar-search">
-          <span className="filter-search-icon">🔍</span>
-          <input
-            className="filter-search-input"
-            type="text"
-            placeholder="Szukaj tematu, lidera, uczestnika..."
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-          />
-        </div>
+        <input
+          className="filter-search-input"
+          type="text"
+          placeholder="Search topic, leader, attendee..."
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+        />
         <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} className="filter-select">
-          <option value="">Wszystkie branże</option>
+          <option value="">All trades</option>
           {tradesInMeetings.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
-          <option value="">Wszyscy uczestnicy</option>
+          <option value="">All attendees</option>
           {personsInMeetings.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
-          <option value="newest">Najnowsze</option>
-          <option value="oldest">Najstarsze</option>
-          <option value="az">Temat A → Z</option>
-          <option value="za">Temat Z → A</option>
-          <option value="most-attendees">Najwięcej uczestników</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">Topic A → Z</option>
+          <option value="za">Topic Z → A</option>
+          <option value="most-attendees">Most attendees</option>
         </select>
         {filtersActive && (
           <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterTrade(''); setFilterPerson(''); setSortBy('newest') }}>
-            Wyczyść
+            Clear
           </button>
         )}
       </div>

@@ -163,33 +163,30 @@ export default function Incidents() {
 
       {/* ── Filter bar ── */}
       <div className="filter-bar">
-        <div className="filter-bar-search">
-          <span className="filter-search-icon">🔍</span>
-          <input
-            className="filter-search-input"
-            type="text"
-            placeholder="Szukaj typu, pracownika, miejsca..."
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-          />
-        </div>
+        <input
+          className="filter-search-input"
+          type="text"
+          placeholder="Search type, employee, location..."
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+        />
         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="filter-select">
-          <option value="">Wszystkie typy</option>
+          <option value="">All types</option>
           {typesInIncidents.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
-          <option value="">Wszyscy pracownicy</option>
+          <option value="">All employees</option>
           {personsInIncidents.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
-          <option value="newest">Najnowsze</option>
-          <option value="oldest">Najstarsze</option>
-          <option value="az">Typ A → Z</option>
-          <option value="za">Typ Z → A</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="az">Type A → Z</option>
+          <option value="za">Type Z → A</option>
         </select>
         {filtersActive && (
           <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterType(''); setFilterPerson(''); setSortBy('newest') }}>
-            Wyczyść
+            Clear
           </button>
         )}
       </div>
