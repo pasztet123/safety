@@ -221,7 +221,6 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
           ${t.osha_reference ? `<div class="topic-osha">OSHA ${esc(t.osha_reference)}</div>` : ''}
         </div>
         <div class="topic-body">
-          ${t.image_url ? `<img class="topic-img" src="${t.image_url}" crossorigin="anonymous" />` : ''}
           <div class="pdf-fields" style="margin-bottom:16px">
             ${t.risk_level ? `<div class="pdf-field"><div class="pdf-field-label">Risk Level</div><div class="pdf-field-value"><span class="risk-pill ${riskCls}">${(t.risk_level||'').toUpperCase()}</span></div></div>` : ''}
             ${t.osha_reference ? `<div class="pdf-field"><div class="pdf-field-label">OSHA Reference</div><div class="pdf-field-value">${esc(t.osha_reference)}</div></div>` : ''}
