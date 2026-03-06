@@ -75,6 +75,7 @@ export default function ExportPanel() {
   const [trades, setTrades] = useState([])
   const [topics, setTopics] = useState([])
   const [allAttendeeNames, setAllAttendeeNames] = useState([])
+  const [allLeaderNames, setAllLeaderNames] = useState([])
   const [severities] = useState(['lost_time','first_aid','near_miss','property_damage','medical_treatment','recordable','fatality'])
   const SEV_LABELS = { lost_time:'Lost Time', first_aid:'First Aid', near_miss:'Near Miss',
     property_damage:'Property Damage', medical_treatment:'Medical Treatment', recordable:'Recordable', fatality:'Fatality' }
@@ -88,6 +89,7 @@ export default function ExportPanel() {
   const [mProject, setMProject]   = useState('')
   const [mTrade, setMTrade]       = useState('')
   const [mAttendee, setMAttendee] = useState('')
+  const [mLeader, setMLeader]     = useState('')
   const [mTopic, setMTopic]       = useState('')
 
   // ── Safety Topics filters ──────────────────────────────────────────────────
@@ -148,6 +150,13 @@ export default function ExportPanel() {
         setAllAttendeeNames(names)
       }
 
+      // Load unique leader names for autocomplete
+      const { data: leadData } = await supabase.from('meetings').select('leader_name').eq('is_draft', false)
+      if (leadData) {
+        const leaders = [...new Set(leadData.map(l => l.leader_name).filter(Boolean))].sort()
+        setAllLeaderNames(leaders)
+      }
+
       setReady(true)
     }
     init()
@@ -172,12 +181,12 @@ export default function ExportPanel() {
 
   // ── Meetings: list PDF ─────────────────────────────────────────────────────
   const handleMeetingListPDF = () => runExport('Fetching meetings…', async () => {
-    const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, topic: mTopic }
+    const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, leaderName: mLeader, topic: mTopic }
     const meetings = await fetchMeetingsFull(filters)
     if (!meetings.length) { alert('No meetings found for the selected filters.'); return }
     setProgress(p => ({ ...p, label: `Building PDF for ${meetings.length} meetings…` }))
     const projectName = mProject ? projects.find(p => p.id === mProject)?.name : ''
-    const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
+    const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mLeader ? `Leader: ${mLeader}` : '', mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
     await downloadMeetingListPDF(meetings, 'Toolbox Meetings Report', filterDesc(parts))
   })
 
@@ -187,7 +196,7 @@ export default function ExportPanel() {
     const runZip = async () => {
       setProgress({ visible: true, done: 0, total: 0, label: 'Fetching meetings…' })
       try {
-        const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, topic: mTopic }
+        const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, leaderName: mLeader, topic: mTopic }
         const meetings = await fetchMeetingsFull(filters)
         if (!meetings.length) { alert('No meetings found for the selected filters.'); setProgress({ visible: false }); return }
 
@@ -293,7 +302,7 @@ export default function ExportPanel() {
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Toolbox Meetings">
         <p className="ep-desc">
-          Export a list PDF of all toolbox meetings, optionally filtered by date, project, worker, trade, or topic.
+          Export a list PDF of all toolbox meetings, optionally filtered by date, project, leader, worker, trade, or topic.
           Or download all filtered meetings as individual PDFs packed into a ZIP file.
         </p>
 
@@ -307,6 +316,20 @@ export default function ExportPanel() {
               <option value="">All trades</option>
               {trades.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Leader</label>
+            <input
+              list="ep-leaders"
+              className="ep-input"
+              placeholder="Leader name…"
+              value={mLeader}
+              onChange={e => setMLeader(e.target.value)}
+            />
+            <datalist id="ep-leaders">
+              {allLeaderNames.map(n => <option key={n} value={n} />)}
+            </datalist>
           </div>
 
           <div className="ep-filter-group">

@@ -66,6 +66,10 @@ export const fetchMeetingsFull = async (filters = {}) => {
     const q2 = filters.topic.toLowerCase()
     result = result.filter(m => m.topic?.toLowerCase().includes(q2))
   }
+  if (filters.leaderName?.trim()) {
+    const q2 = filters.leaderName.toLowerCase()
+    result = result.filter(m => m.leader_name?.toLowerCase().includes(q2))
+  }
 
   return result
 }

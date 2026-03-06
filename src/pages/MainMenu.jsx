@@ -186,17 +186,17 @@ export default function MainMenu() {
       ])
       const merged = [
         ...(mtgs.data || []).map(m => ({
-          type: 'meeting', icon: '📋',
+          type: 'meeting',
           label: m.topic, sub: m.leader_name,
           ts: m.created_at, path: '/meetings',
         })),
         ...(incs.data || []).map(i => ({
-          type: 'incident', icon: '⚠️',
+          type: 'incident',
           label: i.type_name, sub: i.employee_name,
           ts: i.created_at, path: '/incidents',
         })),
         ...(acts.data || []).map(a => ({
-          type: 'action', icon: '🔧',
+          type: 'action',
           label: (a.description || '').slice(0, 55) + ((a.description || '').length > 55 ? '…' : ''),
           sub: a.status === 'completed' ? 'Completed' : 'Open',
           ts: a.created_at, path: '/corrective-actions',
@@ -376,7 +376,6 @@ export default function MainMenu() {
           <div className="activity-list">
             {recentActivity.map((item, idx) => (
               <button key={idx} className="activity-item" onClick={() => navigate(item.path)}>
-                <span className="activity-icon">{item.icon}</span>
                 <div className="activity-text">
                   <span className="activity-label">{item.label}</span>
                   {item.sub && <span className="activity-sub">{item.sub}</span>}
