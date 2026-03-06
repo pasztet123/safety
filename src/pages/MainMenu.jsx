@@ -290,7 +290,7 @@ export default function MainMenu() {
             onClick={() => stats.todayMeetings > 0 ? navigate('/meetings') : navigate('/meetings/new')}
           >
             {stats.todayMeetings > 0
-              ? `🗓 ${stats.todayMeetings} meeting${stats.todayMeetings !== 1 ? 's' : ''} scheduled`
+              ? `${stats.todayMeetings} meeting${stats.todayMeetings !== 1 ? 's' : ''} scheduled`
               : '+ Schedule a meeting'}
           </button>
           {stats.openActions > 0 && (
