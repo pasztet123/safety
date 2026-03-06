@@ -190,7 +190,6 @@ export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
 
 // ─── Safety Topics Brochure PDF ───────────────────────────────────────────────
 
-/**
 // ─── Brochure helper: render one HTML chunk, add pages to an existing jsPDF doc ──
 
 const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
