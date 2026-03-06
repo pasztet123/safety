@@ -143,17 +143,17 @@ export default function People() {
                     <div className="person-company">{person._companyName}</div>
                   )}
                 </div>
-                {person._type === 'both' ? (
-                  <div className="person-badge-group">
-                    <span className="person-badge person-badge--worker">Worker</span>
-                    <span className="person-badge person-badge--leader">Leader</span>
-                  </div>
-                ) : (
-                  <span className={`person-badge person-badge--${person._type}`}>
-                    {person._type === 'worker' ? 'Worker' : 'Leader'}
-                  </span>
-                )}
               </div>
+              {person._type === 'both' ? (
+                <div className="person-badge-group">
+                  <span className="person-badge person-badge--worker">Worker</span>
+                  <span className="person-badge person-badge--leader">Leader</span>
+                </div>
+              ) : (
+                <span className={`person-badge person-badge-abs person-badge--${person._type}`}>
+                  {person._type === 'worker' ? 'Worker' : 'Leader'}
+                </span>
+              )}
 
               {(person.email || person.phone) && (
                 <div className="person-card-contact">
