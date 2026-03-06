@@ -22,6 +22,7 @@ export default function Projects() {
   const [showForm, setShowForm] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
   const [formData, setFormData] = useState({ ...EMPTY_FORM })
+  const [formError, setFormError] = useState('')
   const [availableTrades, setAvailableTrades] = useState([])
   const [tradeInput, setTradeInput] = useState('')
   const [tradeDropdownOpen, setTradeDropdownOpen] = useState(false)
@@ -69,6 +70,7 @@ export default function Projects() {
     setShowForm(false)
     setEditingProject(null)
     setFormData({ ...EMPTY_FORM })
+    setFormError('')
     setTradeInput('')
   }
 
@@ -82,13 +84,16 @@ export default function Projects() {
       status: formData.status,
       trades: formData.trades.length > 0 ? formData.trades : null,
     }
+    setFormError('')
     if (editingProject) {
       const { error } = await supabase.from('projects').update(payload).eq('id', editingProject.id)
-      if (!error) { closeForm(); fetchProjects() }
+      if (error) { setFormError(error.message || 'Failed to update project.') }
+      else { closeForm(); fetchProjects() }
     } else {
       const { data: { user } } = await supabase.auth.getUser()
       const { error } = await supabase.from('projects').insert([{ ...payload, user_id: user.id }])
-      if (!error) { closeForm(); fetchProjects() }
+      if (error) { setFormError(error.message || 'Failed to create project.') }
+      else { closeForm(); fetchProjects() }
     }
   }
 
@@ -303,6 +308,7 @@ export default function Projects() {
         <div className="modal-overlay" onClick={closeForm}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <h3 className="modal-title">{editingProject ? 'Edit Project' : 'New Project'}</h3>
+            {formError && <p className="form-error-msg">{formError}</p>}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
                 <label className="form-label">Project Name *</label>
