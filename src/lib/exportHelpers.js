@@ -179,12 +179,13 @@ const csvHeader = (...cols) => csvRow(cols)
 const fmtCSVDate = (d) => d ? String(d).substring(0, 10) : ''
 
 const buildMeetingsCSV = (meetings) => {
-  const lines = [csvHeader('Date','Project','Topic','Leader','Trade','Attendees','Attendee Count','Checklists')]
+  const lines = [csvHeader('Date','Time','Project','Topic','Leader','Trade','Attendees','Attendee Count','Checklists')]
   for (const m of meetings) {
     const attendees = (m.attendees || []).map(a => a.name).filter(Boolean).join('; ')
     const checklists = (m.checklists || []).map(c => c.name).filter(Boolean).join('; ')
     lines.push(csvRow([
-      fmtCSVDate(m.date), m.project?.name || '', m.topic || '', m.leader_name || '',
+      fmtCSVDate(m.date), m.time ? m.time.substring(0, 5) : '',
+      m.project?.name || '', m.topic || '', m.leader_name || '',
       m.trade || '', attendees, (m.attendees || []).length, checklists,
     ]))
   }
