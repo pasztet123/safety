@@ -95,7 +95,7 @@ export default function PersonDetail() {
 
     const { data: meetingData } = await supabase
       .from('meetings')
-      .select('id, date, topic, project_id, project:projects(id, name, address)')
+      .select('id, date, topic, project_id, project:projects(id, name, job_address)')
       .in('id', meetingIds)
       .eq('is_draft', false)
       .order('date', { ascending: false })
@@ -185,7 +185,7 @@ export default function PersonDetail() {
   const fetchCorrectiveActions = async () => {
     const { data } = await supabase
       .from('corrective_actions')
-      .select('*, incident:incidents(description, date)')
+      .select('*, incident:incidents(details, date)')
       .eq('responsible_person_id', id)
       .order('created_at', { ascending: false })
 
@@ -328,8 +328,8 @@ export default function PersonDetail() {
                 >
                   <div className="person-activity-main">
                     <span className="person-activity-title">{p.name}</span>
-                    {p.address && (
-                      <span className="person-activity-sub">{p.address}</span>
+                    {p.job_address && (
+                      <span className="person-activity-sub">{p.job_address}</span>
                     )}
                   </div>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -366,8 +366,8 @@ export default function PersonDetail() {
                   >
                     <div className="person-activity-main">
                       <span className="person-activity-title">
-                        {inc.description
-                          ? inc.description.substring(0, 80) + (inc.description.length > 80 ? '…' : '')
+                        {inc.details
+                          ? inc.details.substring(0, 80) + (inc.details.length > 80 ? '…' : '')
                           : 'Incident'}
                       </span>
                       <div className="person-activity-tags">
@@ -413,7 +413,7 @@ export default function PersonDetail() {
                     <span className="person-activity-title">{ca.description || 'Corrective Action'}</span>
                     {ca.incident && (
                       <span className="person-activity-sub">
-                        Incident: {ca.incident.description?.substring(0, 50) || ca.incident.date}
+                        Incident: {ca.incident.details?.substring(0, 50) || ca.incident.date}
                       </span>
                     )}
                   </div>
