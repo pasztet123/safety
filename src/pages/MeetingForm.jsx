@@ -108,7 +108,14 @@ export default function MeetingForm() {
         try {
           const parsed = JSON.parse(savedData)
           if (parsed.formData) setFormData(prev => ({ ...prev, ...parsed.formData }))
-          if (parsed.attendees) setAttendees(parsed.attendees)
+          if (parsed.attendees) setAttendees(
+            parsed.attendees.map(a => ({
+              ...a,
+              // Never restore checkbox states from localStorage — always start fresh
+              signed_with_checkbox: false,
+              show_signature_field: false,
+            }))
+          )
           if (parsed.selectedChecklists) setSelectedChecklists(parsed.selectedChecklists)
           if (parsed.completedChecklists) setCompletedChecklists(parsed.completedChecklists)
         } catch (e) {
@@ -577,6 +584,8 @@ export default function MeetingForm() {
         }
       }
 
+      const isDraftMeeting = data.is_draft === true
+
       setFormData({
         project_id: data.project_id || '',
         date: data.date.split('T')[0],
@@ -589,26 +598,24 @@ export default function MeetingForm() {
         trade: data.trade || '',
         topic: data.topic,
         notes: data.notes || '',
-        completed: data.completed || false,
+        // Drafts always start with "Leader confirms" unchecked regardless of DB value
+        completed: isDraftMeeting ? false : (data.completed || false),
       })
       if (resolvedLeaderSig) setLeaderDefaultSignature(resolvedLeaderSig)
       setAttendees(
         (data.attendees || []).map(a => ({
           ...a,
-          // Pre-open the signature panel for attendees who already have a saved signature
-          show_signature_field: a.show_signature_field || !!a.signature_url,
-          // Draft meetings: always start with Confirmed unchecked
-          ...(data.is_draft ? { signed_with_checkbox: false } : {}),
+          show_signature_field: isDraftMeeting ? false : (a.show_signature_field || !!a.signature_url),
+          signed_with_checkbox: isDraftMeeting ? false : (a.signed_with_checkbox || false),
         }))
       )
       setPhotos(data.photos || [])
 
       // Draft mode
-      const isDraftMeeting = data.is_draft === true
       setIsDraft(isDraftMeeting)
 
       // Load existing signature (edit mode, non-draft only)
-      // For drafts the signature panel starts unchecked so admin decides
+      // Drafts: signature panel starts unchecked so admin decides at approval
       if (data.signature_url && !isDraftMeeting) {
         setExistingSignatureUrl(data.signature_url)
         setShowSignaturePanel(true)
