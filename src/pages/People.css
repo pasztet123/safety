@@ -119,6 +119,14 @@
   color: #6b21a8;
 }
 
+.person-badge-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
 /* ── Contact row inside card ───────────────────────────────────── */
 .person-card-contact {
   display: flex;

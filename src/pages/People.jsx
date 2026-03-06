@@ -144,7 +144,10 @@ export default function People() {
                   )}
                 </div>
                 {person._type === 'both' ? (
-                  <span className="person-badge person-badge--both">Worker &amp; Leader</span>
+                  <div className="person-badge-group">
+                    <span className="person-badge person-badge--worker">Worker</span>
+                    <span className="person-badge person-badge--leader">Leader</span>
+                  </div>
                 ) : (
                   <span className={`person-badge person-badge--${person._type}`}>
                     {person._type === 'worker' ? 'Worker' : 'Leader'}

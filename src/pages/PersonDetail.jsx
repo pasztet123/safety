@@ -211,7 +211,10 @@ export default function PersonDetail() {
         <div className="person-profile-meta">
           <h2 className="person-profile-name">{person.name}</h2>
           {person.leader_id ? (
-            <span className="person-badge person-badge--both">Worker &amp; Leader</span>
+            <div className="person-badge-group">
+              <span className="person-badge person-badge--worker">Worker</span>
+              <span className="person-badge person-badge--leader">Leader</span>
+            </div>
           ) : (
             <span className={`person-badge person-badge--${type}`}>
               {type === 'worker' ? 'Worker' : 'Leader'}
