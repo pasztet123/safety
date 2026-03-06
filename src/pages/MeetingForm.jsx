@@ -47,6 +47,7 @@ export default function MeetingForm() {
     topic: '',
     notes: '',
     completed: false,
+    is_self_training: false,
   })
   
   const [attendees, setAttendees] = useState([])
@@ -267,7 +268,7 @@ export default function MeetingForm() {
   const fetchInvolvedPersons = async () => {
     const { data } = await supabase
       .from('involved_persons')
-      .select('id, name, company:companies(name), default_signature_url')
+      .select('id, name, leader_id, company:companies(name), default_signature_url')
       .order('name')
     
     if (data) {
@@ -358,14 +359,70 @@ export default function MeetingForm() {
         const newOnes = source.attendees
           .filter(a => !existingNames.has(a.name))
           .map(a => ({ name: a.name, signature_url: null }))
-        setAttendees(prev => [...prev, ...newOnes])
+        const merged = [...attendees, ...newOnes]
+        setAttendees(merged)
+        autoDetectLeader(merged)
       }
+    }
+  }
+
+  // Auto-detect leader based on attendees list.
+  // Rules:
+  //  - 0 attendees → reset is_self_training to false
+  //  - 1 attendee  → self-training; set leader to that person's linked leader (or their name if no link)
+  //  - 2+ attendees → if any attendee has an involved_persons.leader_id, promote that leader
+  const autoDetectLeader = (newAttendees) => {
+    if (newAttendees.length === 0) {
+      setFormData(prev => ({ ...prev, is_self_training: false }))
+      return
+    }
+
+    if (newAttendees.length === 1) {
+      const attendee = newAttendees[0]
+      const person = involvedPersons.find(p => p.name === attendee.name)
+      if (person?.leader_id) {
+        const leader = leaders.find(l => l.id === person.leader_id)
+        if (leader) {
+          setFormData(prev => ({
+            ...prev,
+            leader_id: leader.id,
+            leader_name: leader.name,
+            is_self_training: true,
+          }))
+          if (leader.default_signature_url) setLeaderDefaultSignature(leader.default_signature_url)
+          return
+        }
+      }
+      // Attendee not linked to any leader — use their name as leader name only
+      setFormData(prev => ({
+        ...prev,
+        leader_id: '',
+        leader_name: attendee.name,
+        is_self_training: true,
+      }))
+    } else {
+      // Multiple attendees — find the first one linked to a leader
+      let update = { is_self_training: false }
+      for (const attendee of newAttendees) {
+        const person = involvedPersons.find(p => p.name === attendee.name)
+        if (person?.leader_id) {
+          const leader = leaders.find(l => l.id === person.leader_id)
+          if (leader) {
+            update = { ...update, leader_id: leader.id, leader_name: leader.name }
+            if (leader.default_signature_url) setLeaderDefaultSignature(leader.default_signature_url)
+            break
+          }
+        }
+      }
+      setFormData(prev => ({ ...prev, ...update }))
     }
   }
 
   const addAttendeeFromPerson = (person) => {
     if (!attendees.find(a => a.name === person.name)) {
-      setAttendees(prev => [...prev, { name: person.name, signature_url: null }])
+      const newAttendees = [...attendees, { name: person.name, signature_url: null }]
+      setAttendees(newAttendees)
+      autoDetectLeader(newAttendees)
     }
     setAttendeeSearch('')
     setAttendeeDropdownOpen(false)
@@ -375,7 +432,9 @@ export default function MeetingForm() {
     const name = attendeeSearch.trim()
     if (!name) return
     if (!attendees.find(a => a.name === name)) {
-      setAttendees(prev => [...prev, { name, signature_url: null }])
+      const newAttendees = [...attendees, { name, signature_url: null }]
+      setAttendees(newAttendees)
+      autoDetectLeader(newAttendees)
     }
     setAttendeeSearch('')
     setAttendeeDropdownOpen(false)
@@ -610,6 +669,7 @@ export default function MeetingForm() {
         notes: data.notes || '',
         // Drafts: pre-check "Leader confirms" so admin just needs to approve
         completed: isDraftMeeting ? true : (data.completed || false),
+        is_self_training: data.is_self_training || false,
       })
       if (resolvedLeaderSig) setLeaderDefaultSignature(resolvedLeaderSig)
       setAttendees(
@@ -672,12 +732,16 @@ export default function MeetingForm() {
 
   const handleAddAttendee = () => {
     if (!newAttendee.trim()) return
-    setAttendees([...attendees, { name: newAttendee, signature_url: null }])
+    const newAttendees = [...attendees, { name: newAttendee, signature_url: null }]
+    setAttendees(newAttendees)
+    autoDetectLeader(newAttendees)
     setNewAttendee('')
   }
 
   const handleRemoveAttendee = (index) => {
-    setAttendees(attendees.filter((_, i) => i !== index))
+    const newAttendees = attendees.filter((_, i) => i !== index)
+    setAttendees(newAttendees)
+    autoDetectLeader(newAttendees)
   }
 
   const handlePhotoUpload = async (e) => {
@@ -830,6 +894,7 @@ export default function MeetingForm() {
         notes: formData.notes || null,
         ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
         completed: approveModeRef.current ? true : formData.completed,
+        is_self_training: formData.is_self_training || false,
         created_by: user.id,
         // Draft handling: preserve is_draft unless explicitly approving
         ...(id && isDraft ? { is_draft: approveModeRef.current ? false : true } : {}),
@@ -1058,7 +1123,11 @@ export default function MeetingForm() {
             <div className="form-group">
               <label className="form-label">Leader *</label>
               <select className="form-select" value={formData.leader_id} onChange={handleLeaderChange} required>
-                <option value="">Select Leader</option>
+                <option value="">
+                  {formData.is_self_training && !formData.leader_id && formData.leader_name
+                    ? `${formData.leader_name} (Self-Training)`
+                    : 'Select Leader'}
+                </option>
                 {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 <option value="new">+ Add New Leader</option>
               </select>
@@ -1363,7 +1432,12 @@ export default function MeetingForm() {
 
           {/* Attendees tag-input */}
           <div className="form-group">
-            <label className="form-label">Attendees</label>
+            <label className="form-label">
+              Attendees
+              {formData.is_self_training && (
+                <span className="mf-self-training-badge">Self-Training</span>
+              )}
+            </label>
 
             {attendees.length > 0 && (
               <div className="mf-chips-row">

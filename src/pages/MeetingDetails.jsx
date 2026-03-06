@@ -118,7 +118,12 @@ export default function MeetingDetails() {
 
         <div className="form-group">
           <label className="form-label">Leader</label>
-          <p className="detail-value">{meeting.leader_name}</p>
+          <p className="detail-value">
+            {meeting.leader_name}
+            {meeting.is_self_training && (
+              <span className="mf-self-training-badge" style={{ marginLeft: 8 }}>Self-Training</span>
+            )}
+          </p>
         </div>
 
         {meeting.trade && (
