@@ -195,18 +195,20 @@ export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
 
 const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
   const wrap = document.createElement('div')
-  wrap.style.cssText = 'position:absolute;top:0;left:-9999px;width:794px;background:#fff'
+  wrap.style.cssText = 'position:absolute;top:0;left:-9999px;width:794px;background:#fff;z-index:-1'
   document.body.appendChild(wrap)
   wrap.innerHTML = html
 
   try {
     const canvas = await html2canvas(wrap, {
       scale: 2,
-      useCORS: false,
-      allowTaint: false,
+      useCORS: true,
+      allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
     })
+
+    if (!canvas.width || !canvas.height) return
 
     const A4W = 210, A4H = 297
     const pxW = canvas.width                              // 1588 at scale:2
@@ -310,7 +312,8 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
   }
 
   const dateStr = new Date().toISOString().split('T')[0]
-  doc.save(`safety-topics-brochure-${dateStr}.pdf`)
+  const filename = `safety-topics-brochure-${dateStr}.pdf`
+  saveAs(new Blob([doc.output('arraybuffer')], { type: 'application/pdf' }), filename)
 }
 
 export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {

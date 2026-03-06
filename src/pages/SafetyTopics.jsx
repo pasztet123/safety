@@ -258,7 +258,7 @@ export default function SafetyTopics() {
               onClick={async () => {
                 setExportLoading(true)
                 try { await downloadSafetyTopicsBrochurePDF(filteredTopics, 'Safety Topics Brochure') }
-                catch (e) { console.error(e) }
+                catch (e) { console.error('Brochure PDF failed:', e); alert('PDF generation failed: ' + (e?.message || e)) }
                 finally { setExportLoading(false) }
               }}
               title="Download all visible topics as a brochure PDF"
