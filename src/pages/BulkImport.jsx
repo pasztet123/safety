@@ -183,8 +183,13 @@ export default function BulkImport() {
       const toSave = draftMeetings.filter(d => !skippedDates.has(d.date))
       if (toSave.length === 0) { setSaving(false); return }
 
-      // Generate a batch UUID
-      const batchId = crypto.randomUUID()
+      // Generate a batch UUID (fallback for browsers without crypto.randomUUID)
+      const batchId = (crypto.randomUUID
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16)
+          }))
 
       // 1. Create any missing involved_persons
       if (newPersons.length > 0) {
