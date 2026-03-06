@@ -114,6 +114,10 @@
   background: var(--color-success-bg);
   color: var(--color-success);
 }
+.person-badge--both {
+  background: #f3e8ff;
+  color: #6b21a8;
+}
 
 /* ── Contact row inside card ───────────────────────────────────── */
 .person-card-contact {

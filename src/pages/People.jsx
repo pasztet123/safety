@@ -19,7 +19,7 @@ export default function People() {
     const [workersRes, leadersRes, attendeesRes, leaderMeetingsRes] = await Promise.all([
       supabase
         .from('involved_persons')
-        .select('id, name, email, phone, company:companies(name)')
+        .select('id, name, email, phone, leader_id, company:companies(name)')
         .order('name'),
       supabase
         .from('leaders')
@@ -57,12 +57,33 @@ export default function People() {
       }
     })
 
+    // Set of leader IDs that are linked to a worker — these get suppressed from leaders list
+    const linkedLeaderIds = new Set(
+      (workersRes.data || []).map((p) => p.leader_id).filter(Boolean)
+    )
+
     const workers = (workersRes.data || []).map((p) => {
-      const ms = workerMeetingMap[(p.name || '').toLowerCase().trim()] || { count: 0, lastDate: null }
-      return { ...p, _type: 'worker', _companyName: p.company?.name || null, _meetingCount: ms.count, _lastMeeting: ms.lastDate }
+      const nameKey = (p.name || '').toLowerCase().trim()
+      // Stats from meeting_attendees (as attendee)
+      const attendeeMs = workerMeetingMap[nameKey] || { count: 0, lastDate: null }
+      // Stats from meetings.leader_id (as leader), if linked
+      const leaderMs = p.leader_id ? (leaderMeetingMap[p.leader_id] || { count: 0, lastDate: null }) : { count: 0, lastDate: null }
+      // Merge: sum counts, take latest date
+      const totalCount = attendeeMs.count + leaderMs.count
+      let lastDate = null
+      if (attendeeMs.lastDate && leaderMs.lastDate) lastDate = attendeeMs.lastDate > leaderMs.lastDate ? attendeeMs.lastDate : leaderMs.lastDate
+      else lastDate = attendeeMs.lastDate || leaderMs.lastDate
+
+      return {
+        ...p,
+        _type: p.leader_id ? 'both' : 'worker',
+        _companyName: p.company?.name || null,
+        _meetingCount: totalCount,
+        _lastMeeting: lastDate,
+      }
     })
 
-    const leaders = (leadersRes.data || []).map((p) => {
+    const leaders = (leadersRes.data || []).filter((l) => !linkedLeaderIds.has(l.id)).map((p) => {
       const ms = leaderMeetingMap[p.id] || { count: 0, lastDate: null }
       return { ...p, _type: 'leader', _companyName: null, _meetingCount: ms.count, _lastMeeting: ms.lastDate }
     })
@@ -110,7 +131,7 @@ export default function People() {
             <button
               key={`${person._type}-${person.id}`}
               className="person-card"
-              onClick={() => navigate(`/people/${person._type}/${person.id}`)}
+              onClick={() => navigate(`/people/${person._type === 'leader' ? 'leader' : 'worker'}/${person.id}`)}
             >
               <div className="person-card-top">
                 <div className="person-avatar">
@@ -122,9 +143,13 @@ export default function People() {
                     <div className="person-company">{person._companyName}</div>
                   )}
                 </div>
-                <span className={`person-badge person-badge--${person._type}`}>
-                  {person._type === 'worker' ? 'Worker' : 'Leader'}
-                </span>
+                {person._type === 'both' ? (
+                  <span className="person-badge person-badge--both">Worker &amp; Leader</span>
+                ) : (
+                  <span className={`person-badge person-badge--${person._type}`}>
+                    {person._type === 'worker' ? 'Worker' : 'Leader'}
+                  </span>
+                )}
               </div>
 
               {(person.email || person.phone) && (

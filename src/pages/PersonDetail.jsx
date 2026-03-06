@@ -33,11 +33,10 @@ export default function PersonDetail() {
   }
 
   const fetchPerson = async () => {
-    const table = type === 'worker' ? 'involved_persons' : 'leaders'
     const { data } = type === 'worker'
       ? await supabase
           .from('involved_persons')
-          .select('*, company:companies(name)')
+          .select('*, leader_id, company:companies(name)')
           .eq('id', id)
           .single()
       : await supabase
@@ -57,13 +56,25 @@ export default function PersonDetail() {
     let meetingIds = []
 
     if (type === 'worker') {
-      // Find meetings via meeting_attendees name match
+      // Attendee name match
       const { data: attendeeRows } = await supabase
         .from('meeting_attendees')
         .select('meeting_id')
         .ilike('name', personData.name)
 
       meetingIds = (attendeeRows || []).map((r) => r.meeting_id)
+
+      // Also as leader (if linked)
+      if (personData.leader_id) {
+        const { data: leaderMeetings } = await supabase
+          .from('meetings')
+          .select('id')
+          .eq('leader_id', personData.leader_id)
+          .eq('is_draft', false)
+        ;(leaderMeetings || []).forEach((r) => {
+          if (!meetingIds.includes(r.id)) meetingIds.push(r.id)
+        })
+      }
     } else {
       // Leader: meetings where leader_id = id
       const { data: leaderMeetings } = await supabase
@@ -199,9 +210,13 @@ export default function PersonDetail() {
         </div>
         <div className="person-profile-meta">
           <h2 className="person-profile-name">{person.name}</h2>
-          <span className={`person-badge person-badge--${type}`}>
-            {type === 'worker' ? 'Worker' : 'Leader'}
-          </span>
+          {person.leader_id ? (
+            <span className="person-badge person-badge--both">Worker &amp; Leader</span>
+          ) : (
+            <span className={`person-badge person-badge--${type}`}>
+              {type === 'worker' ? 'Worker' : 'Leader'}
+            </span>
+          )}
           {type === 'worker' && person.company?.name && (
             <span className="person-profile-company">{person.company.name}</span>
           )}
