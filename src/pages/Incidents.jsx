@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import { downloadIncidentListPDF } from '../lib/pdfBulkGenerator'
 import LocationMap from '../components/LocationMap'
 import './IncidentForm.css'
 
@@ -13,6 +14,7 @@ export default function Incidents() {
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
+  const [exportLoading, setExportLoading] = useState(false)
 
   // Search / filter / sort
   const [searchText, setSearchText] = useState('')
@@ -156,9 +158,26 @@ export default function Incidents() {
     <div>
       <div className="page-header">
         <h2 className="page-title">Incidents</h2>
-        <button className="btn btn-accent" onClick={() => navigate('/incidents/new')}>
-          + Report Incident
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {isAdmin && filteredIncidents.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              disabled={exportLoading}
+              onClick={async () => {
+                setExportLoading(true)
+                try { await downloadIncidentListPDF(filteredIncidents, 'Incidents Report', `${filteredIncidents.length} incidents`) }
+                catch (e) { console.error(e) }
+                finally { setExportLoading(false) }
+              }}
+              title="Download a summary PDF of filtered incidents"
+            >
+              {exportLoading ? '…' : '↓ Export PDF'}
+            </button>
+          )}
+          <button className="btn btn-accent" onClick={() => navigate('/incidents/new')}>
+            + Report Incident
+          </button>
+        </div>
       </div>
 
       {/* ── Filter bar ── */}

@@ -2,14 +2,15 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
-const ACCENT   = '#E53935'
-const PRIMARY  = '#171717'
-const GRAY     = '#6b7280'
-const BORDER   = '#e5e5e5'
+export const ACCENT   = '#E53935'
+export const PRIMARY  = '#171717'
+export const GRAY     = '#6b7280'
+export const BORDER   = '#e5e5e5'
 
 // ─── Core renderer ───────────────────────────────────────────────────────────
 
-const renderHTMLtoPDF = async (html, filename) => {
+/** Builds a jsPDF document from an HTML string; returns the doc (does NOT save). */
+const _buildPDFDoc = async (html) => {
   // Mount hidden container
   const wrap = document.createElement('div')
   wrap.style.cssText = 'position:absolute;top:0;left:-9999px;width:794px;background:#fff;z-index:-1'
@@ -119,15 +120,27 @@ const renderHTMLtoPDF = async (html, filename) => {
       pageIndex++
     }
 
-    doc.save(filename)
+    return doc
   } finally {
     document.body.removeChild(wrap)
   }
 }
 
+/** Renders HTML to a PDF and saves it as a file download. */
+const renderHTMLtoPDF = async (html, filename) => {
+  const doc = await _buildPDFDoc(html)
+  doc.save(filename)
+}
+
+/** Renders HTML to a PDF and returns the raw ArrayBuffer (for ZIP bundling). */
+export const renderHTMLtoPDFBuffer = async (html) => {
+  const doc = await _buildPDFDoc(html)
+  return doc.output('arraybuffer')
+}
+
 // ─── Shared CSS injected into every HTML template ────────────────────────────
 
-const BASE_CSS = `
+export const BASE_CSS = `
   *{margin:0;padding:0;box-sizing:border-box}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
        color:${PRIMARY};background:#fff;font-size:14px;line-height:1.5}
@@ -216,12 +229,12 @@ const BASE_CSS = `
              font-weight:700;background:#ede9fe;color:#6d28d9}
 `
 
-const baseHTML = (content) => `
+export const baseHTML = (content) => `
   <style>${BASE_CSS}</style>
   <div class="pdf-wrap">${content}</div>
 `
 
-const footer = () => {
+export const footer = () => {
   const now = new Date()
   const date = now.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})
   const time = now.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})
@@ -233,18 +246,18 @@ const footer = () => {
   `
 }
 
-const field = (label, value) => {
+export const field = (label, value) => {
   if (!value) return ''
   const v = String(value).replace(/</g,'&lt;').replace(/>/g,'&gt;')
   return `<div class="pdf-field"><div class="pdf-field-label">${label}</div><div class="pdf-field-value">${v}</div></div>`
 }
 
-const section = (title, content) =>
+export const section = (title, content) =>
   `<div class="pdf-section"><div class="pdf-section-title">${title}</div>${content}</div>`
 
 // ─── loadImage (for cross-origin images in html2canvas) ─────────────────────
 
-const toDataURL = (url) => new Promise((resolve) => {
+export const toDataURL = (url) => new Promise((resolve) => {
   const img = new Image()
   img.crossOrigin = 'Anonymous'
   img.onload = () => {
@@ -259,7 +272,8 @@ const toDataURL = (url) => new Promise((resolve) => {
 
 // ─── Meeting PDF ──────────────────────────────────────────────────────────────
 
-export const generateMeetingPDF = async (meeting) => {
+/** Builds the full HTML string for a meeting PDF (used by both single-PDF and ZIP export). */
+export const buildMeetingHTMLForExport = (meeting) => {
   const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
   const timeStr = meeting.time ? meeting.time.substring(0, 5) : ''
 
@@ -284,7 +298,6 @@ export const generateMeetingPDF = async (meeting) => {
     ? `<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
     : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
-  // ── Topic Details section ──────────────────────────────────────────────────
   const td = meeting.topicDetails
   const topicSectionHTML = td ? section('Topic Guidelines', `
     ${td.description ? `
@@ -299,7 +312,6 @@ export const generateMeetingPDF = async (meeting) => {
     </div>
   `) : ''
 
-  // ── Checklists section ────────────────────────────────────────────────────
   const meetingChecklists = (meeting.checklists || []).filter(Boolean)
   const checklistCompletions = meeting.checklistCompletions || []
 
@@ -338,7 +350,7 @@ export const generateMeetingPDF = async (meeting) => {
     }).join('')
   ) : ''
 
-  const html = baseHTML(`
+  return baseHTML(`
     <div class="pdf-header">
       <div class="pdf-header-type">Toolbox Safety Meeting</div>
       <div class="pdf-header-title">${meeting.topic || 'Safety Meeting'}</div>
@@ -362,7 +374,10 @@ export const generateMeetingPDF = async (meeting) => {
     </div>
     ${footer()}
   `)
+}
 
+export const generateMeetingPDF = async (meeting) => {
+  const html = buildMeetingHTMLForExport(meeting)
   const slug = (meeting.topic || 'meeting').replace(/\s+/g, '-')
   const datePart = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
   await renderHTMLtoPDF(html, 'meeting-' + slug + '-' + datePart + '.pdf')

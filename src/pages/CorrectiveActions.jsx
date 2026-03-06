@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { downloadCorrectiveActionsListPDF } from '../lib/pdfBulkGenerator'
 import './CorrectiveActions.css'
 
 export default function CorrectiveActions() {
@@ -16,6 +17,7 @@ export default function CorrectiveActions() {
   const [incidents, setIncidents] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [predefinedActions, setPredefinedActions] = useState([])
+  const [exportLoading, setExportLoading] = useState(false)
   
   const [newAction, setNewAction] = useState({
     incident_id: '',
@@ -193,12 +195,29 @@ export default function CorrectiveActions() {
     <div className="corrective-actions-page">
       <div className="page-header">
         <h1>Corrective Actions Log</h1>
-        <button 
-          className="btn-primary"
-          onClick={() => setShowAddForm(!showAddForm)}
-        >
-          {showAddForm ? 'Cancel' : '+ Add Corrective Action'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {isAdmin && filteredActions.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              disabled={exportLoading}
+              onClick={async () => {
+                setExportLoading(true)
+                try { await downloadCorrectiveActionsListPDF(filteredActions, involvedPersons, incidents, 'Corrective Actions Report', `${filteredActions.length} actions`) }
+                catch (e) { console.error(e) }
+                finally { setExportLoading(false) }
+              }}
+              title="Download a summary PDF of filtered corrective actions"
+            >
+              {exportLoading ? '…' : '↓ Export PDF'}
+            </button>
+          )}
+          <button 
+            className="btn-primary"
+            onClick={() => setShowAddForm(!showAddForm)}
+          >
+            {showAddForm ? 'Cancel' : '+ Add Corrective Action'}
+          </button>
+        </div>
       </div>
 
       {showAddForm && (

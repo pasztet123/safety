@@ -5,6 +5,7 @@ import { fetchTrades, ensureTrade } from '../lib/trades'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import { getSuggestedChecklists } from '../lib/suggestChecklists'
 import { generateSafetyTopicPDF } from '../lib/pdfGenerator'
+import { downloadSafetyTopicsBrochurePDF } from '../lib/pdfBulkGenerator'
 import './SafetyTopics.css'
 
 export default function SafetyTopics() {
@@ -12,6 +13,7 @@ export default function SafetyTopics() {
   const navigate = useNavigate()
   const [topics, setTopics] = useState([])
   const [filteredTopics, setFilteredTopics] = useState([])
+  const [exportLoading, setExportLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [showAddForm, setShowAddForm] = useState(false)
@@ -248,8 +250,24 @@ export default function SafetyTopics() {
     <div className="container">
       <div className="page-header">
         <h1 className="page-title">Safety Topics</h1>
-        <button 
-          className="btn btn-primary"
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {isAdmin && filteredTopics.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              disabled={exportLoading}
+              onClick={async () => {
+                setExportLoading(true)
+                try { await downloadSafetyTopicsBrochurePDF(filteredTopics, 'Safety Topics Brochure') }
+                catch (e) { console.error(e) }
+                finally { setExportLoading(false) }
+              }}
+              title="Download all visible topics as a brochure PDF"
+            >
+              {exportLoading ? '…' : '↓ Brochure PDF'}
+            </button>
+          )}
+          <button 
+            className="btn btn-primary"
           onClick={() => {
             if (!showAddForm) {
               setEditingTopic(null)
@@ -269,6 +287,7 @@ export default function SafetyTopics() {
         >
           {showAddForm ? 'Cancel' : '+ Add Topic'}
         </button>
+        </div>
       </div>
 
       {showAddForm && (

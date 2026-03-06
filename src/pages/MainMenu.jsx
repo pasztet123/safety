@@ -45,6 +45,13 @@ const WrenchIcon = () => (
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
   </svg>
 )
+const ExportIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="7 10 12 15 17 10"/>
+    <line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+)
 const PeopleIcon = () => (
   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
@@ -217,6 +224,7 @@ export default function MainMenu() {
     { title: 'Checklists',         subtitle: 'Inspection & compliance',    path: '/checklists',         icon: <ChecklistIcon /> },
     { title: 'People',             subtitle: 'Worker & leader profiles',   path: '/people',             icon: <PeopleIcon /> },
     { title: 'Admin Panel',        subtitle: 'Users & settings',           path: '/admin',              icon: <SettingsIcon /> },
+    { title: 'Export',             subtitle: 'PDF reports & CSV files',    path: '/export',             icon: <ExportIcon /> },
   ]
 
   const statCards = [

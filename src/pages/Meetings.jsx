@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
+import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
+import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
 import './Meetings.css'
 
@@ -11,6 +13,8 @@ export default function Meetings() {
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
+  const [exportListLoading, setExportListLoading] = useState(false)
+  const [zipProgress, setZipProgress] = useState({ visible: false, done: 0, total: 0 })
 
   // Search / filter / sort
   const [searchText, setSearchText] = useState('')
@@ -290,8 +294,37 @@ export default function Meetings() {
 
   if (loading) return <div className="spinner"></div>
 
+  const handleExportListPDF = async () => {
+    if (!filteredMeetings.length) return
+    setExportListLoading(true)
+    try {
+      await downloadMeetingListPDF(filteredMeetings, 'Toolbox Meetings Report', `${filteredMeetings.length} meetings`)
+    } catch (e) { console.error(e) }
+    finally { setExportListLoading(false) }
+  }
+
+  const handleExportZIP = async () => {
+    if (!filteredMeetings.length) return
+    if (filteredMeetings.length > 20 && !confirm(`This will generate ${filteredMeetings.length} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
+    setZipProgress({ visible: true, done: 0, total: filteredMeetings.length })
+    try {
+      await downloadMeetingsAsZIP(filteredMeetings, (done, total) => {
+        setZipProgress({ visible: true, done, total })
+      })
+    } catch (e) { console.error(e) }
+    finally { setZipProgress({ visible: false, done: 0, total: 0 }) }
+  }
+
   return (
     <div>
+      {/* ── ZIP Progress ── */}
+      <ExportProgress
+        visible={zipProgress.visible}
+        done={zipProgress.done}
+        total={zipProgress.total}
+        label={`Generating PDF ${zipProgress.done + 1} of ${zipProgress.total}…`}
+      />
+
       {/* ── Approve Modal ── */}
       {showApproveModal && draftsToApprove.length > 0 && (
         <ApproveDraftsModal
@@ -308,6 +341,25 @@ export default function Meetings() {
             <button className="btn btn-secondary" onClick={() => navigate('/bulk-import')}>
               ⬆ Import CSV
             </button>
+          )}
+          {isAdmin && filteredMeetings.length > 0 && (
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={handleExportListPDF}
+                disabled={exportListLoading}
+                title="Download a summary PDF of filtered meetings"
+              >
+                {exportListLoading ? '…' : '↓ List PDF'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleExportZIP}
+                title="Download each meeting as its own PDF inside a ZIP"
+              >
+                ↓ ZIP PDFs
+              </button>
+            </>
           )}
           <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
             + New Meeting

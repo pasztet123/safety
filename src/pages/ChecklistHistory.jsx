@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { downloadChecklistHistoryPDF } from '../lib/pdfBulkGenerator'
 import './ChecklistHistory.css'
 
 export default function ChecklistHistory() {
@@ -9,6 +10,7 @@ export default function ChecklistHistory() {
   const [loading, setLoading] = useState(true)
   const [completions, setCompletions] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
+  const [exportLoading, setExportLoading] = useState(false)
 
   useEffect(() => {
     fetchCurrentUser()
@@ -117,9 +119,26 @@ export default function ChecklistHistory() {
     <div className="checklist-history">
       <div className="page-header">
         <h2 className="page-title">Checklist History</h2>
-        <button className="btn btn-secondary" onClick={() => navigate('/checklists')}>
-          Back to Checklists
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {currentUser?.is_admin && completions.length > 0 && (
+            <button
+              className="btn btn-secondary"
+              disabled={exportLoading}
+              onClick={async () => {
+                setExportLoading(true)
+                try { await downloadChecklistHistoryPDF(completions, 'Checklist History Report', `${completions.length} records`) }
+                catch (e) { console.error(e) }
+                finally { setExportLoading(false) }
+              }}
+              title="Download completed checklist history as PDF"
+            >
+              {exportLoading ? '…' : '↓ Export PDF'}
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={() => navigate('/checklists')}>
+            Back to Checklists
+          </button>
+        </div>
       </div>
 
       {completions.length === 0 ? (

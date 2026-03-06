@@ -1,0 +1,261 @@
+/* ─── ExportPanel.css ──────────────────────────────────────────────────────── */
+
+.ep-wrap {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 0 60px;
+}
+
+/* ── Page header ── */
+.ep-page-header {
+  margin-bottom: 28px;
+}
+
+.ep-page-title {
+  font-size: 28px;
+  font-weight: 800;
+  color: #171717;
+  letter-spacing: -0.5px;
+  margin-bottom: 6px;
+}
+
+.ep-page-sub {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* ── Section card ── */
+.ep-section {
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.ep-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 24px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.ep-section-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.ep-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #171717;
+}
+
+.ep-section-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ── Description text ── */
+.ep-desc {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.6;
+}
+
+/* ── Filters grid ── */
+.ep-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+.ep-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.ep-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.ep-input,
+.ep-select {
+  height: 38px;
+  padding: 0 10px;
+  border: 1.5px solid #e5e5e5;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #171717;
+  background: #fff;
+  transition: border-color 0.15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ep-input:focus,
+.ep-select:focus {
+  outline: none;
+  border-color: #E53935;
+}
+
+.ep-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+/* Date range row */
+.ep-date-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ep-date {
+  flex: 1;
+  min-width: 0;
+  padding: 0 6px;
+}
+
+.ep-date-sep {
+  font-size: 13px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* ── Action buttons ── */
+.ep-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ep-btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.1px;
+}
+
+.ep-btn--zip {
+  background: #fff;
+  color: #374151;
+  border: 1.5px solid #d1d5db;
+}
+
+.ep-btn--zip:hover {
+  border-color: #171717;
+  color: #171717;
+}
+
+/* ── Hint text ── */
+.ep-hint {
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.6;
+  background: #f9fafb;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.ep-hint code {
+  font-family: monospace;
+  background: #f3f4f6;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #374151;
+}
+
+/* ── CSV checkboxes ── */
+.ep-csv-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ep-csv-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.ep-checkboxes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ep-checkbox-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.ep-checkbox-row:hover {
+  background: #f9fafb;
+}
+
+.ep-checkbox-row input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: #E53935;
+  cursor: pointer;
+}
+
+.ep-checkbox-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #171717;
+  font-family: monospace;
+  min-width: 180px;
+}
+
+.ep-checkbox-desc {
+  font-size: 12px;
+  color: #9ca3af;
+  flex: 1;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .ep-section-body {
+    padding: 16px;
+  }
+
+  .ep-filters {
+    grid-template-columns: 1fr;
+  }
+
+  .ep-checkbox-label {
+    min-width: unset;
+  }
+
+  .ep-checkbox-desc {
+    display: none;
+  }
+}
