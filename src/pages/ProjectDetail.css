@@ -1,0 +1,118 @@
+/* ── Back row ── */
+.pd-back-row {
+  margin-bottom: 20px;
+}
+
+.pd-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.pd-back-btn:hover {
+  color: var(--color-primary, #1e3a5f);
+}
+
+/* ── Project header card ── */
+.pd-project-header {
+  margin-bottom: 28px;
+}
+
+.pd-project-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pd-project-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-primary, #1e3a5f);
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* ── Tabs ── */
+.pd-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--color-border, #e5e7eb);
+  margin-bottom: 20px;
+}
+
+.pd-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.pd-tab-btn:hover {
+  color: var(--color-primary, #1e3a5f);
+}
+.pd-tab-btn--active {
+  color: var(--color-primary, #1e3a5f);
+  border-bottom-color: var(--color-accent, #e85d26);
+}
+
+.pd-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  background: var(--color-background-secondary, #f3f4f6);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary, #6b7280);
+  transition: background 0.15s, color 0.15s;
+}
+.pd-tab-btn--active .pd-tab-count {
+  background: var(--color-accent-light, #fff0eb);
+  color: var(--color-accent, #e85d26);
+}
+.pd-tab-count--incident {
+  /* inherits from .pd-tab-count; override active color to red-toned */
+}
+.pd-tab-btn--active .pd-tab-count--incident {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+/* ── Tab action bar (+ New Meeting / + Report Incident) ── */
+.pd-tab-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 640px) {
+  .pd-project-name {
+    font-size: 20px;
+  }
+  .pd-tab-btn {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+}

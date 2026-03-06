@@ -18,6 +18,7 @@ import ChecklistHistoryView from './pages/ChecklistHistoryView'
 import ChecklistHistoryEdit from './pages/ChecklistHistoryEdit'
 import AdminPanel from './pages/AdminPanel'
 import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
 import SafetyTopics from './pages/SafetyTopics'
 import CorrectiveActions from './pages/CorrectiveActions'
 import BulkImport from './pages/BulkImport'
@@ -55,6 +56,7 @@ function App() {
         <Routes>
           <Route path="/" element={<MainMenu />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectDetail />} />
           <Route path="/meetings" element={<Meetings />} />
           <Route path="/meetings/new" element={<MeetingForm />} />
           <Route path="/meetings/:id" element={<MeetingDetails />} />
