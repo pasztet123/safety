@@ -616,8 +616,8 @@ export default function MeetingForm() {
         (data.attendees || []).map(a => ({
           ...a,
           show_signature_field: isDraftMeeting ? false : (a.show_signature_field || !!a.signature_url),
-          // Drafts: Confirmed stays unchecked — workers sign in person
-          signed_with_checkbox: isDraftMeeting ? false : (a.signed_with_checkbox || false),
+          // Drafts: Confirmed pre-checked — admin can uncheck if needed
+          signed_with_checkbox: isDraftMeeting ? true : (a.signed_with_checkbox || false),
         }))
       )
       setPhotos(data.photos || [])
