@@ -410,13 +410,9 @@ export default function MeetingForm() {
           return
         }
       }
-      // Attendee not linked to any leader — use their name as leader name only
-      setFormData(prev => ({
-        ...prev,
-        leader_id: '',
-        leader_name: attendee.name,
-        is_self_training: true,
-      }))
+      // Attendee not linked to a leader — flag as self-training but keep
+      // whatever leader was already resolved (default Bo Mikuta etc.)
+      setFormData(prev => ({ ...prev, is_self_training: true }))
     } else {
       // Multiple attendees — find the first one linked to a leader
       let update = { is_self_training: false }
@@ -1140,11 +1136,7 @@ export default function MeetingForm() {
             <div className="form-group">
               <label className="form-label">Leader *</label>
               <select className="form-select" value={formData.leader_id} onChange={handleLeaderChange} required>
-                <option value="">
-                  {formData.is_self_training && !formData.leader_id && formData.leader_name
-                    ? `${formData.leader_name} (Self-Training)`
-                    : 'Select Leader'}
-                </option>
+                <option value="">Select Leader</option>
                 {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 <option value="new">+ Add New Leader</option>
               </select>
