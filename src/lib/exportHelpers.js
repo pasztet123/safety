@@ -176,13 +176,15 @@ export const fetchChecklistCompletionsFull = async (filters = {}) => {
 const csvRow    = (arr) => arr.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')
 const csvHeader = (...cols) => csvRow(cols)
 
+const fmtCSVDate = (d) => d ? String(d).substring(0, 10) : ''
+
 const buildMeetingsCSV = (meetings) => {
   const lines = [csvHeader('Date','Project','Topic','Leader','Trade','Attendees','Attendee Count','Checklists')]
   for (const m of meetings) {
     const attendees = (m.attendees || []).map(a => a.name).filter(Boolean).join('; ')
     const checklists = (m.checklists || []).map(c => c.name).filter(Boolean).join('; ')
     lines.push(csvRow([
-      m.date || '', m.project?.name || '', m.topic || '', m.leader_name || '',
+      fmtCSVDate(m.date), m.project?.name || '', m.topic || '', m.leader_name || '',
       m.trade || '', attendees, (m.attendees || []).length, checklists,
     ]))
   }
@@ -193,7 +195,7 @@ const buildIncidentsCSV = (incidents) => {
   const lines = [csvHeader('Date','Time','Project','Type','Subtype','Severity','OSHA Recordable','Employee','Phone','Reporter','Location','Details')]
   for (const i of incidents) {
     lines.push(csvRow([
-      i.date || '', i.time || '', i.project?.name || '',
+      fmtCSVDate(i.date), i.time || '', i.project?.name || '',
       i.type_name || '', i.incident_subtype || '',
       i.severity || '', i.osha_recordable ? 'Yes' : 'No',
       i.employee_name || '', i.phone || '', i.reporter_name || '',
@@ -212,8 +214,8 @@ const buildCorrectiveActionsCSV = (actions, persons = [], incidents = []) => {
     lines.push(csvRow([
       a.description || '', a.status || '',
       a.responsible_person_id ? (personMap[a.responsible_person_id] || '') : '',
-      a.due_date || '', a.completion_date || '',
-      inc?.type_name || '', inc?.date || '',
+      fmtCSVDate(a.due_date), fmtCSVDate(a.completion_date),
+      inc?.type_name || '', fmtCSVDate(inc?.date),
     ]))
   }
   return lines.join('\r\n')
@@ -280,7 +282,7 @@ const buildAttendanceCSV = (meetings) => {
   const rows = Object.values(workers).sort((a, b) => b.count - a.count)
   const lines = [csvHeader('Worker','Total Meetings','Projects','Last Meeting')]
   for (const r of rows) {
-    lines.push(csvRow([r.name, r.count, [...r.projects].join('; '), r.last || '']))
+    lines.push(csvRow([r.name, r.count, [...r.projects].join('; '), fmtCSVDate(r.last)]))
   }
   return lines.join('\r\n')
 }
