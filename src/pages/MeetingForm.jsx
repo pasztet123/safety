@@ -586,6 +586,16 @@ export default function MeetingForm() {
 
       const isDraftMeeting = data.is_draft === true
 
+      // For drafts also check leader's default sig via leader_id if not already resolved by name
+      if (!resolvedLeaderSig && resolvedLeaderId) {
+        const { data: ldr2 } = await supabase
+          .from('leaders')
+          .select('default_signature_url')
+          .eq('id', resolvedLeaderId)
+          .maybeSingle()
+        if (ldr2?.default_signature_url) resolvedLeaderSig = ldr2.default_signature_url
+      }
+
       setFormData({
         project_id: data.project_id || '',
         date: data.date.split('T')[0],
@@ -598,14 +608,15 @@ export default function MeetingForm() {
         trade: data.trade || '',
         topic: data.topic,
         notes: data.notes || '',
-        // Drafts always start with "Leader confirms" unchecked regardless of DB value
-        completed: isDraftMeeting ? false : (data.completed || false),
+        // Drafts: pre-check "Leader confirms" so admin just needs to approve
+        completed: isDraftMeeting ? true : (data.completed || false),
       })
       if (resolvedLeaderSig) setLeaderDefaultSignature(resolvedLeaderSig)
       setAttendees(
         (data.attendees || []).map(a => ({
           ...a,
           show_signature_field: isDraftMeeting ? false : (a.show_signature_field || !!a.signature_url),
+          // Drafts: Confirmed stays unchecked — workers sign in person
           signed_with_checkbox: isDraftMeeting ? false : (a.signed_with_checkbox || false),
         }))
       )
@@ -614,9 +625,11 @@ export default function MeetingForm() {
       // Draft mode
       setIsDraft(isDraftMeeting)
 
-      // Load existing signature (edit mode, non-draft only)
-      // Drafts: signature panel starts unchecked so admin decides at approval
-      if (data.signature_url && !isDraftMeeting) {
+      if (isDraftMeeting) {
+        // Pre-check "Add digital signature" and auto-use leader's default sig
+        setShowSignaturePanel(true)
+        if (resolvedLeaderSig) setChosenDefaultSigUrl(resolvedLeaderSig)
+      } else if (data.signature_url) {
         setExistingSignatureUrl(data.signature_url)
         setShowSignaturePanel(true)
       }
