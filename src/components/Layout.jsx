@@ -240,7 +240,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v4.8.2</span>
+          <span className="app-footer-version">v4.8.4</span>
         </div>
       </footer>
     </div>

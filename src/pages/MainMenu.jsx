@@ -295,13 +295,13 @@ export default function MainMenu() {
           </button>
           {stats.openActions > 0 && (
             <button className="focus-pill focus-pill--warning" onClick={() => navigate('/corrective-actions')}>
-              ⚠️ {stats.openActions} open action{stats.openActions !== 1 ? 's' : ''}
+              {stats.openActions} open action{stats.openActions !== 1 ? 's' : ''}
               {extraStats.overdueActions > 0 && ` · ${extraStats.overdueActions} overdue`}
             </button>
           )}
           {typeof stats.daysSafe === 'number' && stats.daysSafe < 14 && (
             <button className="focus-pill focus-pill--danger" onClick={() => navigate('/incidents')}>
-              🔴 Last incident {stats.daysSafe}d ago
+              Last incident {stats.daysSafe}d ago
             </button>
           )}
           {typeof stats.daysSafe === 'number' && stats.daysSafe >= 14 && stats.openActions === 0 && (
