@@ -22,6 +22,8 @@ import ProjectDetail from './pages/ProjectDetail'
 import SafetyTopics from './pages/SafetyTopics'
 import CorrectiveActions from './pages/CorrectiveActions'
 import BulkImport from './pages/BulkImport'
+import People from './pages/People'
+import PersonDetail from './pages/PersonDetail'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -74,6 +76,8 @@ function App() {
           <Route path="/checklist-history" element={<ChecklistHistory />} />
           <Route path="/checklist-history/:id" element={<ChecklistHistoryView />} />
           <Route path="/checklist-history/:id/edit" element={<ChecklistHistoryEdit />} />
+          <Route path="/people" element={<People />} />
+          <Route path="/people/:type/:id" element={<PersonDetail />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/bulk-import" element={<BulkImport />} />
           <Route path="*" element={<Navigate to="/" />} />

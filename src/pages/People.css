@@ -1,0 +1,436 @@
+/* ────────────────────────────────────────────────────────────────
+   People.css  –  shared by People.jsx (list) and PersonDetail.jsx
+   ──────────────────────────────────────────────────────────────── */
+
+/* ── Controls ─────────────────────────────────────────────────── */
+.people-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.people-search {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.people-search:focus {
+  border-color: var(--color-primary);
+}
+
+/* ── Grid ──────────────────────────────────────────────────────── */
+.people-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* ── Person card ───────────────────────────────────────────────── */
+.person-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s, box-shadow 0.18s;
+  width: 100%;
+}
+.person-card:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
+.person-card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.person-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.person-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.person-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person-company {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Badge ─────────────────────────────────────────────────────── */
+.person-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  flex-shrink: 0;
+}
+.person-badge--worker {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.person-badge--leader {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+/* ── Contact row inside card ───────────────────────────────────── */
+.person-card-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+}
+
+.person-contact-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.person-contact-item svg {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+/* ── Footer count ──────────────────────────────────────────────── */
+.people-footer-count {
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
+
+.people-empty {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 15px;
+}
+
+/* ────────────────────────────────────────────────────────────────
+   PersonDetail
+   ──────────────────────────────────────────────────────────────── */
+
+.person-detail-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  margin-bottom: 24px;
+  padding: 0;
+  transition: color 0.15s;
+}
+.person-detail-back:hover {
+  color: var(--color-primary);
+}
+
+/* ── Profile header ────────────────────────────────────────────── */
+.person-profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.person-profile-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.person-profile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.person-profile-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-primary);
+  width: 100%;
+}
+
+.person-profile-company {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-hover);
+  padding: 2px 10px;
+  border-radius: 10px;
+}
+
+/* ── Contact section ───────────────────────────────────────────── */
+.person-profile-contacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  background: var(--color-background-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.person-profile-contact-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.person-profile-contact-row svg {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+.person-profile-contact-row a {
+  color: var(--color-info);
+  text-decoration: none;
+}
+.person-profile-contact-row a:hover {
+  text-decoration: underline;
+}
+
+/* ── Tabs ──────────────────────────────────────────────────────── */
+.person-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 2px solid var(--color-border);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.person-tab {
+  padding: 10px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -2px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.person-tab:hover {
+  color: var(--color-primary);
+}
+.person-tab.is-active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-accent);
+  font-weight: 600;
+}
+
+/* ── Activity list ─────────────────────────────────────────────── */
+.person-tab-content {
+  padding-bottom: 32px;
+}
+
+.person-activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.person-activity-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: border-color 0.15s, background 0.15s;
+}
+.person-activity-row:hover {
+  border-color: var(--color-primary);
+  background: var(--color-hover);
+}
+
+.person-activity-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.person-activity-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.person-activity-sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.person-activity-date {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.person-activity-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+  align-items: center;
+}
+
+/* ── Role tags (incident roles) ───────────────────────────────── */
+.person-role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.person-role-tag--victim {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.person-role-tag--reporter {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.person-role-tag--witness {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+/* ── Corrective action status ─────────────────────────────────── */
+.person-ca-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.person-ca-status--open {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.person-ca-status--completed {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+/* ── Disclaimer / info note ───────────────────────────────────── */
+.person-section-disclaimer {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--color-info-bg);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--color-info);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.person-section-disclaimer svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.person-empty-section {
+  padding: 40px 0;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}
+
+/* ── Responsive ───────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .people-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .person-profile-avatar {
+    width: 52px;
+    height: 52px;
+    font-size: 20px;
+  }
+
+  .person-profile-name {
+    font-size: 20px;
+  }
+
+  .person-tab {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
