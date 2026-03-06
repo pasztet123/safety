@@ -308,3 +308,105 @@ a {
     padding: 20px;
   }
 }
+
+/* ── Shared filter bar ── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  background: white;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 10px 14px;
+}
+
+.filter-bar-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 180px;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 6px 12px;
+}
+
+.filter-search-icon {
+  font-size: 14px;
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.filter-search-input {
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  color: var(--color-primary);
+  outline: none;
+  width: 100%;
+  font-family: inherit;
+}
+
+.filter-search-input::placeholder {
+  color: var(--color-text-secondary);
+}
+
+.filter-select {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 7px 28px 7px 10px;
+  font-size: 13px;
+  background: white;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-family: inherit;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%236b7280' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  transition: border-color 0.15s;
+}
+
+.filter-select:hover,
+.filter-select:focus {
+  border-color: var(--color-accent);
+}
+
+.filter-clear-btn {
+  padding: 7px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  background: var(--color-background-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.filter-clear-btn:hover {
+  background: var(--color-danger-bg, #fee2e2);
+  color: var(--color-danger, #dc2626);
+  border-color: var(--color-danger, #dc2626);
+}
+
+@media (max-width: 768px) {
+  .filter-bar {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .filter-bar-search {
+    min-width: 100%;
+    order: -1;
+  }
+  .filter-select {
+    font-size: 12px;
+    padding: 6px 24px 6px 8px;
+  }
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
@@ -11,6 +11,49 @@ export default function Meetings() {
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
+
+  // Search / filter / sort
+  const [searchText, setSearchText] = useState('')
+  const [filterTrade, setFilterTrade] = useState('')
+  const [filterPerson, setFilterPerson] = useState('')
+  const [sortBy, setSortBy] = useState('newest')
+
+  // Derived filter options
+  const tradesInMeetings = useMemo(() => {
+    const t = new Set(meetings.map(m => m.trade).filter(Boolean))
+    return [...t].sort()
+  }, [meetings])
+
+  const personsInMeetings = useMemo(() => {
+    const p = new Set()
+    meetings.forEach(m => m.attendees?.forEach(a => a.name && p.add(a.name)))
+    return [...p].sort()
+  }, [meetings])
+
+  const filteredMeetings = useMemo(() => {
+    let result = [...meetings]
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase()
+      result = result.filter(m =>
+        m.topic?.toLowerCase().includes(q) ||
+        m.leader_name?.toLowerCase().includes(q) ||
+        m.project?.name?.toLowerCase().includes(q) ||
+        m.attendees?.some(a => a.name?.toLowerCase().includes(q))
+      )
+    }
+    if (filterTrade) result = result.filter(m => m.trade === filterTrade)
+    if (filterPerson) result = result.filter(m => m.attendees?.some(a => a.name === filterPerson))
+    switch (sortBy) {
+      case 'oldest': result.sort((a, b) => a.date.localeCompare(b.date)); break
+      case 'az': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
+      case 'za': result.sort((a, b) => (b.topic || '').localeCompare(a.topic || '')); break
+      case 'most-attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
+      default: result.sort((a, b) => { const d = b.date.localeCompare(a.date); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
+    }
+    return result
+  }, [meetings, searchText, filterTrade, filterPerson, sortBy])
+
+  const filtersActive = searchText || filterTrade || filterPerson || sortBy !== 'newest'
 
   // Drafts (admin only)
   const [draftMeetings, setDraftMeetings] = useState([])
@@ -356,13 +399,47 @@ export default function Meetings() {
         </div>
       )}
 
+      {/* ── Filter bar ── */}
+      <div className="filter-bar">
+        <div className="filter-bar-search">
+          <span className="filter-search-icon">🔍</span>
+          <input
+            className="filter-search-input"
+            type="text"
+            placeholder="Szukaj tematu, lidera, uczestnika..."
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+          />
+        </div>
+        <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} className="filter-select">
+          <option value="">Wszystkie branże</option>
+          {tradesInMeetings.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
+          <option value="">Wszyscy uczestnicy</option>
+          {personsInMeetings.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
+          <option value="newest">Najnowsze</option>
+          <option value="oldest">Najstarsze</option>
+          <option value="az">Temat A → Z</option>
+          <option value="za">Temat Z → A</option>
+          <option value="most-attendees">Najwięcej uczestników</option>
+        </select>
+        {filtersActive && (
+          <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterTrade(''); setFilterPerson(''); setSortBy('newest') }}>
+            Wyczyść
+          </button>
+        )}
+      </div>
+
       <div className="meetings-list">
-        {meetings.length === 0 ? (
+        {filteredMeetings.length === 0 ? (
           <div className="empty-state">
-            <p>No meetings recorded yet. Create your first safety meeting!</p>
+            <p>{meetings.length === 0 ? 'No meetings recorded yet. Create your first safety meeting!' : 'Brak wyników dla podanych filtrów.'}</p>
           </div>
         ) : (
-          meetings.map((meeting) => (
+          filteredMeetings.map((meeting) => (
             <div key={meeting.id} className="card">
               <div className="meeting-header">
                 <div>

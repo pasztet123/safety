@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import LocationMap from '../components/LocationMap'
+import './IncidentForm.css'
 
 export default function Incidents() {
   const navigate = useNavigate()
@@ -12,6 +13,49 @@ export default function Incidents() {
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
+
+  // Search / filter / sort
+  const [searchText, setSearchText] = useState('')
+  const [filterType, setFilterType] = useState('')
+  const [filterPerson, setFilterPerson] = useState('')
+  const [sortBy, setSortBy] = useState('newest')
+
+  // Derived filter options
+  const typesInIncidents = useMemo(() => {
+    const t = new Set(incidents.map(i => i.type_name).filter(Boolean))
+    return [...t].sort()
+  }, [incidents])
+
+  const personsInIncidents = useMemo(() => {
+    const p = new Set(incidents.map(i => i.employee_name).filter(Boolean))
+    return [...p].sort()
+  }, [incidents])
+
+  const filteredIncidents = useMemo(() => {
+    let result = [...incidents]
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase()
+      result = result.filter(i =>
+        i.type_name?.toLowerCase().includes(q) ||
+        i.employee_name?.toLowerCase().includes(q) ||
+        i.reporter_name?.toLowerCase().includes(q) ||
+        i.project?.name?.toLowerCase().includes(q) ||
+        i.location?.toLowerCase().includes(q) ||
+        i.details?.toLowerCase().includes(q)
+      )
+    }
+    if (filterType) result = result.filter(i => i.type_name === filterType)
+    if (filterPerson) result = result.filter(i => i.employee_name === filterPerson)
+    switch (sortBy) {
+      case 'oldest': result.sort((a, b) => a.date.localeCompare(b.date)); break
+      case 'az': result.sort((a, b) => (a.type_name || '').localeCompare(b.type_name || '')); break
+      case 'za': result.sort((a, b) => (b.type_name || '').localeCompare(a.type_name || '')); break
+      default: result.sort((a, b) => { const d = b.date.localeCompare(a.date); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
+    }
+    return result
+  }, [incidents, searchText, filterType, filterPerson, sortBy])
+
+  const filtersActive = searchText || filterType || filterPerson || sortBy !== 'newest'
 
   useEffect(() => {
     checkAdminAndFetchData()
@@ -117,13 +161,46 @@ export default function Incidents() {
         </button>
       </div>
 
+      {/* ── Filter bar ── */}
+      <div className="filter-bar">
+        <div className="filter-bar-search">
+          <span className="filter-search-icon">🔍</span>
+          <input
+            className="filter-search-input"
+            type="text"
+            placeholder="Szukaj typu, pracownika, miejsca..."
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+          />
+        </div>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)} className="filter-select">
+          <option value="">Wszystkie typy</option>
+          {typesInIncidents.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
+          <option value="">Wszyscy pracownicy</option>
+          {personsInIncidents.map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
+          <option value="newest">Najnowsze</option>
+          <option value="oldest">Najstarsze</option>
+          <option value="az">Typ A → Z</option>
+          <option value="za">Typ Z → A</option>
+        </select>
+        {filtersActive && (
+          <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterType(''); setFilterPerson(''); setSortBy('newest') }}>
+            Wyczyść
+          </button>
+        )}
+      </div>
+
       <div className="incidents-list">
-        {incidents.length === 0 ? (
+        {filteredIncidents.length === 0 ? (
           <div className="empty-state">
-            <p>No incidents reported. Stay safe!</p>
+            <p>{incidents.length === 0 ? 'No incidents reported. Stay safe!' : 'Brak wyników dla podanych filtrów.'}</p>
           </div>
         ) : (
-          incidents.map((incident) => (
+          filteredIncidents.map((incident) => (
             <div key={incident.id} className="card incident-card">
               <div className="incident-header">
                 <div>
