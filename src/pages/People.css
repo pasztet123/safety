@@ -52,8 +52,9 @@
 }
 
 .person-card-top {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: start;
   gap: 12px;
 }
 
