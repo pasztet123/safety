@@ -6,6 +6,8 @@
 
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
+import { jsPDF } from 'jspdf'
+import html2canvas from 'html2canvas'
 import {
   renderHTMLtoPDFBuffer,
   buildMeetingHTMLForExport,
@@ -189,13 +191,64 @@ export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
 // ─── Safety Topics Brochure PDF ───────────────────────────────────────────────
 
 /**
- * Generates a brochure PDF — page 1 is a TOC, then one full topic block per page.
+// ─── Brochure helper: render one HTML chunk, add pages to an existing jsPDF doc ──
+
+const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
+  const wrap = document.createElement('div')
+  wrap.style.cssText = 'position:absolute;top:0;left:-9999px;width:794px;background:#fff'
+  document.body.appendChild(wrap)
+  wrap.innerHTML = html
+
+  try {
+    const canvas = await html2canvas(wrap, {
+      scale: 2,
+      useCORS: false,
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false,
+    })
+
+    const A4W = 210, A4H = 297
+    const pxW = canvas.width                              // 1588 at scale:2
+    const pxH = canvas.height
+    const pageHpx = Math.round((A4H / A4W) * pxW)        // ~2246 px per A4 page
+
+    let y = 0
+    let needAddPage = addPageBeforeFirstSlice
+
+    while (y < pxH) {
+      const sliceH = Math.min(pageHpx, pxH - y)
+      // Blit slice onto a fresh A4-sized canvas (white background)
+      const tmp = document.createElement('canvas')
+      tmp.width = pxW
+      tmp.height = pageHpx
+      const ctx = tmp.getContext('2d')
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, pxW, pageHpx)
+      ctx.drawImage(canvas, 0, y, pxW, sliceH, 0, 0, pxW, sliceH)
+
+      if (needAddPage) doc.addPage()
+      needAddPage = true   // always addPage for subsequent slices of the same chunk
+
+      doc.addImage(tmp.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, A4W, A4H)
+      y += pageHpx
+    }
+  } finally {
+    document.body.removeChild(wrap)
+  }
+}
+
+// ─── Safety Topics Brochure PDF ───────────────────────────────────────────────
+
+/**
+ * Generates a brochure PDF — page 1 is a TOC, then one block per topic.
+ * Each topic is rendered independently (prevents canvas-size overflow → black pages).
  */
 export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety Topics Brochure') => {
   const HEADER_BG = { low:'#15803d', medium:'#854d0e', high:'#9a3412', critical:'#991b1b' }
   const RISK_PILL_CLASS = { low:'risk-low', medium:'risk-medium', high:'risk-high', critical:'risk-critical' }
 
-  // Table of contents
+  // ── build TOC HTML ────────────────────────────────────────────────────────
   const tocEntries = topics.map((t, i) => {
     const riskCls = RISK_PILL_CLASS[t.risk_level] || 'risk-medium'
     return `
@@ -208,55 +261,57 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
     `
   }).join('')
 
-  // Topic pages
-  const topicPages = topics.map((t, i) => {
-    const bg = HEADER_BG[t.risk_level] || PRIMARY
-    const riskCls = RISK_PILL_CLASS[t.risk_level] || 'risk-medium'
-    const tradesStr = (t.trades || []).join(' · ')
-    return `
-      <div class="topic-page">
-        <div class="topic-header" style="background:${bg}">
-          <div class="topic-osha" style="margin-bottom:6px">Topic ${i+1} of ${topics.length} · ${esc(t.category) || 'Safety Topic'}</div>
-          <div class="topic-name">${esc(t.name)}</div>
-          ${t.osha_reference ? `<div class="topic-osha">OSHA ${esc(t.osha_reference)}</div>` : ''}
-        </div>
-        <div class="topic-body">
-          <div class="pdf-fields" style="margin-bottom:16px">
-            ${t.risk_level ? `<div class="pdf-field"><div class="pdf-field-label">Risk Level</div><div class="pdf-field-value"><span class="risk-pill ${riskCls}">${(t.risk_level||'').toUpperCase()}</span></div></div>` : ''}
-            ${t.osha_reference ? `<div class="pdf-field"><div class="pdf-field-label">OSHA Reference</div><div class="pdf-field-value">${esc(t.osha_reference)}</div></div>` : ''}
-            ${t.category ? `<div class="pdf-field"><div class="pdf-field-label">Category</div><div class="pdf-field-value">${esc(t.category)}</div></div>` : ''}
-            ${tradesStr ? `<div class="pdf-field"><div class="pdf-field-label">Trades</div><div class="pdf-field-value">${esc(tradesStr)}</div></div>` : ''}
-          </div>
-          ${t.description ? `${section('Description', `<div class="pdf-text">${esc(t.description)}</div>`)}` : ''}
-        </div>
-      </div>
-    `
-  }).join('')
-
-  const html = bulkBaseHTML(`
+  const tocHTML = bulkBaseHTML(`
     <div class="ml-header">
       <div class="ml-header-eyebrow">Export — Safety Topic Library</div>
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${topics.length} topics · Generated ${todayStr()}</div>
     </div>
-
     <div class="toc-section">
       <div class="toc-title">Table of Contents</div>
       <div class="toc-subtitle">${topics.length} topics across ${[...new Set(topics.map(t => t.category).filter(Boolean))].length} categories</div>
       ${tocEntries || '<p style="color:#9ca3af">No topics found.</p>'}
     </div>
-
-    ${topicPages}
-
     ${footer()}
   `)
 
-  const buf = await renderHTMLtoPDFBuffer(html)
-  const dateStr = new Date().toISOString().split('T')[0]
-  saveAs(new Blob([buf], { type: 'application/pdf' }), `safety-topics-brochure-${dateStr}.pdf`)
-}
+  // ── helper to build a single topic's HTML ────────────────────────────────
+  const buildTopicHTML = (t, i) => {
+    const bg = HEADER_BG[t.risk_level] || '#1e3a5f'
+    const riskCls = RISK_PILL_CLASS[t.risk_level] || 'risk-medium'
+    const tradesStr = (t.trades || []).join(' · ')
+    return bulkBaseHTML(`
+      <div style="padding:28px 36px">
+        <div style="font-size:11px;font-weight:600;letter-spacing:1.2px;text-transform:uppercase;
+                    color:#9ca3af;margin-bottom:12px">Topic ${i + 1} of ${topics.length}</div>
+        <div style="background:${bg};color:#fff;padding:22px 26px;border-radius:8px;margin-bottom:18px">
+          <div style="font-size:12px;opacity:.8;margin-bottom:4px">${esc(t.category) || 'Safety Topic'}</div>
+          <div style="font-size:22px;font-weight:800;margin-bottom:6px">${esc(t.name)}</div>
+          ${t.osha_reference ? `<div style="font-size:12px;opacity:.75">OSHA ${esc(t.osha_reference)}</div>` : ''}
+        </div>
+        <div class="pdf-fields" style="margin-bottom:16px">
+          ${t.risk_level ? `<div class="pdf-field"><div class="pdf-field-label">Risk Level</div><div class="pdf-field-value"><span class="risk-pill ${riskCls}">${(t.risk_level||'').toUpperCase()}</span></div></div>` : ''}
+          ${t.osha_reference ? `<div class="pdf-field"><div class="pdf-field-label">OSHA Reference</div><div class="pdf-field-value">${esc(t.osha_reference)}</div></div>` : ''}
+          ${t.category ? `<div class="pdf-field"><div class="pdf-field-label">Category</div><div class="pdf-field-value">${esc(t.category)}</div></div>` : ''}
+          ${tradesStr ? `<div class="pdf-field"><div class="pdf-field-label">Trades</div><div class="pdf-field-value">${esc(tradesStr)}</div></div>` : ''}
+        </div>
+        ${t.description ? section('Description', `<div class="pdf-text">${esc(t.description)}</div>`) : ''}
+      </div>
+    `)
+  }
 
-// ─── Incident List PDF ────────────────────────────────────────────────────────
+  // ── render TOC + each topic into a single jsPDF doc ──────────────────────
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+
+  await _renderChunkIntoDoc(tocHTML, doc, false)   // TOC: no addPage (doc starts with page 1)
+
+  for (let i = 0; i < topics.length; i++) {
+    await _renderChunkIntoDoc(buildTopicHTML(topics[i], i), doc, true)  // each topic: new page
+  }
+
+  const dateStr = new Date().toISOString().split('T')[0]
+  doc.save(`safety-topics-brochure-${dateStr}.pdf`)
+}
 
 export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {
   const SEV_PILL = (sev) => {
