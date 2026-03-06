@@ -33,15 +33,15 @@ export default function PersonDetail() {
   }
 
   const fetchPerson = async () => {
-    const { data } = type === 'worker'
+    const { data, error } = type === 'worker'
       ? await supabase
           .from('involved_persons')
-          .select('*, leader_id, company:companies(name)')
+          .select('id, name, email, phone, leader_id, company:companies(name)')
           .eq('id', id)
           .single()
       : await supabase
           .from('leaders')
-          .select('*')
+          .select('id, name, email, phone, default_signature_url')
           .eq('id', id)
           .single()
 
@@ -49,6 +49,7 @@ export default function PersonDetail() {
       setPerson(data)
       return data
     }
+    console.error('fetchPerson error:', error)
     return null
   }
 
@@ -114,14 +115,30 @@ export default function PersonDetail() {
   const fetchIncidents = async (personData) => {
     const name = personData.name
 
-    // ILIKE match on employee_name or reporter_name
-    const { data: nameMatched } = await supabase
-      .from('incidents')
-      .select('*, project:projects(name)')
-      .or(`employee_name.ilike.${name},reporter_name.ilike.${name}`)
-      .order('date', { ascending: false })
+    // Two separate ILIKE queries — avoids PostgREST .or() space-in-value bug
+    const [{ data: byEmployee }, { data: byReporter }] = await Promise.all([
+      supabase
+        .from('incidents')
+        .select('*, project:projects(name)')
+        .ilike('employee_name', name)
+        .order('date', { ascending: false }),
+      supabase
+        .from('incidents')
+        .select('*, project:projects(name)')
+        .ilike('reporter_name', name)
+        .order('date', { ascending: false }),
+    ])
 
-    let allIncidents = nameMatched || []
+    // Dedupe by id
+    const seen = new Set()
+    let allIncidents = []
+    ;[...(byEmployee || []), ...(byReporter || [])].forEach((inc) => {
+      if (!seen.has(inc.id)) {
+        seen.add(inc.id)
+        allIncidents.push(inc)
+      }
+    })
+    allIncidents.sort((a, b) => (b.date > a.date ? 1 : -1))
 
     if (type === 'worker') {
       // Also fetch via incident_witnesses FK (harder link)
