@@ -223,15 +223,21 @@ export default function MeetingForm() {
       .order('name')
     if (data) {
       setLeaders(data)
-      // If there's only one leader and no leader selected yet, auto-select it
-      if (data.length === 1 && !formData.leader_id) {
-        setFormData(prev => ({
-          ...prev,
-          leader_id: data[0].id,
-          leader_name: data[0].name,
-        }))
-        if (data[0].default_signature_url) {
-          setLeaderDefaultSignature(data[0].default_signature_url)
+      // Auto-select by name match (covers new meetings where leader_name defaults to 'Bo Mikuta')
+      // Fall back to sole leader if no name match
+      if (!formData.leader_id) {
+        const match =
+          (formData.leader_name ? data.find(l => l.name === formData.leader_name) : null) ||
+          (data.length === 1 ? data[0] : null)
+        if (match) {
+          setFormData(prev => ({
+            ...prev,
+            leader_id: match.id,
+            leader_name: match.name,
+          }))
+          if (match.default_signature_url) {
+            setLeaderDefaultSignature(match.default_signature_url)
+          }
         }
       }
     }
@@ -555,6 +561,22 @@ export default function MeetingForm() {
       .single()
 
     if (!error && data) {
+      // If meeting has leader_name but no leader_id (e.g. CSV-imported draft),
+      // resolve the ID so the dropdown shows the correct selection
+      let resolvedLeaderId = data.leader_id || ''
+      let resolvedLeaderSig = null
+      if (!resolvedLeaderId && data.leader_name) {
+        const { data: ldr } = await supabase
+          .from('leaders')
+          .select('id, default_signature_url')
+          .eq('name', data.leader_name)
+          .maybeSingle()
+        if (ldr) {
+          resolvedLeaderId = ldr.id
+          resolvedLeaderSig = ldr.default_signature_url || null
+        }
+      }
+
       setFormData({
         project_id: data.project_id || '',
         date: data.date.split('T')[0],
@@ -562,13 +584,14 @@ export default function MeetingForm() {
         location: data.location || '',
         latitude: data.latitude ?? null,
         longitude: data.longitude ?? null,
-        leader_id: data.leader_id || '',
+        leader_id: resolvedLeaderId,
         leader_name: data.leader_name,
         trade: data.trade || '',
         topic: data.topic,
         notes: data.notes || '',
         completed: data.completed || false,
       })
+      if (resolvedLeaderSig) setLeaderDefaultSignature(resolvedLeaderSig)
       setAttendees(
         (data.attendees || []).map(a => ({
           ...a,
