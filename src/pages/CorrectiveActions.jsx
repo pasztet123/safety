@@ -378,7 +378,7 @@ export default function CorrectiveActions() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                     {isOverdue && <span className="badge badge--overdue">Overdue</span>}
                     <span className={`status-badge ${action.status}`}>
-                      {action.status === 'completed' ? '✓ Completed' : '⏳ Open'}
+                      {action.status === 'completed' ? '✓ Completed' : 'Open'}
                     </span>
                   </div>
                 </div>
@@ -406,17 +406,17 @@ export default function CorrectiveActions() {
                 <div className="action-metadata">
                   {action.responsible_person_id && (
                     <span className="meta-item">
-                      <strong>👤 Responsible:</strong> {getPersonName(action.responsible_person_id)}
+                      <strong>Responsible:</strong> {getPersonName(action.responsible_person_id)}
                     </span>
                   )}
                   {action.due_date && (
                     <span className="meta-item">
-                      <strong>📅 Due:</strong> {new Date(action.due_date).toLocaleDateString()}
+                      <strong>Due:</strong> {new Date(action.due_date).toLocaleDateString()}
                     </span>
                   )}
                   {action.completion_date && (
                     <span className="meta-item">
-                      <strong>✅ Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
+                      <strong>Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
                     </span>
                   )}
                   <span className="meta-item meta-created">
