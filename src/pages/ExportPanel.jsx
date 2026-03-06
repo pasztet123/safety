@@ -24,11 +24,10 @@ import {
 import './ExportPanel.css'
 
 // ─── Section skeleton ─────────────────────────────────────────────────────────
-function ExportSection({ title, icon, children }) {
+function ExportSection({ title, children }) {
   return (
     <div className="ep-section">
       <div className="ep-section-header">
-        <span className="ep-section-icon">{icon}</span>
         <h3 className="ep-section-title">{title}</h3>
       </div>
       <div className="ep-section-body">{children}</div>
@@ -292,7 +291,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           1. TOOLBOX MEETINGS
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Toolbox Meetings" icon="📋">
+      <ExportSection title="Toolbox Meetings">
         <p className="ep-desc">
           Export a list PDF of all toolbox meetings, optionally filtered by date, project, worker, trade, or topic.
           Or download all filtered meetings as individual PDFs packed into a ZIP file.
@@ -348,7 +347,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           2. SAFETY TOPICS BROCHURE
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Safety Topics — Brochure" icon="📖">
+      <ExportSection title="Safety Topics — Brochure">
         <p className="ep-desc">
           Export a PDF brochure with a table of contents followed by one full-page entry per safety topic.
           {filteredTopics.length > 0 && ` ${filteredTopics.length} topic${filteredTopics.length !== 1 ? 's' : ''} match current filters.`}
@@ -393,7 +392,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           3. INCIDENTS
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Incidents" icon="⚠️">
+      <ExportSection title="Incidents">
         <p className="ep-desc">Export a PDF report listing all incident records with classification, personnel, and details.</p>
 
         <div className="ep-filters">
@@ -419,7 +418,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           4. CORRECTIVE ACTIONS
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Corrective Actions" icon="🔧">
+      <ExportSection title="Corrective Actions">
         <p className="ep-desc">Export a PDF listing all corrective actions with status, assignee, and due dates.</p>
 
         <div className="ep-filters">
@@ -445,7 +444,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           5. CHECKLIST HISTORY
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Checklist History" icon="✅">
+      <ExportSection title="Checklist History">
         <p className="ep-desc">Export completed checklist records — what was inspected, by whom, and when.</p>
 
         <div className="ep-filters">
@@ -468,7 +467,7 @@ export default function ExportPanel() {
       {/* ══════════════════════════════════════════════════════
           6. CSV / SPREADSHEET EXPORT
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Spreadsheet Export (CSV)" icon="📊">
+      <ExportSection title="Spreadsheet Export (CSV)">
         <p className="ep-desc">
           Download a ZIP containing selected CSV files — ready to open in Excel, Google Sheets, or any spreadsheet app.
           The UTF-8 BOM ensures proper character encoding on all platforms.
