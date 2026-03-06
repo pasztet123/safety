@@ -85,10 +85,27 @@ export default function MeetingForm() {
   // Use both state (for render) and ref (for synchronous read in handleSubmit)
   const [approveMode, setApproveMode] = useState(false)
   const approveModeRef = useRef(false)
+  // Guards the one-time auto-detection run on initial draft load
+  const initialDetectionDoneRef = useRef(false)
 
   useEffect(() => {
     checkAdminAndLoadData()
   }, [id])
+
+  // For draft meetings loaded from DB, run autoDetectLeader once all async data
+  // (attendees, leaders, involvedPersons) has settled.
+  useEffect(() => {
+    if (
+      isDraft &&
+      !initialDetectionDoneRef.current &&
+      attendees.length > 0 &&
+      leaders.length > 0 &&
+      involvedPersons.length > 0
+    ) {
+      initialDetectionDoneRef.current = true
+      autoDetectLeader(attendees)
+    }
+  }, [isDraft, attendees, leaders, involvedPersons])
 
   // Pre-fill project_id from URL query param (?project_id=...)
   useEffect(() => {
