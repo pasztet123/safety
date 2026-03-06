@@ -330,7 +330,6 @@ export default function BulkImport() {
               type="button"
               className="btn btn-primary"
               onClick={handlePreview}
-              disabled={!projectId || !csvText}
             >
               Preview Drafts →
             </button>
