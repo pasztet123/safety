@@ -239,16 +239,20 @@ export const baseHTML = (content) => `
 
 export const footer = () => {
   const now = new Date()
-  const date = now.toLocaleDateString('en-US', {month:'long',day:'numeric',year:'numeric'})
-  const time = now.toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'})
+  const tz = 'America/Chicago'
+  const date = now.toLocaleDateString('en-US', {timeZone: tz, month:'long', day:'numeric', year:'numeric'})
+  const time = now.toLocaleTimeString('en-US', {timeZone: tz, hour:'2-digit', minute:'2-digit'})
+  const tzAbbr = now.toLocaleDateString('en-US', {timeZone: tz, timeZoneName:'short'}).split(', ').pop()
+    || new Intl.DateTimeFormat('en-US', {timeZone: tz, timeZoneName:'short'}).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || 'CT'
   return `
     <div class="pdf-footer">
       <div></div>
-      <div>Generated ${date} at ${time}</div>
+      <div>Exported ${date} at ${time} ${tzAbbr}</div>
     </div>
     <div class="pdf-disclaimer">
-      Sole responsibility for the accuracy and reliability of the data contained in this document rests with the President of A.B. Edward Enterprises, Inc.,
-      the safety meeting leader indicated on this document, and the safety officer if designated.
+      This document was generated using safety management software and reflects information entered by authorized users.
+      The software provider does not independently verify the accuracy or completeness of the information contained herein.
+      Responsibility for the accuracy and completeness of this record rests with the meeting leader and any designated safety officer who created or approved it.
     </div>
   `
 }
