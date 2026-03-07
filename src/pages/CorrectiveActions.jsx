@@ -150,6 +150,12 @@ export default function CorrectiveActions() {
   const handleViewIncident = (incidentId) => {
     navigate(`/incidents/${incidentId}`)
   }
+
+  const handleDeleteAction = async (actionId, description) => {
+    if (!confirm(`Are you sure you want to delete the corrective action "${description}"? This action cannot be undone.`)) return
+    await supabase.from('corrective_actions').delete().eq('id', actionId)
+    await fetchActions()
+  }
   
   const handleAddAction = async () => {
     if (!newAction.incident_id || !newAction.description.trim()) {
@@ -380,6 +386,14 @@ export default function CorrectiveActions() {
                     <span className={`status-badge ${action.status}`}>
                       {action.status === 'completed' ? '✓ Completed' : 'Open'}
                     </span>
+                    {isAdmin && (
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleDeleteAction(action.id, action.description)}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
                 </div>
                 
