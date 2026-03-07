@@ -18,6 +18,8 @@ export default function CorrectiveActions() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [predefinedActions, setPredefinedActions] = useState([])
   const [exportLoading, setExportLoading] = useState(false)
+  const [editingActionId, setEditingActionId] = useState(null)
+  const [editForm, setEditForm] = useState({})
   
   const [newAction, setNewAction] = useState({
     incident_id: '',
@@ -155,6 +157,33 @@ export default function CorrectiveActions() {
     if (!confirm(`Are you sure you want to delete the corrective action "${description}"? This action cannot be undone.`)) return
     await supabase.from('corrective_actions').delete().eq('id', actionId)
     await fetchActions()
+  }
+
+  const handleStartEdit = (action) => {
+    setEditingActionId(action.id)
+    setEditForm({
+      description: action.description,
+      responsible_person_id: action.responsible_person_id || '',
+      due_date: action.due_date || '',
+      status: action.status,
+    })
+  }
+
+  const handleSaveEdit = async (actionId) => {
+    const { error } = await supabase
+      .from('corrective_actions')
+      .update({
+        description: editForm.description,
+        responsible_person_id: editForm.responsible_person_id || null,
+        due_date: editForm.due_date || null,
+        status: editForm.status,
+        completion_date: editForm.status === 'completed' ? (editForm.due_date || new Date().toISOString().split('T')[0]) : null,
+      })
+      .eq('id', actionId)
+    if (!error) {
+      setEditingActionId(null)
+      await fetchActions()
+    }
   }
   
   const handleAddAction = async () => {
@@ -379,64 +408,123 @@ export default function CorrectiveActions() {
                 />
               </div>
               <div className="action-timeline-content">
-                <div className="action-header">
-                  <h3 className="action-description">{action.description}</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    {isOverdue && <span className="badge badge--overdue">Overdue</span>}
-                    <span className={`status-badge ${action.status}`}>
-                      {action.status === 'completed' ? '✓ Completed' : 'Open'}
-                    </span>
-                    {isAdmin && (
-                      <button
-                        className="btn btn-danger btn-sm"
-                        onClick={() => handleDeleteAction(action.id, action.description)}
-                      >
-                        Delete
-                      </button>
-                    )}
+                {editingActionId === action.id ? (
+                  <div className="inline-edit-form">
+                    <div className="form-group">
+                      <label>Description</label>
+                      <textarea
+                        value={editForm.description}
+                        onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                        rows="2"
+                      />
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Responsible Person</label>
+                        <select
+                          value={editForm.responsible_person_id}
+                          onChange={e => setEditForm({ ...editForm, responsible_person_id: e.target.value })}
+                        >
+                          <option value="">Unassigned</option>
+                          {involvedPersons.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Due Date</label>
+                        <input
+                          type="date"
+                          value={editForm.due_date}
+                          onChange={e => setEditForm({ ...editForm, due_date: e.target.value })}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Status</label>
+                        <select
+                          value={editForm.status}
+                          onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                        >
+                          <option value="open">Open</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="form-actions" style={{ marginTop: '8px' }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(action.id)}>Save</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingActionId(null)}>Cancel</button>
+                    </div>
                   </div>
-                </div>
-                
-                {incident && (
-                  <div className="incident-reference">
-                    <strong>Related to incident:</strong> {incident.type_name} - {incident.employee_name}
-                    <span className="incident-date">
-                      {new Date(incident.date).toLocaleDateString()}
-                    </span>
-                    {incident.project_id && (
-                      <span className="incident-project">
-                        Project: {getProjectName(incident.project_id)}
+                ) : (
+                  <>
+                    <div className="action-header">
+                      <h3 className="action-description">{action.description}</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        {isOverdue && <span className="badge badge--overdue">Overdue</span>}
+                        <span className={`status-label status-label--${action.status}`}>
+                          {action.status === 'completed' ? 'Completed' : 'Open'}
+                        </span>
+                        {isAdmin && (
+                          <>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              onClick={() => handleStartEdit(action)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="btn btn-danger btn-sm"
+                              onClick={() => handleDeleteAction(action.id, action.description)}
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {incident && (
+                      <div className="incident-reference">
+                        <strong>Related to incident:</strong> {incident.type_name} - {incident.employee_name}
+                        <span className="incident-date">
+                          {new Date(incident.date).toLocaleDateString()}
+                        </span>
+                        {incident.project_id && (
+                          <span className="incident-project">
+                            Project: {getProjectName(incident.project_id)}
+                          </span>
+                        )}
+                        <button
+                          className="btn-link"
+                          onClick={() => handleViewIncident(action.incident_id)}
+                        >
+                          View incident →
+                        </button>
+                      </div>
+                    )}
+
+                    <div className="action-metadata">
+                      {action.responsible_person_id && (
+                        <span className="meta-item">
+                          <strong>Responsible:</strong> {getPersonName(action.responsible_person_id)}
+                        </span>
+                      )}
+                      {action.due_date && (
+                        <span className="meta-item">
+                          <strong>Due:</strong> {new Date(action.due_date).toLocaleDateString()}
+                        </span>
+                      )}
+                      {action.completion_date && (
+                        <span className="meta-item">
+                          <strong>Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
+                        </span>
+                      )}
+                      <span className="meta-item meta-created">
+                        Created: {new Date(action.created_at).toLocaleDateString()}
                       </span>
-                    )}
-                    <button
-                      className="btn-link"
-                      onClick={() => handleViewIncident(action.incident_id)}
-                    >
-                      View incident →
-                    </button>
-                  </div>
+                    </div>
+                  </>
                 )}
-                
-                <div className="action-metadata">
-                  {action.responsible_person_id && (
-                    <span className="meta-item">
-                      <strong>Responsible:</strong> {getPersonName(action.responsible_person_id)}
-                    </span>
-                  )}
-                  {action.due_date && (
-                    <span className="meta-item">
-                      <strong>Due:</strong> {new Date(action.due_date).toLocaleDateString()}
-                    </span>
-                  )}
-                  {action.completion_date && (
-                    <span className="meta-item">
-                      <strong>Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
-                    </span>
-                  )}
-                  <span className="meta-item meta-created">
-                    Created: {new Date(action.created_at).toLocaleDateString()}
-                  </span>
-                </div>
               </div>
             </div>
           )

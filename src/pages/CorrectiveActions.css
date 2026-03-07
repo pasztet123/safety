@@ -274,25 +274,57 @@
   color: #6b7280;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 13px;
-  font-weight: 500;
+.status-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.status-badge.open {
-  background: #fef3c7;
-  color: #92400e;
+.status-label--open {
+  color: #b45309;
 }
 
-.status-badge.completed {
-  background: #d1fae5;
+.status-label--completed {
   color: #065f46;
+}
+
+.inline-edit-form {
+  padding: 12px 0 4px;
+}
+
+.inline-edit-form textarea,
+.inline-edit-form select,
+.inline-edit-form input[type="date"] {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.inline-edit-form .form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.inline-edit-form .form-row .form-group {
+  flex: 1;
+  min-width: 140px;
+}
+
+.inline-edit-form label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
 }
 
 .incident-reference {
