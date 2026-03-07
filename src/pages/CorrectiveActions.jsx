@@ -411,17 +411,19 @@ export default function CorrectiveActions() {
                 {editingActionId === action.id ? (
                   <div className="inline-edit-form">
                     <div className="form-group">
-                      <label>Description</label>
+                      <label className="form-label">Description</label>
                       <textarea
+                        className="form-textarea"
                         value={editForm.description}
                         onChange={e => setEditForm({ ...editForm, description: e.target.value })}
                         rows="2"
                       />
                     </div>
-                    <div className="form-row">
+                    <div className="inline-edit-row">
                       <div className="form-group">
-                        <label>Responsible Person</label>
+                        <label className="form-label">Responsible Person</label>
                         <select
+                          className="form-select"
                           value={editForm.responsible_person_id}
                           onChange={e => setEditForm({ ...editForm, responsible_person_id: e.target.value })}
                         >
@@ -432,16 +434,18 @@ export default function CorrectiveActions() {
                         </select>
                       </div>
                       <div className="form-group">
-                        <label>Due Date</label>
+                        <label className="form-label">Due Date</label>
                         <input
                           type="date"
+                          className="form-input"
                           value={editForm.due_date}
                           onChange={e => setEditForm({ ...editForm, due_date: e.target.value })}
                         />
                       </div>
                       <div className="form-group">
-                        <label>Status</label>
+                        <label className="form-label">Status</label>
                         <select
+                          className="form-select"
                           value={editForm.status}
                           onChange={e => setEditForm({ ...editForm, status: e.target.value })}
                         >
@@ -450,7 +454,7 @@ export default function CorrectiveActions() {
                         </select>
                       </div>
                     </div>
-                    <div className="form-actions" style={{ marginTop: '8px' }}>
+                    <div className="inline-edit-actions">
                       <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(action.id)}>Save</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditingActionId(null)}>Cancel</button>
                     </div>
@@ -461,7 +465,7 @@ export default function CorrectiveActions() {
                       <h3 className="action-description">{action.description}</h3>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                         {isOverdue && <span className="badge badge--overdue">Overdue</span>}
-                        <span className={`status-label status-label--${action.status}`}>
+                        <span className={`ca-status-chip ca-status-chip--${action.status}`}>
                           {action.status === 'completed' ? 'Completed' : 'Open'}
                         </span>
                         {isAdmin && (
