@@ -15,8 +15,6 @@ export default function IncidentDetails() {
   const [correctiveActions, setCorrectiveActions] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [pdfLoading, setPdfLoading] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(false)
-  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     checkAdminAndLoadData()
@@ -89,15 +87,10 @@ export default function IncidentDetails() {
   }
 
   const handleDelete = async () => {
-    setDeleting(true)
-    try {
-      await supabase.from('corrective_actions').delete().eq('incident_id', id)
-      const { error } = await supabase.from('incidents').delete().eq('id', id)
-      if (!error) navigate('/incidents')
-    } finally {
-      setDeleting(false)
-      setDeleteConfirm(false)
-    }
+    if (!confirm(`Are you sure you want to delete this incident? This action cannot be undone.`)) return
+    await supabase.from('corrective_actions').delete().eq('incident_id', id)
+    const { error } = await supabase.from('incidents').delete().eq('id', id)
+    if (!error) navigate('/incidents')
   }
 
   if (loading) return <div className="spinner"></div>
@@ -119,12 +112,17 @@ export default function IncidentDetails() {
         <h2 className="page-title">Incident Details</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           {isAdmin && (
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate(`/incidents/${id}/edit`)}
-            >
-              Edit
-            </button>
+            <>
+              <button
+                className="btn btn-primary"
+                onClick={() => navigate(`/incidents/${id}/edit`)}
+              >
+                Edit
+              </button>
+              <button className="btn btn-danger" onClick={handleDelete}>
+                Delete
+              </button>
+            </>
           )}
           <button
             className="btn btn-secondary"
@@ -134,22 +132,6 @@ export default function IncidentDetails() {
           >
             {pdfLoading ? '…' : 'PDF'}
           </button>
-          {isAdmin && (
-            deleteConfirm ? (
-              <>
-                <button className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
-                  {deleting ? '…' : 'Confirm Delete'}
-                </button>
-                <button className="btn btn-secondary" onClick={() => setDeleteConfirm(false)} disabled={deleting}>
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button className="btn btn-danger" onClick={() => setDeleteConfirm(true)}>
-                Delete
-              </button>
-            )
-          )}
         </div>
       </div>
 

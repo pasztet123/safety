@@ -15,7 +15,6 @@ export default function Incidents() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
   const [exportLoading, setExportLoading] = useState(false)
-  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   // Search / filter / sort
   const [searchText, setSearchText] = useState('')
@@ -135,10 +134,10 @@ export default function Incidents() {
     }
   }
 
-  const handleDeleteIncident = async (incidentId) => {
+  const handleDeleteIncident = async (incidentId, typeName) => {
+    if (!confirm(`Are you sure you want to delete the incident "${typeName}"? This action cannot be undone.`)) return
     await supabase.from('corrective_actions').delete().eq('incident_id', incidentId)
     await supabase.from('incidents').delete().eq('id', incidentId)
-    setDeleteConfirm(null)
     await fetchIncidents()
   }
   
@@ -244,12 +243,22 @@ export default function Incidents() {
                     <p className="incident-project">Project: {incident.project.name}</p>
                   )}
                 </div>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => navigate(`/incidents/${incident.id}/edit`)}
-                >
-                  Edit
-                </button>
+                {isAdmin && (
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => navigate(`/incidents/${incident.id}/edit`)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="btn btn-danger"
+                      onClick={() => handleDeleteIncident(incident.id, incident.type_name)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="incident-details">
@@ -327,7 +336,7 @@ export default function Incidents() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   className="btn btn-secondary"
                   onClick={() => navigate(`/incidents/${incident.id}`)}
@@ -342,22 +351,6 @@ export default function Incidents() {
                 >
                   {pdfLoading === incident.id ? '…' : 'PDF'}
                 </button>
-                {isAdmin && (
-                  deleteConfirm === incident.id ? (
-                    <>
-                      <button className="btn btn-danger" onClick={() => handleDeleteIncident(incident.id)}>
-                        Confirm Delete
-                      </button>
-                      <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <button className="btn btn-danger" onClick={() => setDeleteConfirm(incident.id)}>
-                      Delete
-                    </button>
-                  )
-                )}
               </div>
             </div>
           ))
