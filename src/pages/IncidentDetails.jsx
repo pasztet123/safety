@@ -15,6 +15,8 @@ export default function IncidentDetails() {
   const [correctiveActions, setCorrectiveActions] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     checkAdminAndLoadData()
@@ -86,6 +88,18 @@ export default function IncidentDetails() {
     }
   }
 
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await supabase.from('corrective_actions').delete().eq('incident_id', id)
+      const { error } = await supabase.from('incidents').delete().eq('id', id)
+      if (!error) navigate('/incidents')
+    } finally {
+      setDeleting(false)
+      setDeleteConfirm(false)
+    }
+  }
+
   if (loading) return <div className="spinner"></div>
 
   if (!incident) {
@@ -120,6 +134,22 @@ export default function IncidentDetails() {
           >
             {pdfLoading ? '…' : 'PDF'}
           </button>
+          {isAdmin && (
+            deleteConfirm ? (
+              <>
+                <button className="btn btn-danger" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? '…' : 'Confirm Delete'}
+                </button>
+                <button className="btn btn-secondary" onClick={() => setDeleteConfirm(false)} disabled={deleting}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button className="btn btn-danger" onClick={() => setDeleteConfirm(true)}>
+                Delete
+              </button>
+            )
+          )}
         </div>
       </div>
 

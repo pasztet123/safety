@@ -15,6 +15,7 @@ export default function Incidents() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
   const [exportLoading, setExportLoading] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
   // Search / filter / sort
   const [searchText, setSearchText] = useState('')
@@ -132,6 +133,13 @@ export default function Incidents() {
     } finally {
       setPdfLoading(null)
     }
+  }
+
+  const handleDeleteIncident = async (incidentId) => {
+    await supabase.from('corrective_actions').delete().eq('incident_id', incidentId)
+    await supabase.from('incidents').delete().eq('id', incidentId)
+    setDeleteConfirm(null)
+    await fetchIncidents()
   }
   
   const handleToggleActionStatus = async (actionId, currentStatus) => {
@@ -319,7 +327,7 @@ export default function Incidents() {
                 </div>
               )}
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   className="btn btn-secondary"
                   onClick={() => navigate(`/incidents/${incident.id}`)}
@@ -334,6 +342,22 @@ export default function Incidents() {
                 >
                   {pdfLoading === incident.id ? '…' : 'PDF'}
                 </button>
+                {isAdmin && (
+                  deleteConfirm === incident.id ? (
+                    <>
+                      <button className="btn btn-danger" onClick={() => handleDeleteIncident(incident.id)}>
+                        Confirm Delete
+                      </button>
+                      <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button className="btn btn-danger" onClick={() => setDeleteConfirm(incident.id)}>
+                      Delete
+                    </button>
+                  )
+                )}
               </div>
             </div>
           ))
