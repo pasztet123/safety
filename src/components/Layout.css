@@ -365,3 +365,13 @@
 .app-footer-sep {
   color: rgba(255,255,255,0.25);
 }
+
+.app-footer-disclaimer {
+  max-width: 1200px;
+  margin: 6px auto 0;
+  text-align: center;
+  font-size: 10px;
+  color: rgba(255,255,255,0.35);
+  line-height: 1.5;
+  padding: 0 20px;
+}

@@ -242,6 +242,9 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-version">v4.8.4</span>
         </div>
+        <div className="app-footer-disclaimer">
+          A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.
+        </div>
       </footer>
     </div>
   )

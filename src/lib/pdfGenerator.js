@@ -212,11 +212,14 @@ export const BASE_CSS = `
   .pdf-sig-caption{font-size:10px;color:${GRAY}}
 
   /* footer */
-  .pdf-footer{padding:12px 36px;border-top:1px solid ${BORDER};display:flex;
+  .pdf-footer{padding:12px 36px 6px;border-top:1px solid ${BORDER};display:flex;
               justify-content:space-between;align-items:center;
               background:#f9fafb;font-size:10px;color:${GRAY}}
   .pdf-footer-logo{font-weight:800;font-size:11px;color:${PRIMARY};letter-spacing:-0.3px}
   .pdf-footer-logo span{color:${ACCENT}}
+  .pdf-disclaimer{padding:6px 36px 10px;background:#f9fafb;
+                  font-size:8.5px;color:#9ca3af;text-align:center;line-height:1.5;
+                  border-top:1px solid #f0f0f0}
 
   /* severity badge for incidents */
   .sev-low{background:#dcfce7;color:#15803d}
@@ -242,6 +245,10 @@ export const footer = () => {
     <div class="pdf-footer">
       <div></div>
       <div>Generated ${date} at ${time}</div>
+    </div>
+    <div class="pdf-disclaimer">
+      Sole responsibility for the accuracy and reliability of the data contained in this document rests with the President of A.B. Edward Enterprises, Inc.,
+      the safety meeting leader indicated on this document, and the safety officer if designated.
     </div>
   `
 }
