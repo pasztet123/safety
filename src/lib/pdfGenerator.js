@@ -30,8 +30,12 @@ const _buildPDFDoc = async (html) => {
     const A4H_MM = 297
     const pxW = canvas.width   // 794 * 2 = 1588 canvas px
     const pxH = canvas.height
-    // Page height in canvas pixels (scale:2 → each CSS px = 2 canvas px)
-    const pageHpx = Math.round(pxH > 0 ? (A4H_MM / A4W_MM) * pxW : 2246)
+    // Leave a 22 mm bottom margin: cuts happen earlier so text is never sliced at the
+    // very edge, and we pad each page image with matching white space below.
+    const BOTTOM_MARGIN_MM = 22
+    const pxPerMM = pxW / A4W_MM
+    const pageHpx    = Math.round((A4H_MM - BOTTOM_MARGIN_MM) / A4W_MM * pxW)
+    const bottomPadPx = Math.round(BOTTOM_MARGIN_MM * pxPerMM)
 
     // Read the entire canvas once into a flat RGBA array — avoids per-row getImageData calls
     const ctx = canvas.getContext('2d')
@@ -102,16 +106,20 @@ const _buildPDFDoc = async (html) => {
       const sliceH        = cutBottom - cutTop
       if (sliceH <= 0) break
 
-      // Render this slice onto a temp canvas
+      // Render this slice onto a temp canvas; add white bottom padding so the
+      // last line of text on a page never sits right at the page edge.
       const pageCanvas  = document.createElement('canvas')
       pageCanvas.width  = pxW
-      pageCanvas.height = sliceH
-      pageCanvas.getContext('2d').drawImage(canvas, 0, cutTop, pxW, sliceH, 0, 0, pxW, sliceH)
+      pageCanvas.height = sliceH + bottomPadPx
+      const pctx = pageCanvas.getContext('2d')
+      pctx.fillStyle = '#ffffff'
+      pctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
+      pctx.drawImage(canvas, 0, cutTop, pxW, sliceH, 0, 0, pxW, sliceH)
 
       const imgData = pageCanvas.toDataURL('image/jpeg', 0.92)
 
       // Image height in mm, proportional to A4 width (keeps aspect ratio, never taller than A4)
-      const imgHmm = Math.min((sliceH / pxW) * A4W_PX_doc, A4H_PX_doc)
+      const imgHmm = Math.min(((sliceH + bottomPadPx) / pxW) * A4W_PX_doc, A4H_PX_doc)
 
       if (pageIndex > 0) doc.addPage()
       doc.addImage(imgData, 'JPEG', 0, 0, A4W_PX_doc, imgHmm)
@@ -556,4 +564,106 @@ export const generateChecklistPDF = async (checklist, items) => {
 
   const slug = checklist.name.replace(/\s+/g, '-').toLowerCase()
   await renderHTMLtoPDF(html, 'checklist-' + slug + '.pdf')
+}
+
+// ─── Checklist Completion PDF ─────────────────────────────────────────────────
+
+/**
+ * Generates a PDF for a single completed checklist.
+ *
+ * Expected shape of `data`:
+ *   {
+ *     checklist:  { name, description, category },
+ *     completion: { completion_datetime, notes },
+ *     project:    { name } | null,
+ *     user:       { name, email } | null,
+ *     items:      [{ checklist_item: { title, is_section_header, display_order }, is_checked, notes, photos: [{photo_url}] }],
+ *     photos:     [{ photo_url, completion_item_id }]  // all photos (global + per-item)
+ *   }
+ */
+export const generateChecklistCompletionPDF = async (data) => {
+  const { checklist, completion, project, user, items = [], photos = [] } = data
+
+  const dateStr = completion?.completion_datetime
+    ? new Date(completion.completion_datetime).toLocaleString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })
+    : ''
+
+  const sorted = [...items].sort((a, b) =>
+    (a.checklist_item?.display_order || 0) - (b.checklist_item?.display_order || 0)
+  )
+
+  const checkedCount = sorted.filter(i => i.is_checked && !i.checklist_item?.is_section_header).length
+
+  const itemsHTML = sorted.map(row => {
+    const item = row.checklist_item || {}
+    const title = (item.title || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    if (item.is_section_header) {
+      return `<div class="pdf-item-header">${title}</div>`
+    }
+    const checked = row.is_checked
+    const itemPhotos = photos.filter(p => p.completion_item_id === row.id)
+    const itemPhotoHTML = itemPhotos.length > 0
+      ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+          ${itemPhotos.map(p => `<img src="${p.photo_url}" crossorigin="anonymous"
+            style="width:80px;height:80px;object-fit:cover;border-radius:4px;border:1px solid ${BORDER}" />`).join('')}
+        </div>`
+      : ''
+    return `
+      <div class="pdf-item">
+        <div class="pdf-item-box" style="${checked
+          ? `background:#16a34a;border-color:#16a34a;color:#fff;display:flex;align-items:center;
+             justify-content:center;font-size:10px;font-weight:700`
+          : ''}">
+          ${checked ? '&#10003;' : ''}
+        </div>
+        <div class="pdf-item-text" style="${checked ? 'color:#15803d' : ''}">
+          ${title}
+          ${row.notes ? `<div style="font-size:11px;color:${GRAY};margin-top:2px;font-style:italic">
+            ${row.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>` : ''}
+          ${itemPhotoHTML}
+        </div>
+      </div>`
+  }).join('')
+
+  const globalPhotos = photos.filter(p => p.completion_item_id === null)
+  const globalPhotosHTML = globalPhotos.length > 0
+    ? section('Photos', `
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          ${globalPhotos.map(p => `<img src="${p.photo_url}" crossorigin="anonymous"
+            style="width:180px;height:130px;object-fit:cover;border-radius:6px;border:1px solid ${BORDER}" />`).join('')}
+        </div>`)
+    : ''
+
+  const html = baseHTML(`
+    <div class="pdf-header" style="background:#14532d">
+      <div class="pdf-header-type">Completed Checklist</div>
+      <div class="pdf-header-title">${(checklist?.name || 'Checklist').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      <div class="pdf-header-sub">${dateStr}${project ? ' · ' + project.name : ''}</div>
+    </div>
+    <div class="pdf-body">
+      ${section('Completion Details', `
+        <div class="pdf-fields">
+          ${field('Completed by', user?.name || user?.email || '')}
+          ${field('Date & Time', dateStr)}
+          ${field('Project', project?.name || '')}
+          ${field('Progress', checkedCount + ' / ' + sorted.filter(i => !i.checklist_item?.is_section_header).length + ' items checked')}
+        </div>
+        ${completion?.notes ? `<div style="margin-top:10px"><div class="pdf-text">${completion.notes.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div></div>` : ''}
+      `)}
+      ${section(`Checklist Items (${checkedCount}/${sorted.filter(i => !i.checklist_item?.is_section_header).length})`,
+        `<div style="border:1px solid ${BORDER};border-radius:8px;overflow:hidden">${itemsHTML}</div>`
+      )}
+      ${globalPhotosHTML}
+    </div>
+    ${footer()}
+  `)
+
+  const slug = (checklist?.name || 'checklist').replace(/\s+/g, '-').toLowerCase()
+  const datePart = completion?.completion_datetime
+    ? new Date(completion.completion_datetime).toISOString().split('T')[0]
+    : 'nodate'
+  await renderHTMLtoPDF(html, `checklist-completion-${slug}-${datePart}.pdf`)
 }

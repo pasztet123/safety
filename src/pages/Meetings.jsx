@@ -88,16 +88,26 @@ export default function Meetings() {
   }
 
   const fetchDraftMeetings = async () => {
-    const { data } = await supabase
-      .from('meetings')
-      .select(`
-        *,
-        project:projects(name),
-        attendees:meeting_attendees(name)
-      `)
-      .eq('is_draft', true)
-      .order('date', { ascending: false })
-    setDraftMeetings(data || [])
+    const PAGE = 1000
+    let all = []
+    let from = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('meetings')
+        .select(`
+          *,
+          project:projects(name),
+          attendees:meeting_attendees(name)
+        `)
+        .eq('is_draft', true)
+        .order('date', { ascending: false })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      all = all.concat(data)
+      if (data.length < PAGE) break
+      from += PAGE
+    }
+    setDraftMeetings(all)
   }
 
   const fetchMeetings = async () => {

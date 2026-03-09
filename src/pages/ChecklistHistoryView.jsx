@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { generateChecklistCompletionPDF } from '../lib/pdfGenerator'
 import './ChecklistCompletion.css'
 
 export default function ChecklistHistoryView() {
@@ -14,6 +15,8 @@ export default function ChecklistHistoryView() {
   const [user, setUser] = useState(null)
   const [items, setItems] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
+  const [photos, setPhotos] = useState([])
+  const [exportingPdf, setExportingPdf] = useState(false)
 
   useEffect(() => {
     fetchCurrentUser()
@@ -74,6 +77,13 @@ export default function ChecklistHistoryView() {
       setItems(sortedItems)
     }
 
+    // Fetch photos for this completion
+    const { data: photosData } = await supabase
+      .from('checklist_completion_photos')
+      .select('*')
+      .eq('completion_id', id)
+    if (photosData) setPhotos(photosData)
+
     setLoading(false)
   }
 
@@ -86,6 +96,22 @@ export default function ChecklistHistoryView() {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const handleExportPDF = async () => {
+    setExportingPdf(true)
+    try {
+      await generateChecklistCompletionPDF({
+        checklist,
+        completion,
+        project,
+        user,
+        items,
+        photos
+      })
+    } finally {
+      setExportingPdf(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -118,6 +144,13 @@ export default function ChecklistHistoryView() {
       <div className="page-header" style={{ marginBottom: '1.5rem' }}>
         <h2 className="page-title">{checklist?.name}</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleExportPDF}
+            disabled={exportingPdf}
+          >
+            {exportingPdf ? 'Generating...' : 'Export PDF'}
+          </button>
           {currentUser?.is_admin && (
             <>
               <button 
@@ -221,10 +254,42 @@ export default function ChecklistHistoryView() {
                   {item.notes}
                 </div>
               )}
+
+              {/* Per-item photos */}
+              {(() => {
+                const itemPhotos = photos.filter(p => p.completion_item_id === item.id)
+                return itemPhotos.length > 0 ? (
+                  <div className="item-photos-section">
+                    <div className="photo-thumbnails">
+                      {itemPhotos.map((photo, pIdx) => (
+                        <a key={pIdx} href={photo.photo_url} target="_blank" rel="noreferrer" className="photo-thumbnail">
+                          <img src={photo.photo_url} alt={`Zdjęcie ${pIdx + 1}`} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                ) : null
+              })()}
             </div>
           ))}
         </div>
       </div>
+
+      {/* Global completion photos */}
+      {photos.filter(p => p.completion_item_id === null).length > 0 && (
+        <div className="card">
+          <h3 className="section-title">Zdjęcia do całej listy</h3>
+          <div className="photo-thumbnails photo-thumbnails-large">
+            {photos
+              .filter(p => p.completion_item_id === null)
+              .map((photo, idx) => (
+                <a key={idx} href={photo.photo_url} target="_blank" rel="noreferrer" className="photo-thumbnail photo-thumbnail-lg">
+                  <img src={photo.photo_url} alt={`Zdjęcie ${idx + 1}`} />
+                </a>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -606,6 +606,28 @@ export default function AdminPanel() {
     if (error) {
       alert(`Error updating leader: ${error.message}`)
     } else {
+      // If a new default signature was uploaded, offer to propagate it to associated draft meetings
+      if (defaultSignatureUrl) {
+        const { data: draftMeetings } = await supabase
+          .from('meetings')
+          .select('id')
+          .eq('leader_id', editingLeader.id)
+          .eq('is_draft', true)
+
+        if (draftMeetings && draftMeetings.length > 0) {
+          const count = draftMeetings.length
+          const apply = window.confirm(
+            `There ${count === 1 ? 'is' : 'are'} ${count} draft meeting${count !== 1 ? 's' : ''} associated with ${editingLeader.name}. Would you like to update their leader signature with the new default?`
+          )
+          if (apply) {
+            await supabase
+              .from('meetings')
+              .update({ signature_url: defaultSignatureUrl })
+              .in('id', draftMeetings.map(m => m.id))
+          }
+        }
+      }
+
       setEditingLeader(null)
       setEditLeaderShowSignature(false)
       if (editLeaderSignatureRef.current) {

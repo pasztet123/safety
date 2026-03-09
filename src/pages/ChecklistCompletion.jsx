@@ -15,6 +15,8 @@ export default function ChecklistCompletion() {
   const [completionDateTime, setCompletionDateTime] = useState('')
   const [notes, setNotes] = useState('')
   const [items, setItems] = useState([])
+  const [completionPhotos, setCompletionPhotos] = useState([])
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
 
   // Set default datetime to current date/time
   useEffect(() => {
@@ -49,7 +51,8 @@ export default function ChecklistCompletion() {
       setItems(sortedItems.map(item => ({
         ...item,
         is_checked: false,
-        notes: ''
+        notes: '',
+        photos: []
       })))
     }
     setLoading(false)
@@ -74,6 +77,62 @@ export default function ChecklistCompletion() {
     const newItems = [...items]
     newItems[index].notes = value
     setItems(newItems)
+  }
+
+  const handleCompletionPhotoUpload = async (e) => {
+    const files = Array.from(e.target.files)
+    setUploadingPhotos(true)
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `checklist-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+      const { error: uploadError } = await supabase.storage
+        .from('safety-photos')
+        .upload(fileName, file)
+      if (!uploadError) {
+        const { data } = supabase.storage.from('safety-photos').getPublicUrl(fileName)
+        setCompletionPhotos(prev => [...prev, { photo_url: data.publicUrl }])
+      }
+    }
+    setUploadingPhotos(false)
+    e.target.value = ''
+  }
+
+  const handleRemoveCompletionPhoto = (index) => {
+    setCompletionPhotos(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const handleItemPhotoUpload = async (e, index) => {
+    const files = Array.from(e.target.files)
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `checklist-item-${Date.now()}-${Math.random().toString(36).slice(2)}.${fileExt}`
+      const { error: uploadError } = await supabase.storage
+        .from('safety-photos')
+        .upload(fileName, file)
+      if (!uploadError) {
+        const { data } = supabase.storage.from('safety-photos').getPublicUrl(fileName)
+        setItems(prev => {
+          const updated = [...prev]
+          updated[index] = {
+            ...updated[index],
+            photos: [...(updated[index].photos || []), { photo_url: data.publicUrl }]
+          }
+          return updated
+        })
+      }
+    }
+    e.target.value = ''
+  }
+
+  const handleRemoveItemPhoto = (itemIndex, photoIndex) => {
+    setItems(prev => {
+      const updated = [...prev]
+      updated[itemIndex] = {
+        ...updated[itemIndex],
+        photos: updated[itemIndex].photos.filter((_, i) => i !== photoIndex)
+      }
+      return updated
+    })
   }
 
   const handleSubmit = async (e) => {
@@ -109,14 +168,47 @@ export default function ChecklistCompletion() {
       notes: item.notes || null
     }))
 
-    const { error: itemsError } = await supabase
+    const { data: insertedItems, error: itemsError } = await supabase
       .from('checklist_completion_items')
       .insert(completionItems)
+      .select()
 
     if (itemsError) {
       console.error('Error creating completion items:', itemsError)
       setSubmitting(false)
       return
+    }
+
+    // Save global completion photos
+    if (completionPhotos.length > 0) {
+      await supabase.from('checklist_completion_photos').insert(
+        completionPhotos.map(p => ({
+          completion_id: completion.id,
+          completion_item_id: null,
+          photo_url: p.photo_url
+        }))
+      )
+    }
+
+    // Save per-item photos
+    const itemPhotoRows = []
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (item.photos && item.photos.length > 0) {
+        const completionItem = insertedItems?.find(ci => ci.checklist_item_id === item.id)
+        if (completionItem) {
+          item.photos.forEach(p => {
+            itemPhotoRows.push({
+              completion_id: completion.id,
+              completion_item_id: completionItem.id,
+              photo_url: p.photo_url
+            })
+          })
+        }
+      }
+    }
+    if (itemPhotoRows.length > 0) {
+      await supabase.from('checklist_completion_photos').insert(itemPhotoRows)
     }
 
     setSubmitting(false)
@@ -209,6 +301,35 @@ export default function ChecklistCompletion() {
                   value={item.notes}
                   onChange={(e) => handleItemNoteChange(index, e.target.value)}
                 />
+
+                <div className="item-photos-section">
+                  <label className="item-photo-upload-btn">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      hidden
+                      onChange={(e) => handleItemPhotoUpload(e, index)}
+                    />
+                    {item.photos?.length > 0 ? `${item.photos.length} photo(s) attached` : 'Add photo to step'}
+                  </label>
+                  {item.photos?.length > 0 && (
+                    <div className="photo-thumbnails">
+                      {item.photos.map((photo, pIndex) => (
+                        <div key={pIndex} className="photo-thumbnail">
+                          <img src={photo.photo_url} alt={`Photo ${pIndex + 1}`} />
+                          <button
+                            type="button"
+                            className="photo-remove-btn"
+                            onClick={() => handleRemoveItemPhoto(index, pIndex)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -223,6 +344,38 @@ export default function ChecklistCompletion() {
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add any additional notes about this completion..."
             />
+          </div>
+        </div>
+
+        <div className="card">
+          <h3 className="section-title">Photos (optional)</h3>
+          <div className="photos-section">
+            <label className="completion-photo-upload-btn">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={handleCompletionPhotoUpload}
+              />
+              {uploadingPhotos ? 'Uploading...' : 'Add photos'}
+            </label>
+            {completionPhotos.length > 0 && (
+              <div className="photo-thumbnails">
+                {completionPhotos.map((photo, index) => (
+                  <div key={index} className="photo-thumbnail">
+                    <img src={photo.photo_url} alt={`Photo ${index + 1}`} />
+                    <button
+                      type="button"
+                      className="photo-remove-btn"
+                      onClick={() => handleRemoveCompletionPhoto(index)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

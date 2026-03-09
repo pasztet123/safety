@@ -249,7 +249,9 @@ export default function MeetingForm() {
     if (data) {
       setLeaders(data)
       // Auto-select by name match (covers new meetings where leader_name defaults to 'Bo Mikuta')
-      // Fall back to sole leader if no name match
+      // Fall back to sole leader if no name match.
+      // For edit/draft mode fetchMeeting() runs concurrently and will override with the
+      // correct leader from DB, so any Bo Mikuta pre-fill here is harmless.
       if (!formData.leader_id) {
         const match =
           (formData.leader_name ? data.find(l => l.name === formData.leader_name) : null) ||
@@ -394,40 +396,61 @@ export default function MeetingForm() {
       return
     }
 
+    // Helper: given a leader object, apply it as the current leader
+    const applyLeader = (leader, extraFormFields = {}) => {
+      const sig = leader.default_signature_url || null
+      setLeaderDefaultSignature(sig)
+      setChosenDefaultSigUrl(sig)
+      setFormData(prev => ({
+        ...prev,
+        leader_id: leader.id,
+        leader_name: leader.name,
+        ...extraFormFields,
+      }))
+    }
+
     if (newAttendees.length === 1) {
       const attendee = newAttendees[0]
+      // 1) Check via involved_persons.leader_id link
       const person = involvedPersons.find(p => p.name === attendee.name)
       if (person?.leader_id) {
         const leader = leaders.find(l => l.id === person.leader_id)
         if (leader) {
-          setFormData(prev => ({
-            ...prev,
-            leader_id: leader.id,
-            leader_name: leader.name,
-            is_self_training: true,
-          }))
-          if (leader.default_signature_url) setLeaderDefaultSignature(leader.default_signature_url)
+          applyLeader(leader, { is_self_training: true })
           return
         }
       }
-      // Attendee not linked to a leader — flag as self-training but keep
-      // whatever leader was already resolved (default Bo Mikuta etc.)
+      // 2) Fallback: attendee IS a leader (name matches directly in leaders table)
+      const directLeader = leaders.find(l => l.name === attendee.name)
+      if (directLeader) {
+        applyLeader(directLeader, { is_self_training: true })
+        return
+      }
+      // Attendee not linked to a leader — flag as self-training but keep existing leader
       setFormData(prev => ({ ...prev, is_self_training: true }))
     } else {
       // Multiple attendees — find the first one linked to a leader
-      let update = { is_self_training: false }
+      let foundLeader = null
+      // Pass 1: via involved_persons.leader_id
       for (const attendee of newAttendees) {
         const person = involvedPersons.find(p => p.name === attendee.name)
         if (person?.leader_id) {
           const leader = leaders.find(l => l.id === person.leader_id)
-          if (leader) {
-            update = { ...update, leader_id: leader.id, leader_name: leader.name }
-            if (leader.default_signature_url) setLeaderDefaultSignature(leader.default_signature_url)
-            break
-          }
+          if (leader) { foundLeader = leader; break }
         }
       }
-      setFormData(prev => ({ ...prev, ...update }))
+      // Pass 2: fallback — attendee IS a leader directly
+      if (!foundLeader) {
+        for (const attendee of newAttendees) {
+          const leader = leaders.find(l => l.name === attendee.name)
+          if (leader) { foundLeader = leader; break }
+        }
+      }
+      if (foundLeader) {
+        applyLeader(foundLeader, { is_self_training: false })
+      } else {
+        setFormData(prev => ({ ...prev, is_self_training: false }))
+      }
     }
   }
 
@@ -684,7 +707,7 @@ export default function MeetingForm() {
         completed: isDraftMeeting ? true : (data.completed || false),
         is_self_training: data.is_self_training || false,
       })
-      if (resolvedLeaderSig) setLeaderDefaultSignature(resolvedLeaderSig)
+      setLeaderDefaultSignature(resolvedLeaderSig)
       setAttendees(
         (data.attendees || []).map(a => ({
           ...a,
