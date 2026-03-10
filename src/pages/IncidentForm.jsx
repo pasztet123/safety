@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
+import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import './IncidentForm.css'
 
 const SEVERITY_OPTIONS = [
@@ -120,6 +121,7 @@ export default function IncidentForm() {
     type_name: '',
     incident_type_id: '',
     incident_subtype: '',
+    safety_violation_type: '',
     severity: '',
     employee_name: '',
     phone: '',
@@ -155,7 +157,11 @@ export default function IncidentForm() {
   const [witnessDropdownOpen, setWitnessDropdownOpen] = useState(false)
 
   const [correctiveActions, setCorrectiveActions] = useState([])
-  const [newAction, setNewAction] = useState({ description: '', responsible_person_id: '', due_date: '', status: 'open' })
+  const [newAction, setNewAction] = useState({ description: '', responsible_person_id: '', declared_created_date: new Date().toISOString().split('T')[0], due_date: '', status: 'open' })
+  const [deletedActionIds, setDeletedActionIds] = useState([])
+  const [disciplinaryActions, setDisciplinaryActions] = useState([])
+  const [newDisciplinaryAction, setNewDisciplinaryAction] = useState(createEmptyDisciplinaryAction())
+  const [showAddDisciplinaryAction, setShowAddDisciplinaryAction] = useState(false)
 
   useEffect(() => {
     const init = async () => {
@@ -238,6 +244,7 @@ export default function IncidentForm() {
         type_name: data.type_name || '',
         incident_type_id: data.incident_type_id || '',
         incident_subtype: data.incident_subtype || '',
+        safety_violation_type: data.safety_violation_type || '',
         severity: data.severity || '',
         employee_name: data.employee_name || '',
         phone: data.phone || '',
@@ -265,6 +272,14 @@ export default function IncidentForm() {
       }
       const { data: acts } = await supabase.from('corrective_actions').select('*').eq('incident_id', id)
       if (acts) setCorrectiveActions(acts)
+      const { data: disciplinary } = await supabase
+        .from('disciplinary_actions')
+        .select('*')
+        .eq('incident_id', id)
+        .order('action_date', { ascending: false })
+        .order('action_time', { ascending: false })
+      if (disciplinary) setDisciplinaryActions(disciplinary)
+      setDeletedActionIds([])
       const { data: wits } = await supabase.from('incident_witnesses').select('*').eq('incident_id', id)
       if (wits) setWitnesses(wits.map(w => ({ id: w.id, person_id: w.person_id, name: w.name })))
     }
@@ -291,8 +306,14 @@ export default function IncidentForm() {
       type_name: typeName,
       incident_type_id: dbType?.id || '',
       incident_subtype: '',
+      safety_violation_type: typeName === 'Safety violation' ? prev.safety_violation_type : '',
       anyone_injured: injured,
     }))
+    if (typeName !== 'Safety violation') {
+      setDisciplinaryActions([])
+      setShowAddDisciplinaryAction(false)
+      setNewDisciplinaryAction(createEmptyDisciplinaryAction())
+    }
   }
 
   const handleGps = () => {
@@ -339,7 +360,7 @@ export default function IncidentForm() {
   const addAction = () => {
     if (!newAction.description.trim()) return
     setCorrectiveActions(prev => [...prev, { ...newAction, isNew: true }])
-    setNewAction({ description: '', responsible_person_id: '', due_date: '', status: 'open' })
+    setNewAction({ description: '', responsible_person_id: '', declared_created_date: new Date().toISOString().split('T')[0], due_date: '', status: 'open' })
     setShowAddAction(false)
   }
 
@@ -347,10 +368,59 @@ export default function IncidentForm() {
     setCorrectiveActions(prev => prev.map((a, i) => i === idx ? { ...a, [field]: val } : a))
   }
 
-  const removeAction = (idx) => setCorrectiveActions(prev => prev.filter((_, i) => i !== idx))
+  const removeAction = (idx) => setCorrectiveActions(prev => {
+    const actionToRemove = prev[idx]
+    if (actionToRemove?.id) {
+      setDeletedActionIds(current => [...current, actionToRemove.id])
+    }
+    return prev.filter((_, i) => i !== idx)
+  })
+
+  const addDisciplinaryAction = () => {
+    if (
+      !newDisciplinaryAction.recipient_person_id ||
+      !newDisciplinaryAction.responsible_leader_id ||
+      !newDisciplinaryAction.action_type ||
+      !newDisciplinaryAction.action_date ||
+      !newDisciplinaryAction.action_time
+    ) {
+      alert('Please complete all required disciplinary action fields')
+      return
+    }
+    setDisciplinaryActions(prev => [...prev, { ...newDisciplinaryAction }])
+    setNewDisciplinaryAction(createEmptyDisciplinaryAction())
+    setShowAddDisciplinaryAction(false)
+  }
+
+  const updateDisciplinaryAction = (idx, field, val) => {
+    setDisciplinaryActions(prev => prev.map((action, actionIndex) => (
+      actionIndex === idx ? { ...action, [field]: val } : action
+    )))
+  }
+
+  const removeDisciplinaryAction = (idx) => {
+    setDisciplinaryActions(prev => prev.filter((_, actionIndex) => actionIndex !== idx))
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    if (formData.type_name === 'Safety violation' && !formData.safety_violation_type) {
+      alert('Please select a safety violation type')
+      return
+    }
+    if (formData.type_name === 'Safety violation') {
+      const hasInvalidDisciplinaryAction = disciplinaryActions.some(action => (
+        !action.recipient_person_id ||
+        !action.responsible_leader_id ||
+        !action.action_type ||
+        !action.action_date ||
+        !action.action_time
+      ))
+      if (hasInvalidDisciplinaryAction) {
+        alert('Please complete all required disciplinary action fields before saving the incident')
+        return
+      }
+    }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     let photoUrl = existingPhotoUrl
@@ -388,6 +458,7 @@ export default function IncidentForm() {
       type_name: formData.type_name,
       incident_type_id: formData.incident_type_id || null,
       incident_subtype: formData.incident_subtype || null,
+      safety_violation_type: formData.type_name === 'Safety violation' ? (formData.safety_violation_type || null) : null,
       severity: formData.severity || null,
       employee_name: formData.employee_name,
       phone: formData.phone || null,
@@ -408,28 +479,95 @@ export default function IncidentForm() {
       report_mode: reportMode,
       photo_url: photoUrl,
       ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
-      created_by: user.id,
     }
     let incidentId = id
     if (id) {
-      const { error } = await supabase.from('incidents').update(incidentData).eq('id', id)
+      const { error } = await supabase.from('incidents').update({
+        ...incidentData,
+        updated_by: user.id,
+      }).eq('id', id)
       if (error) { console.error(error); setLoading(false); return }
     } else {
-      const { data: newInc, error } = await supabase.from('incidents').insert([incidentData]).select().single()
+      const { data: newInc, error } = await supabase.from('incidents').insert([{
+        ...incidentData,
+        created_by: user.id,
+        updated_by: user.id,
+      }]).select().single()
       if (error) { console.error(error); setLoading(false); return }
       incidentId = newInc.id
     }
     if (incidentId) {
-      if (id) await supabase.from('corrective_actions').delete().eq('incident_id', id)
-      if (correctiveActions.length > 0) {
-        await supabase.from('corrective_actions').insert(correctiveActions.map(a => ({
+      if (deletedActionIds.length > 0) {
+        await supabase.from('corrective_actions').delete().in('id', deletedActionIds)
+      }
+
+      const existingActions = correctiveActions.filter(action => action.id)
+      const newActions = correctiveActions.filter(action => !action.id)
+
+      if (existingActions.length > 0) {
+        const updateResults = await Promise.all(existingActions.map(action => (
+          supabase
+            .from('corrective_actions')
+            .update({
+              description: action.description,
+              responsible_person_id: action.responsible_person_id || null,
+              declared_created_date: action.declared_created_date || null,
+              due_date: action.due_date || null,
+              status: action.status || 'open',
+              completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
+              updated_by: user.id,
+            })
+            .eq('id', action.id)
+        )))
+
+        const updateError = updateResults.find(result => result.error)?.error
+        if (updateError) {
+          console.error(updateError)
+          setLoading(false)
+          return
+        }
+      }
+
+      if (newActions.length > 0) {
+        const { error: insertActionsError } = await supabase.from('corrective_actions').insert(newActions.map(action => ({
           incident_id: incidentId,
-          description: a.description,
-          responsible_person_id: a.responsible_person_id || null,
-          due_date: a.due_date || null,
-          status: a.status || 'open',
-          completion_date: a.status === 'completed' ? (a.completion_date || new Date().toISOString().split('T')[0]) : null,
+          description: action.description,
+          responsible_person_id: action.responsible_person_id || null,
+          declared_created_date: action.declared_created_date || null,
+          due_date: action.due_date || null,
+          status: action.status || 'open',
+          completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
+          created_by: user.id,
+          updated_by: user.id,
         })))
+
+        if (insertActionsError) {
+          console.error(insertActionsError)
+          setLoading(false)
+          return
+        }
+      }
+      await supabase.from('disciplinary_actions').delete().eq('incident_id', incidentId)
+      if (formData.type_name === 'Safety violation' && disciplinaryActions.length > 0) {
+        const { error: insertDisciplinaryError } = await supabase.from('disciplinary_actions').insert(
+          disciplinaryActions.map(action => ({
+            incident_id: incidentId,
+            recipient_person_id: action.recipient_person_id,
+            responsible_leader_id: action.responsible_leader_id,
+            action_type: action.action_type,
+            action_notes: action.action_notes?.trim() || null,
+            action_date: action.action_date,
+            action_time: action.action_time,
+            created_by: user.id,
+            updated_by: user.id,
+          }))
+        )
+
+        if (insertDisciplinaryError) {
+          console.error(insertDisciplinaryError)
+          setLoading(false)
+          return
+        }
       }
       if (id) await supabase.from('incident_witnesses').delete().eq('incident_id', id)
       if (witnesses.length > 0) {
@@ -447,6 +585,7 @@ export default function IncidentForm() {
   if (loading && id) return <div className="spinner"></div>
 
   const isInjury = formData.type_name === 'Accident (injury)' || formData.anyone_injured
+  const isSafetyViolation = formData.type_name === 'Safety violation'
   const hasSubtypes = formData.type_name && INCIDENT_SUBTYPES[formData.type_name]
   const currentSeverity = SEVERITY_OPTIONS.find(s => s.value === formData.severity)
   const predefinedGroups = predefinedActions.reduce((acc, a) => {
@@ -506,6 +645,20 @@ export default function IncidentForm() {
               </select>
             </div>
           )}
+          {isSafetyViolation && (
+            <div className="form-group">
+              <label className="form-label">Safety violation *</label>
+              <select
+                className="form-select"
+                value={formData.safety_violation_type}
+                onChange={e => setFormData(prev => ({ ...prev, safety_violation_type: e.target.value }))}
+                required
+              >
+                <option value="">Select safety violation</option>
+                {SAFETY_VIOLATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+              </select>
+            </div>
+          )}
           <div className="form-group">
             <label className="form-label">Severity</label>
             <div className="if-severity-pills">
@@ -557,16 +710,17 @@ export default function IncidentForm() {
           </div>
           <div className="form-group">
             <label className="form-label">Location</label>
-            <div className="if-location-row">
-              <input type="text" className="form-input" value={formData.location} onChange={e => setFormData(prev => ({ ...prev, location: e.target.value }))} placeholder="Address or GPS auto-filled" />
-              <button type="button" className="if-gps-btn" onClick={handleGps} title="Use current location">&#128205;</button>
-            </div>
             <MapPicker
               latitude={formData.latitude}
               longitude={formData.longitude}
               onCoordinatesChange={({ lat, lng }) => setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }))}
               onLocationTextChange={(text) => setFormData(prev => ({ ...prev, location: text }))}
-            />
+            >
+              <div className="if-location-row">
+                <input type="text" className="form-input" value={formData.location} onChange={e => setFormData(prev => ({ ...prev, location: e.target.value }))} placeholder="Address or GPS auto-filled" />
+                <button type="button" className="if-gps-btn" onClick={handleGps} title="Use current location">Use GPS</button>
+              </div>
+            </MapPicker>
           </div>
         </div>
 
@@ -617,7 +771,7 @@ export default function IncidentForm() {
             </div>
           )}
           <div className="if-evidence-block">
-            <div className="if-evidence-title">&#128247; Photos / Evidence</div>
+            <div className="if-evidence-title">Photos / Evidence</div>
             {existingPhotoUrl && (
               <div className="if-photo-grid" style={{ marginBottom: 10 }}>
                 <div className="if-photo-item">
@@ -642,7 +796,7 @@ export default function IncidentForm() {
                 <input type="file" accept="image/*" multiple onChange={handlePhotoAdd} style={{ display: 'none' }} />
               </label>
               <label className="btn btn-secondary if-upload-btn">
-                &#128247; Take Photo
+                Take Photo
                 <input type="file" accept="image/*" capture="environment" onChange={handlePhotoAdd} style={{ display: 'none' }} />
               </label>
             </div>
@@ -724,7 +878,7 @@ export default function IncidentForm() {
           </div>
           {isInjury && (
             <div className="if-injury-block">
-              <div className="if-injury-title">&#129657; Injury Details</div>
+              <div className="if-injury-title">Injury Details</div>
               <div className="if-row-2">
                 <div className="form-group">
                   <label className="form-label">Body part affected</label>
@@ -786,6 +940,10 @@ export default function IncidentForm() {
                     </select>
                   </div>
                   <div className="form-group">
+                    <label className="form-label">Declared created date</label>
+                    <input type="date" className="form-input" value={newAction.declared_created_date} onChange={e => setNewAction(prev => ({ ...prev, declared_created_date: e.target.value }))} />
+                  </div>
+                  <div className="form-group">
                     <label className="form-label">Due date</label>
                     <input type="date" className="form-input" value={newAction.due_date} onChange={e => setNewAction(prev => ({ ...prev, due_date: e.target.value }))} />
                   </div>
@@ -802,8 +960,9 @@ export default function IncidentForm() {
                       <div className="if-action-main">
                         <p className="if-action-desc">{a.description}</p>
                         <div className="if-action-meta">
-                          {responsible && <span>&#128100; {responsible.name}</span>}
-                          {a.due_date && <span>&#128197; {new Date(a.due_date).toLocaleDateString()}</span>}
+                          {responsible && <span>Responsible: {responsible.name}</span>}
+                          {a.declared_created_date && <span>Created on: {new Date(a.declared_created_date).toLocaleDateString()}</span>}
+                          {a.due_date && <span>Due: {new Date(a.due_date).toLocaleDateString()}</span>}
                           <select className="if-action-status-select" value={a.status} onChange={e => updateAction(i, 'status', e.target.value)}>
                             <option value="open">Open</option>
                             <option value="completed">Completed</option>
@@ -817,6 +976,116 @@ export default function IncidentForm() {
               </div>
             )}
           </div>
+          {isSafetyViolation && (
+            <div className="if-actions-block if-actions-block--disciplinary">
+              <div className="if-actions-header">
+                <span className="if-actions-title">
+                  Disciplinary Actions
+                  {disciplinaryActions.length > 0 && <span className="if-badge">{disciplinaryActions.length}</span>}
+                </span>
+                <button type="button" className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }} onClick={() => setShowAddDisciplinaryAction(v => !v)}>
+                  {showAddDisciplinaryAction ? '&#10005; Cancel' : '+ Add Disciplinary Action'}
+                </button>
+              </div>
+              <p className="if-help-text">This action will be linked to the selected safety violation for this incident.</p>
+              {showAddDisciplinaryAction && (
+                <div className="if-add-action-card if-add-action-card--disciplinary">
+                  <div className="if-row-2">
+                    <div className="form-group">
+                      <label className="form-label">Recipient *</label>
+                      <select className="form-select" value={newDisciplinaryAction.recipient_person_id} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, recipient_person_id: e.target.value }))}>
+                        <option value="">Select person</option>
+                        {involvedPersons.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Responsible leader *</label>
+                      <select className="form-select" value={newDisciplinaryAction.responsible_leader_id} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, responsible_leader_id: e.target.value }))}>
+                        <option value="">Select leader</option>
+                        {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="if-row-3">
+                    <div className="form-group">
+                      <label className="form-label">Action taken *</label>
+                      <select className="form-select" value={newDisciplinaryAction.action_type} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, action_type: e.target.value }))}>
+                        <option value="">Select action</option>
+                        {DISCIPLINARY_ACTION_TYPES.map(option => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Date *</label>
+                      <input type="date" className="form-input" value={newDisciplinaryAction.action_date} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, action_date: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Time *</label>
+                      <input type="time" className="form-input" value={newDisciplinaryAction.action_time} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, action_time: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Action details <span className="if-optional">optional</span></label>
+                    <textarea className="form-textarea" rows="2" value={newDisciplinaryAction.action_notes} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, action_notes: e.target.value }))} placeholder="Additional notes about the action taken..." />
+                  </div>
+                  <button type="button" className="btn btn-primary" onClick={addDisciplinaryAction}>Add Disciplinary Action</button>
+                </div>
+              )}
+              {disciplinaryActions.length > 0 && (
+                <div className="if-action-list">
+                  {disciplinaryActions.map((action, index) => (
+                    <div key={action.id || index} className="if-action-card if-action-card--disciplinary">
+                      <div className="if-action-main">
+                        <p className="if-action-desc">{action.action_type}</p>
+                        <div className="if-action-meta">
+                          <span>Recipient: {involvedPersons.find(person => person.id === action.recipient_person_id)?.name || 'Unknown'}</span>
+                          <span>Leader: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
+                          <span>Date: {new Date(action.action_date).toLocaleDateString()}</span>
+                          <span>Time: {(action.action_time || '').slice(0, 5)}</span>
+                        </div>
+                        <div className="if-row-2" style={{ marginTop: 12 }}>
+                          <div className="form-group">
+                            <label className="form-label">Recipient *</label>
+                            <select className="form-select" value={action.recipient_person_id} onChange={e => updateDisciplinaryAction(index, 'recipient_person_id', e.target.value)}>
+                              <option value="">Select person</option>
+                              {involvedPersons.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Responsible leader *</label>
+                            <select className="form-select" value={action.responsible_leader_id} onChange={e => updateDisciplinaryAction(index, 'responsible_leader_id', e.target.value)}>
+                              <option value="">Select leader</option>
+                              {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="if-row-3" style={{ marginTop: 12 }}>
+                          <div className="form-group">
+                            <label className="form-label">Action taken *</label>
+                            <select className="form-select" value={action.action_type} onChange={e => updateDisciplinaryAction(index, 'action_type', e.target.value)}>
+                              {DISCIPLINARY_ACTION_TYPES.map(option => <option key={option} value={option}>{option}</option>)}
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Date *</label>
+                            <input type="date" className="form-input" value={action.action_date} onChange={e => updateDisciplinaryAction(index, 'action_date', e.target.value)} />
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Time *</label>
+                            <input type="time" className="form-input" value={(action.action_time || '').slice(0, 5)} onChange={e => updateDisciplinaryAction(index, 'action_time', e.target.value)} />
+                          </div>
+                        </div>
+                        <div className="form-group" style={{ marginTop: 12 }}>
+                          <label className="form-label">Action details <span className="if-optional">optional</span></label>
+                          <textarea className="form-textarea" rows="2" value={action.action_notes || ''} onChange={e => updateDisciplinaryAction(index, 'action_notes', e.target.value)} placeholder="Additional notes about the action taken..." />
+                        </div>
+                      </div>
+                      <button type="button" className="btn-remove" onClick={() => removeDisciplinaryAction(index)}>&#215;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Section 5 — Final Review */}

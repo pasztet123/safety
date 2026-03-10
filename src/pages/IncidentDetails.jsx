@@ -13,7 +13,9 @@ export default function IncidentDetails() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [incident, setIncident] = useState(null)
   const [correctiveActions, setCorrectiveActions] = useState([])
+  const [disciplinaryActions, setDisciplinaryActions] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
+  const [leaders, setLeaders] = useState([])
   const [pdfLoading, setPdfLoading] = useState(false)
 
   useEffect(() => {
@@ -31,7 +33,7 @@ export default function IncidentDetails() {
       setIsAdmin(data?.is_admin || false)
     }
     if (id) {
-      await Promise.all([fetchIncident(), fetchInvolvedPersons()])
+      await Promise.all([fetchIncident(), fetchInvolvedPersons(), fetchLeaders()])
     }
   }
 
@@ -50,9 +52,19 @@ export default function IncidentDetails() {
         .from('corrective_actions')
         .select('*')
         .eq('incident_id', id)
-        .order('created_at', { ascending: true })
+        .order('declared_created_date', { ascending: true })
+        .order('due_date', { ascending: true })
 
       setCorrectiveActions(actions || [])
+
+      const { data: disciplinary } = await supabase
+        .from('disciplinary_actions')
+        .select('*')
+        .eq('incident_id', id)
+        .order('action_date', { ascending: false })
+        .order('action_time', { ascending: false })
+
+      setDisciplinaryActions(disciplinary || [])
     }
     setLoading(false)
   }
@@ -65,13 +77,24 @@ export default function IncidentDetails() {
     if (data) setInvolvedPersons(data)
   }
 
+  const fetchLeaders = async () => {
+    const { data } = await supabase
+      .from('leaders')
+      .select('id, name')
+      .order('name')
+    if (data) setLeaders(data)
+  }
+
   const handleToggleActionStatus = async (actionId, currentStatus) => {
     const newStatus = currentStatus === 'open' ? 'completed' : 'open'
+    const { data: { user } } = await supabase.auth.getUser()
+
     const { error } = await supabase
       .from('corrective_actions')
       .update({
         status: newStatus,
-        completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null
+        completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+        updated_by: user?.id || null,
       })
       .eq('id', actionId)
     if (!error) await fetchIncident()
@@ -149,6 +172,11 @@ export default function IncidentDetails() {
                   {incident.incident_subtype.replace(/_/g, ' ')}
                 </span>
               )}
+              {incident.safety_violation_type && (
+                <span className="incident-subtype-badge" style={{ marginLeft: '8px' }}>
+                  {incident.safety_violation_type}
+                </span>
+              )}
             </p>
           </div>
           {incident.severity && (
@@ -213,6 +241,13 @@ export default function IncidentDetails() {
           <label className="form-label">Reporter</label>
           <p className="detail-value">{incident.reporter_name}</p>
         </div>
+
+        {incident.safety_violation_type && (
+          <div className="form-group">
+            <label className="form-label">Safety Violation</label>
+            <p className="detail-value">{incident.safety_violation_type}</p>
+          </div>
+        )}
       </div>
 
       {/* ── Description ── */}
@@ -382,6 +417,42 @@ export default function IncidentDetails() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {incident.type_name === 'Safety violation' && (
+        <div className="card">
+          <div className="if-actions-header" style={{ marginBottom: '18px' }}>
+            <h3 className="section-title" style={{ margin: 0 }}>
+              Disciplinary Actions
+              <span className="ica-count" style={{ marginLeft: '8px' }}>{disciplinaryActions.length}</span>
+            </h3>
+            <button className="btn btn-primary" onClick={() => navigate(`/disciplinary-actions?incidentId=${id}`)}>
+              Add Disciplinary Action
+            </button>
+          </div>
+          {disciplinaryActions.length === 0 ? (
+            <p className="detail-value">No disciplinary actions linked to this safety violation yet.</p>
+          ) : (
+            <div className="if-action-list">
+              {disciplinaryActions.map(action => (
+                <div key={action.id} className="if-action-card if-action-card--disciplinary">
+                  <div className="if-action-main">
+                    <p className="if-action-desc">{action.action_type}</p>
+                    <div className="if-action-meta">
+                      <span>Recipient: {involvedPersons.find(person => person.id === action.recipient_person_id)?.name || 'Unknown'}</span>
+                      <span>Leader: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
+                      <span>Date: {new Date(action.action_date).toLocaleDateString()}</span>
+                      <span>Time: {(action.action_time || '').slice(0, 5)}</span>
+                    </div>
+                    {action.action_notes && (
+                      <p className="detail-value" style={{ marginTop: '10px', whiteSpace: 'pre-wrap' }}>{action.action_notes}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

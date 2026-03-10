@@ -1,11 +1,13 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import SignaturePad from '../components/SignaturePad'
 import './ChecklistCompletion.css'
 
 export default function ChecklistCompletion() {
   const navigate = useNavigate()
   const { id } = useParams()
+  const signatureRef = useRef()
   
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -17,6 +19,15 @@ export default function ChecklistCompletion() {
   const [items, setItems] = useState([])
   const [completionPhotos, setCompletionPhotos] = useState([])
   const [uploadingPhotos, setUploadingPhotos] = useState(false)
+
+  // Signature state
+  const [signerType, setSignerType] = useState('leader') // 'leader' | 'worker'
+  const [leaders, setLeaders] = useState([])
+  const [workers, setWorkers] = useState([])
+  const [selectedPersonName, setSelectedPersonName] = useState('')
+  const [defaultSigUrl, setDefaultSigUrl] = useState(null)
+  const [chosenDefaultSig, setChosenDefaultSig] = useState(false)
+  const [manualSigDataUrl, setManualSigDataUrl] = useState(null)
 
   // Set default datetime to current date/time
   useEffect(() => {
@@ -32,6 +43,7 @@ export default function ChecklistCompletion() {
   useEffect(() => {
     fetchChecklist()
     fetchProjects()
+    fetchPersons()
   }, [id])
 
   const fetchChecklist = async () => {
@@ -67,6 +79,35 @@ export default function ChecklistCompletion() {
     if (data) setProjects(data)
   }
 
+  const fetchPersons = async () => {
+    const [{ data: ldrs }, { data: wkrs }] = await Promise.all([
+      supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+      supabase.from('involved_persons').select('id, name, default_signature_url').order('name'),
+    ])
+    if (ldrs) setLeaders(ldrs)
+    if (wkrs) setWorkers(wkrs)
+  }
+
+  // When person selection changes, load their default signature
+  const handlePersonChange = (name) => {
+    setSelectedPersonName(name)
+    setChosenDefaultSig(false)
+    setManualSigDataUrl(null)
+    signatureRef.current?.clear()
+    const list = signerType === 'leader' ? leaders : workers
+    const person = list.find(p => p.name === name)
+    setDefaultSigUrl(person?.default_signature_url || null)
+  }
+
+  const handleSignerTypeChange = (type) => {
+    setSignerType(type)
+    setSelectedPersonName('')
+    setDefaultSigUrl(null)
+    setChosenDefaultSig(false)
+    setManualSigDataUrl(null)
+    signatureRef.current?.clear()
+  }
+
   const handleToggleItem = (index) => {
     const newItems = [...items]
     newItems[index].is_checked = !newItems[index].is_checked
@@ -76,6 +117,13 @@ export default function ChecklistCompletion() {
   const handleItemNoteChange = (index, value) => {
     const newItems = [...items]
     newItems[index].notes = value
+    setItems(newItems)
+  }
+
+  const handleQuickAnswer = (index, answer) => {
+    const newItems = [...items]
+    newItems[index].notes = answer
+    newItems[index].is_checked = true
     setItems(newItems)
   }
 
@@ -141,6 +189,34 @@ export default function ChecklistCompletion() {
 
     const { data: { user } } = await supabase.auth.getUser()
 
+    // ── Upload manual signature if drawn ──────────────────────────────
+    let signatureUrl = null
+    if (chosenDefaultSig && defaultSigUrl) {
+      signatureUrl = defaultSigUrl
+    } else if (manualSigDataUrl) {
+      const blob = await new Promise(resolve => {
+        const img = new Image()
+        img.onload = () => {
+          const c = document.createElement('canvas')
+          c.width = img.width; c.height = img.height
+          c.getContext('2d').drawImage(img, 0, 0)
+          c.toBlob(resolve, 'image/png')
+        }
+        img.src = manualSigDataUrl
+      })
+      if (blob) {
+        const fileName = `checklist-sig-${Date.now()}.png`
+        const { error: upErr } = await supabase.storage
+          .from('safety-photos')
+          .upload(fileName, blob, { contentType: 'image/png' })
+        if (!upErr) {
+          const { data: urlData } = supabase.storage.from('safety-photos').getPublicUrl(fileName)
+          signatureUrl = urlData.publicUrl
+        }
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     // Create completion
     const { data: completion, error: completionError } = await supabase
       .from('checklist_completions')
@@ -149,7 +225,10 @@ export default function ChecklistCompletion() {
         project_id: projectId || null,
         completed_by: user.id,
         completion_datetime: completionDateTime,
-        notes: notes
+        notes: notes,
+        signer_name: selectedPersonName || null,
+        signer_type: selectedPersonName ? signerType : null,
+        signature_url: signatureUrl,
       }])
       .select()
       .single()
@@ -294,6 +373,17 @@ export default function ChecklistCompletion() {
                   </label>
                 </div>
                 
+                <div className="quick-answers">
+                  {['Yes', 'No', 'N/A', 'Checked', 'See the picture'].map(answer => (
+                    <button
+                      key={answer}
+                      type="button"
+                      className="quick-answer-btn"
+                      onClick={() => handleQuickAnswer(index, answer)}
+                    >{answer}</button>
+                  ))}
+                </div>
+
                 <input
                   type="text"
                   className="form-input item-note-input"
@@ -377,6 +467,97 @@ export default function ChecklistCompletion() {
               </div>
             )}
           </div>
+        </div>
+
+        <div className="card">
+          <h3 className="section-title">Signature (optional)</h3>
+
+          {/* Signer type toggle */}
+          <div className="sig-type-toggle">
+            <button
+              type="button"
+              className={`sig-type-btn ${signerType === 'leader' ? 'active' : ''}`}
+              onClick={() => handleSignerTypeChange('leader')}
+            >
+              Leader
+            </button>
+            <button
+              type="button"
+              className={`sig-type-btn ${signerType === 'worker' ? 'active' : ''}`}
+              onClick={() => handleSignerTypeChange('worker')}
+            >
+              Worker
+            </button>
+          </div>
+
+          {/* Person picker */}
+          <div className="form-group" style={{ marginTop: 12 }}>
+            <label className="form-label">
+              {signerType === 'leader' ? 'Select Leader' : 'Select Worker'}
+            </label>
+            <select
+              className="form-select"
+              value={selectedPersonName}
+              onChange={(e) => handlePersonChange(e.target.value)}
+            >
+              <option value="">— Select person —</option>
+              {(signerType === 'leader' ? leaders : workers).map(p => (
+                <option key={p.id} value={p.name}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedPersonName && (
+            <div className="sig-panel">
+              {/* Use default signature checkbox */}
+              {defaultSigUrl && (
+                <label className="sig-default-label">
+                  <input
+                    type="checkbox"
+                    checked={chosenDefaultSig}
+                    onChange={(e) => {
+                      setChosenDefaultSig(e.target.checked)
+                      if (e.target.checked) {
+                        signatureRef.current?.clear()
+                        setManualSigDataUrl(null)
+                      }
+                    }}
+                  />
+                  <span>Use default signature</span>
+                </label>
+              )}
+
+              {chosenDefaultSig && defaultSigUrl ? (
+                <div className="sig-preview">
+                  <img src={defaultSigUrl} alt="Default signature" />
+                </div>
+              ) : (
+                <div className="sig-draw-section">
+                  <label className="form-label" style={{ marginBottom: 6 }}>
+                    {defaultSigUrl ? 'Or draw signature:' : 'Draw signature:'}
+                  </label>
+                  <SignaturePad
+                    ref={signatureRef}
+                    className="signature-canvas"
+                    height={160}
+                    onEnd={() => {
+                      if (signatureRef.current && !signatureRef.current.isEmpty()) {
+                        setManualSigDataUrl(signatureRef.current.toDataURL())
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: 8 }}
+                    onClick={() => { signatureRef.current?.clear(); setManualSigDataUrl(null) }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="form-actions">

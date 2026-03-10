@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchAllPages, supabase } from '../lib/supabase'
 import './People.css'
 
 export default function People() {
@@ -16,7 +16,7 @@ export default function People() {
   const fetchPersons = async () => {
     setLoading(true)
 
-    const [workersRes, leadersRes, attendeesRes, leaderMeetingsRes] = await Promise.all([
+    const [workersRes, leadersRes, attendeeRows, leaderMeetingRows] = await Promise.all([
       supabase
         .from('involved_persons')
         .select('id, name, email, phone, leader_id, company:companies(name)')
@@ -25,19 +25,19 @@ export default function People() {
         .from('leaders')
         .select('id, name, email, phone')
         .order('name'),
-      supabase
+      fetchAllPages(() => supabase
         .from('meeting_attendees')
-        .select('name, meeting:meetings(date, is_draft)'),
-      supabase
+        .select('name, meeting:meetings(date, is_draft)')),
+      fetchAllPages(() => supabase
         .from('meetings')
         .select('leader_id, date')
         .eq('is_draft', false)
-        .not('leader_id', 'is', null),
+        .not('leader_id', 'is', null)),
     ])
 
     // Worker meeting stats: normalized name → { count, lastDate }
     const workerMeetingMap = {}
-    ;(attendeesRes.data || []).forEach(({ name, meeting }) => {
+    ;(attendeeRows || []).forEach(({ name, meeting }) => {
       if (!meeting || meeting.is_draft) return
       const key = (name || '').toLowerCase().trim()
       if (!workerMeetingMap[key]) workerMeetingMap[key] = { count: 0, lastDate: null }
@@ -49,7 +49,7 @@ export default function People() {
 
     // Leader meeting stats: leader_id → { count, lastDate }
     const leaderMeetingMap = {}
-    ;(leaderMeetingsRes.data || []).forEach(({ leader_id, date }) => {
+    ;(leaderMeetingRows || []).forEach(({ leader_id, date }) => {
       if (!leaderMeetingMap[leader_id]) leaderMeetingMap[leader_id] = { count: 0, lastDate: null }
       leaderMeetingMap[leader_id].count++
       if (!leaderMeetingMap[leader_id].lastDate || date > leaderMeetingMap[leader_id].lastDate) {

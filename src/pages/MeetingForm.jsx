@@ -87,25 +87,31 @@ export default function MeetingForm() {
   const approveModeRef = useRef(false)
   // Guards the one-time auto-detection run on initial draft load
   const initialDetectionDoneRef = useRef(false)
+  // Draft-to-draft navigation context (passed via React Router state)
+  const [draftNavIds, setDraftNavIds] = useState([])
+  const [draftNavIndex, setDraftNavIndex] = useState(-1)
 
   useEffect(() => {
+    // Reset the one-shot guard whenever we navigate to a different meeting
+    initialDetectionDoneRef.current = false
     checkAdminAndLoadData()
   }, [id])
 
-  // For draft meetings loaded from DB, run autoDetectLeader once all async data
-  // (attendees, leaders, involvedPersons) has settled.
+  // For meetings loaded from DB (drafts or edits), run autoDetectLeader once all
+  // async data (attendees, leaders, involvedPersons) has settled.
+  // We don't gate on involvedPersons.length > 0 because attendees may be direct
+  // leaders (not linked via involved_persons).
   useEffect(() => {
     if (
-      isDraft &&
+      id &&
       !initialDetectionDoneRef.current &&
       attendees.length > 0 &&
-      leaders.length > 0 &&
-      involvedPersons.length > 0
+      leaders.length > 0
     ) {
       initialDetectionDoneRef.current = true
       autoDetectLeader(attendees)
     }
-  }, [isDraft, attendees, leaders, involvedPersons])
+  }, [id, attendees, leaders, involvedPersons])
 
   // Pre-fill project_id from URL query param (?project_id=...)
   useEffect(() => {
@@ -117,6 +123,14 @@ export default function MeetingForm() {
       }
     }
   }, [id, location.search])
+
+  // Load draft navigation context from React Router state
+  useEffect(() => {
+    if (id && location.state?.draftIds?.length) {
+      setDraftNavIds(location.state.draftIds)
+      setDraftNavIndex(location.state.draftIndex ?? -1)
+    }
+  }, [id])
 
   // Load from localStorage if creating new meeting
   useEffect(() => {
@@ -722,9 +736,13 @@ export default function MeetingForm() {
       setIsDraft(isDraftMeeting)
 
       if (isDraftMeeting) {
-        // Pre-check "Add digital signature" and auto-use leader's default sig
+        // Pre-check "Add digital signature".
+        // chosenDefaultSigUrl is intentionally NOT set here — autoDetectLeader
+        // will run after attendees/leaders load and set the correct leader's sig
+        // (or null if that leader has no default sig). This prevents Bo Mikuta's
+        // sig from being pre-filled for drafts that were imported with a wrong
+        // default leader_name.
         setShowSignaturePanel(true)
-        if (resolvedLeaderSig) setChosenDefaultSigUrl(resolvedLeaderSig)
       } else if (data.signature_url) {
         setExistingSignatureUrl(data.signature_url)
         setShowSignaturePanel(true)
@@ -931,16 +949,22 @@ export default function MeetingForm() {
         ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
         completed: approveModeRef.current ? true : formData.completed,
         is_self_training: formData.is_self_training || false,
-        created_by: user.id,
         // Draft handling: preserve is_draft unless explicitly approving
         ...(id && isDraft ? { is_draft: approveModeRef.current ? false : true } : {}),
+        // Tag manually-created meetings
+        ...(!id ? { source: 'manual' } : {}),
       }
 
     let meetingId = id
     if (id) {
+      const meetingUpdateData = {
+        ...meetingData,
+        updated_by: user.id,
+      }
+
       const { error } = await supabase
         .from('meetings')
-        .update(meetingData)
+        .update(meetingUpdateData)
         .eq('id', id)
       
       if (error) {
@@ -954,9 +978,15 @@ export default function MeetingForm() {
       await supabase.from('meeting_photos').delete().eq('meeting_id', id)
       await supabase.from('meeting_checklists').delete().eq('meeting_id', id)
     } else {
+      const meetingInsertData = {
+        ...meetingData,
+        created_by: user.id,
+        updated_by: user.id,
+      }
+
       const { data, error } = await supabase
         .from('meetings')
-        .insert([meetingData])
+        .insert([meetingInsertData])
         .select()
         .single()
 
@@ -1133,9 +1163,28 @@ export default function MeetingForm() {
       {/* ── Draft banner ── */}
       {isDraft && (
         <div className="mf-draft-banner">
-          <span className="mf-draft-badge">DRAFT</span>
-          <span>This meeting was generated from a CSV import and is pending approval.</span>
-          <span className="mf-draft-hint">Review and edit below, then click <strong>Approve &amp; Save</strong> to publish.</span>
+          <div style={{ flex: 1 }}>
+            <span className="mf-draft-badge">DRAFT</span>
+            <span>This meeting was generated from a CSV import and is pending approval.</span>
+            <span className="mf-draft-hint">Review and edit below, then click <strong>Approve &amp; Save</strong> to publish.</span>
+          </div>
+          {draftNavIds.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+              <button type="button" className="btn btn-secondary btn-sm"
+                disabled={draftNavIndex <= 0}
+                onClick={() => navigate(`/meetings/${draftNavIds[draftNavIndex - 1]}/edit`, {
+                  state: { draftIds: draftNavIds, draftIndex: draftNavIndex - 1 }
+                })}>← Prev</button>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: '#92400e', whiteSpace: 'nowrap' }}>
+                {draftNavIndex + 1} / {draftNavIds.length}
+              </span>
+              <button type="button" className="btn btn-secondary btn-sm"
+                disabled={draftNavIndex >= draftNavIds.length - 1}
+                onClick={() => navigate(`/meetings/${draftNavIds[draftNavIndex + 1]}/edit`, {
+                  state: { draftIds: draftNavIds, draftIndex: draftNavIndex + 1 }
+                })}>Next →</button>
+            </div>
+          )}
         </div>
       )}
 

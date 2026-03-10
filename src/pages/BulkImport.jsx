@@ -199,7 +199,13 @@ export default function BulkImport() {
         const existingSet = new Set((existingNow || []).map(p => p.name.trim().toLowerCase()))
         const toCreate = newPersons.filter(n => !existingSet.has(n.trim().toLowerCase()))
         if (toCreate.length > 0) {
-          await supabase.from('involved_persons').insert(toCreate.map(name => ({ name })))
+          await supabase.from('involved_persons').insert(
+            toCreate.map(name => ({
+              name,
+              created_by: user.id,
+              updated_by: user.id,
+            }))
+          )
         }
       }
 
@@ -213,14 +219,16 @@ export default function BulkImport() {
             date: draft.date,
             time: draft.time,
             location: draft.location || null,
-            leader_name: 'Bo Mikuta',  // default; admin will change at approval
+            leader_name: null,  // intentionally blank — autoDetectLeader resolves on approval
             trade: draft.trade || null,
             topic: draft.topic,
             notes: null,
             completed: false,
             is_draft: true,
+            source: 'busybusy_csv',
             import_batch_id: batchId,
             created_by: user.id,
+            updated_by: user.id,
           }])
           .select()
           .single()

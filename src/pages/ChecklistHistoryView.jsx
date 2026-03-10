@@ -205,7 +205,26 @@ export default function ChecklistHistoryView() {
               <span className="detail-value">{completion.notes}</span>
             </div>
           )}
+
+          {completion?.signer_name && (
+            <div className="detail-row">
+              <span className="detail-label">Signed by:</span>
+              <span className="detail-value">
+                {completion.signer_name}
+                {completion.signer_type && (
+                  <span className="signer-type-badge">{completion.signer_type}</span>
+                )}
+              </span>
+            </div>
+          )}
         </div>
+
+        {completion?.signature_url && (
+          <div className="sig-view">
+            <div className="form-label" style={{ marginBottom: 6 }}>Signature:</div>
+            <img src={completion.signature_url} alt="Signature" className="sig-view-img" />
+          </div>
+        )}
       </div>
 
       <div className="progress-card">

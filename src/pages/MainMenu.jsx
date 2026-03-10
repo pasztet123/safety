@@ -45,6 +45,12 @@ const WrenchIcon = () => (
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
   </svg>
 )
+const ShieldCheckIcon = () => (
+  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l7 4v6c0 5-3.5 8.74-7 10-3.5-1.26-7-5-7-10V6l7-4z"/>
+    <path d="M9 12l2 2 4-4"/>
+  </svg>
+)
 const ExportIcon = () => (
   <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -106,16 +112,32 @@ const readingTime = (text) => {
 
 export default function MainMenu() {
   const navigate = useNavigate()
+  const [isAdmin, setIsAdmin] = useState(false)
   const [stats, setStats] = useState({
     meetings: '—', daysSafe: '—', checklists: '—', openActions: '—', todayMeetings: 0,
   })
   const [extraStats, setExtraStats] = useState({
-    overdueActions: 0, thisMonthMeetings: 0, recentIncidents: 0,
+    overdueActions: 0, thisMonthMeetings: 0, recentIncidents: 0, disciplinaryActions: 0,
   })
   const [spotlightTopics, setSpotlightTopics] = useState([])
   const [recentActivity, setRecentActivity] = useState([])
 
   useEffect(() => {
+        const initAuth = async () => {
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) return false
+
+          const { data } = await supabase
+            .from('users')
+            .select('is_admin')
+            .eq('id', user.id)
+            .single()
+
+          const admin = data?.is_admin || false
+          setIsAdmin(admin)
+          return admin
+        }
+
     const today = new Date().toISOString().split('T')[0]
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
       .toISOString().split('T')[0]
@@ -146,7 +168,7 @@ export default function MainMenu() {
     }
 
     const fetchExtraStats = async () => {
-      const [overdue, monthMtgs, recentInc] = await Promise.all([
+      const [overdue, monthMtgs, recentInc, disciplinary] = await Promise.all([
         supabase.from('corrective_actions')
           .select('id', { count: 'exact', head: true })
           .eq('status', 'open').lt('due_date', today),
@@ -154,11 +176,14 @@ export default function MainMenu() {
           .select('id', { count: 'exact', head: true }).gte('date', monthStart),
         supabase.from('incidents')
           .select('id', { count: 'exact', head: true }).gte('date', thirtyDaysAgo),
+        supabase.from('disciplinary_actions')
+          .select('id', { count: 'exact', head: true }),
       ])
       setExtraStats({
         overdueActions: overdue.count ?? 0,
         thisMonthMeetings: monthMtgs.count ?? 0,
         recentIncidents: recentInc.count ?? 0,
+        disciplinaryActions: disciplinary.count ?? 0,
       })
     }
 
@@ -173,42 +198,57 @@ export default function MainMenu() {
     }
 
     const fetchActivity = async () => {
-      const [mtgs, incs, acts] = await Promise.all([
+      const [mtgs, incs, acts, disciplinary] = await Promise.all([
         supabase.from('meetings')
-          .select('id, topic, leader_name, created_at')
-          .order('created_at', { ascending: false }).limit(3),
+          .select('id, topic, leader_name, date')
+          .order('date', { ascending: false }).limit(3),
         supabase.from('incidents')
-          .select('id, type_name, employee_name, created_at')
-          .order('created_at', { ascending: false }).limit(3),
+          .select('id, type_name, employee_name, date')
+          .order('date', { ascending: false }).limit(3),
         supabase.from('corrective_actions')
-          .select('id, description, status, created_at')
-          .order('created_at', { ascending: false }).limit(3),
+          .select('id, description, status, declared_created_date, due_date')
+          .order('declared_created_date', { ascending: false }).limit(3),
+        supabase.from('disciplinary_actions')
+          .select('id, action_type, action_date')
+          .order('action_date', { ascending: false }).limit(3),
       ])
       const merged = [
         ...(mtgs.data || []).map(m => ({
           type: 'meeting',
           label: m.topic, sub: m.leader_name,
-          ts: m.created_at, path: '/meetings',
+          ts: m.date, path: '/meetings',
         })),
         ...(incs.data || []).map(i => ({
           type: 'incident',
           label: i.type_name, sub: i.employee_name,
-          ts: i.created_at, path: '/incidents',
+          ts: i.date, path: '/incidents',
         })),
         ...(acts.data || []).map(a => ({
           type: 'action',
           label: (a.description || '').slice(0, 55) + ((a.description || '').length > 55 ? '…' : ''),
-          sub: a.status === 'completed' ? 'Completed' : 'Open',
-          ts: a.created_at, path: '/corrective-actions',
+          sub: a.due_date ? `Due ${new Date(a.due_date).toLocaleDateString('en-US')}` : (a.status === 'completed' ? 'Completed' : 'Open'),
+          ts: a.declared_created_date || a.due_date,
+          path: '/corrective-actions',
         })),
-      ].sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 5)
+        ...(disciplinary.data || []).map(a => ({
+          type: 'disciplinary',
+          label: a.action_type,
+          sub: a.action_date ? `Action date ${new Date(a.action_date).toLocaleDateString('en-US')}` : 'Disciplinary action',
+          ts: a.action_date, path: '/disciplinary-actions',
+        })),
+      ].filter(item => item.ts).sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 5)
       setRecentActivity(merged)
     }
 
-    fetchStats()
-    fetchExtraStats()
-    fetchSpotlight()
-    fetchActivity()
+    const init = async () => {
+      const admin = await initAuth()
+      fetchStats()
+      fetchExtraStats()
+      fetchSpotlight()
+      if (admin) await fetchActivity()
+    }
+
+    init()
   }, [])
 
   const menuItems = [
@@ -221,6 +261,8 @@ export default function MainMenu() {
     { title: 'Corrective Actions', subtitle: 'Track & resolve open items', path: '/corrective-actions', icon: <WrenchIcon />,
       badge: extraStats.overdueActions > 0 ? `${extraStats.overdueActions} overdue` : (stats.openActions > 0 ? `${stats.openActions} open` : null),
       badgeVariant: extraStats.overdueActions > 0 ? 'warning' : 'muted' },
+    { title: 'Disciplinary Actions', subtitle: 'Violations & consequences', path: '/disciplinary-actions', icon: <ShieldCheckIcon />,
+      badge: extraStats.disciplinaryActions > 0 ? `${extraStats.disciplinaryActions} recorded` : null, badgeVariant: 'danger' },
     { title: 'Checklists',         subtitle: 'Inspection & compliance',    path: '/checklists',         icon: <ChecklistIcon /> },
     { title: 'People',             subtitle: 'Worker & leader profiles',   path: '/people',             icon: <PeopleIcon /> },
     { title: 'Admin Panel',        subtitle: 'Users & settings',           path: '/admin',              icon: <SettingsIcon /> },
@@ -368,7 +410,7 @@ export default function MainMenu() {
       </div>
 
       {/* ── Recent Activity ── */}
-      {recentActivity.length > 0 && (
+      {isAdmin && recentActivity.length > 0 && (
         <div className="activity-section">
           <div className="activity-header">
             <span className="activity-title">Recent Activity</span>

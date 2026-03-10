@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { generateChecklistPDF } from '../lib/pdfGenerator'
 
 export default function Checklists() {
+  const checklistsPerPage = 18
   const navigate = useNavigate()
   const [checklists, setChecklists] = useState([])
   const [loading, setLoading] = useState(true)
@@ -14,11 +15,47 @@ export default function Checklists() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTrade, setSelectedTrade] = useState('All')
   const [trades, setTrades] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     checkAdmin()
     fetchChecklists()
   }, [])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, selectedCategory, selectedTrade])
+
+  const fetchAllRows = async (table, columns) => {
+    const pageSize = 1000
+    const rows = []
+    let from = 0
+
+    while (true) {
+      const { data, error } = await supabase
+        .from(table)
+        .select(columns)
+        .range(from, from + pageSize - 1)
+
+      if (error) {
+        throw error
+      }
+
+      if (!data || data.length === 0) {
+        break
+      }
+
+      rows.push(...data)
+
+      if (data.length < pageSize) {
+        break
+      }
+
+      from += pageSize
+    }
+
+    return rows
+  }
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -35,49 +72,55 @@ export default function Checklists() {
 
   const fetchChecklists = async () => {
     setLoading(true)
-    
-    // Pobierz checklisty
-    const { data: checklistsData, error: checklistsError } = await supabase
-      .from('checklists')
-      .select('*')
-      .order('category', { ascending: true })
-      .order('name', { ascending: true })
 
-    if (checklistsError) {
-      console.error('Error fetching checklists:', checklistsError)
+    try {
+      const [checklistsResult, itemsData, completionsData] = await Promise.all([
+        supabase
+          .from('checklists')
+          .select('*')
+          .order('category', { ascending: true })
+          .order('name', { ascending: true }),
+        fetchAllRows('checklist_items', 'checklist_id'),
+        fetchAllRows('checklist_completions', 'checklist_id')
+      ])
+
+      const { data: checklistsData, error: checklistsError } = checklistsResult
+
+      if (checklistsError) {
+        console.error('Error fetching checklists:', checklistsError)
+        setLoading(false)
+        return
+      }
+
+      const itemsByChecklistId = itemsData.reduce((acc, item) => {
+        acc[item.checklist_id] = (acc[item.checklist_id] || 0) + 1
+        return acc
+      }, {})
+
+      const completionsByChecklistId = completionsData.reduce((acc, completion) => {
+        acc[completion.checklist_id] = (acc[completion.checklist_id] || 0) + 1
+        return acc
+      }, {})
+
+      const checklists = checklistsData.map(checklist => ({
+        ...checklist,
+        items: Array.from({ length: itemsByChecklistId[checklist.id] || 0 }),
+        completions: Array.from({ length: completionsByChecklistId[checklist.id] || 0 })
+      }))
+
+      setChecklists(checklists)
+
+      const uniqueCategories = [...new Set(checklists.map(c => c.category).filter(Boolean))]
+      setCategories(['All', ...uniqueCategories.sort()])
+
+      const allTrades = checklists.flatMap(c => c.trades || [])
+      const uniqueTrades = [...new Set(allTrades)]
+      setTrades(['All', ...uniqueTrades.sort()])
+    } catch (error) {
+      console.error('Error fetching checklist stats:', error)
+    } finally {
       setLoading(false)
-      return
     }
-
-    // Pobierz liczbę items dla każdej checklisty
-    const { data: itemsData } = await supabase
-      .from('checklist_items')
-      .select('checklist_id')
-
-    // Pobierz liczbę completions dla każdej checklisty
-    const { data: completionsData } = await supabase
-      .from('checklist_completions')
-      .select('checklist_id, completed_at')
-
-    // Połącz dane
-    const checklists = checklistsData.map(checklist => ({
-      ...checklist,
-      items: itemsData?.filter(item => item.checklist_id === checklist.id) || [],
-      completions: completionsData?.filter(comp => comp.checklist_id === checklist.id) || []
-    }))
-
-    setChecklists(checklists)
-    
-    // Extract unique categories
-    const uniqueCategories = [...new Set(checklists.map(c => c.category).filter(Boolean))]
-    setCategories(['All', ...uniqueCategories.sort()])
-    
-    // Extract unique trades
-    const allTrades = checklists.flatMap(c => c.trades || [])
-    const uniqueTrades = [...new Set(allTrades)]
-    setTrades(['All', ...uniqueTrades.sort()])
-    
-    setLoading(false)
   }
 
   const handleDelete = async (checklistId, name) => {
@@ -113,14 +156,13 @@ export default function Checklists() {
     }
   }
 
+  const openChecklistCompletion = (checklistId) => {
+    navigate(`/checklists/${checklistId}/complete`)
+  }
+
   if (loading) return <div className="spinner"></div>
 
   const filteredChecklists = checklists.filter(checklist => {
-    // Hide empty checklists (without items)
-    if (!checklist.items || checklist.items.length === 0) {
-      return false
-    }
-    
     // Filter by category
     if (selectedCategory !== 'All' && checklist.category !== selectedCategory) {
       return false
@@ -148,6 +190,11 @@ export default function Checklists() {
     
     return true
   })
+
+  const totalPages = Math.max(1, Math.ceil(filteredChecklists.length / checklistsPerPage))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const startIndex = (safeCurrentPage - 1) * checklistsPerPage
+  const paginatedChecklists = filteredChecklists.slice(startIndex, startIndex + checklistsPerPage)
 
   return (
     <div>
@@ -219,14 +266,32 @@ export default function Checklists() {
         </div>
       )}
 
+      {filteredChecklists.length > 0 && (
+        <div style={{ marginBottom: '16px', color: '#666', fontSize: '14px' }}>
+          Page {safeCurrentPage} of {totalPages}
+        </div>
+      )}
+
       <div className="checklists-grid">
         {filteredChecklists.length === 0 ? (
           <div className="empty-state">
             <p>No checklists found{searchTerm ? ' matching your search' : selectedCategory !== 'All' || selectedTrade !== 'All' ? ' with selected filters' : ''}.</p>
           </div>
         ) : (
-          filteredChecklists.map((checklist) => (
-            <div key={checklist.id} className="card card-clickable">
+          paginatedChecklists.map((checklist) => (
+            <div
+              key={checklist.id}
+              className="card card-clickable"
+              onClick={() => openChecklistCompletion(checklist.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  openChecklistCompletion(checklist.id)
+                }
+              }}
+            >
               {checklist.category && (
                 <div className="checklist-category" style={{ 
                   fontSize: '12px', 
@@ -280,19 +345,28 @@ export default function Checklists() {
               <div className="checklist-actions">
                 <button 
                   className="btn btn-primary"
-                  onClick={() => navigate(`/checklists/${checklist.id}/complete`)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    openChecklistCompletion(checklist.id)
+                  }}
                 >
                   Complete Checklist
                 </button>
                 <button 
                   className="btn btn-secondary"
-                  onClick={() => navigate(`/checklists/${checklist.id}`)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    navigate(`/checklists/${checklist.id}`)
+                  }}
                 >
                   View/Edit
                 </button>
                 <button
                   className="btn btn-secondary"
-                  onClick={() => handlePDF(checklist)}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handlePDF(checklist)
+                  }}
                   disabled={pdfLoading === checklist.id}
                   style={{ minWidth: '70px' }}
                 >
@@ -303,6 +377,43 @@ export default function Checklists() {
           ))
         )}
       </div>
+
+      {filteredChecklists.length > checklistsPerPage && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '8px',
+          flexWrap: 'wrap',
+          marginTop: '24px'
+        }}>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={safeCurrentPage === 1}
+          >
+            Previous
+          </button>
+
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map(page => (
+            <button
+              key={page}
+              className={page === safeCurrentPage ? 'btn btn-primary' : 'btn btn-secondary'}
+              onClick={() => setCurrentPage(page)}
+            >
+              {page}
+            </button>
+          ))}
+
+          <button
+            className="btn btn-secondary"
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={safeCurrentPage === totalPages}
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   )
 }

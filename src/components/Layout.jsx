@@ -67,6 +67,16 @@ const NAV_ITEMS = [
     ),
   },
   {
+    title: 'Disciplinary Actions',
+    path: '/disciplinary-actions',
+    icon: (
+      <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 2l7 4v6c0 5-3.5 8.74-7 10-3.5-1.26-7-5-7-10V6l7-4z"/>
+        <path d="M9.5 11.5l1.8 1.8 3.2-3.8"/>
+      </svg>
+    ),
+  },
+  {
     title: 'Checklists',
     path: '/checklists',
     icon: (
@@ -240,7 +250,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v4.9.0</span>
+          <span className="app-footer-version">v8.1.1</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.

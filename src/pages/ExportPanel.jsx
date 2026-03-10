@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import ExportProgress from '../components/ExportProgress'
 import {
@@ -144,14 +144,14 @@ export default function ExportPanel() {
       setTopics(topicsData)
 
       // Load unique attendee names for autocomplete
-      const { data: atData } = await supabase.from('meeting_attendees').select('name')
+      const atData = await fetchAllPages(() => supabase.from('meeting_attendees').select('name'))
       if (atData) {
         const names = [...new Set(atData.map(a => a.name).filter(Boolean))].sort()
         setAllAttendeeNames(names)
       }
 
       // Load unique leader names for autocomplete
-      const { data: leadData } = await supabase.from('meetings').select('leader_name').eq('is_draft', false)
+      const leadData = await fetchAllPages(() => supabase.from('meetings').select('leader_name').eq('is_draft', false))
       if (leadData) {
         const leaders = [...new Set(leadData.map(l => l.leader_name).filter(Boolean))].sort()
         setAllLeaderNames(leaders)

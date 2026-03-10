@@ -185,7 +185,10 @@ export default function ChecklistForm() {
     if (id) {
       const { error } = await supabase
         .from('checklists')
-        .update(formData)
+        .update({
+          ...formData,
+          updated_by: user.id,
+        })
         .eq('id', id)
       
       if (error) {
@@ -200,7 +203,11 @@ export default function ChecklistForm() {
     } else {
       const { data, error } = await supabase
         .from('checklists')
-        .insert([{ ...formData, created_by: user.id }])
+        .insert([{
+          ...formData,
+          created_by: user.id,
+          updated_by: user.id,
+        }])
         .select()
         .single()
 

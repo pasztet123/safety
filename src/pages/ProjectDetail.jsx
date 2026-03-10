@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import LocationMap from '../components/LocationMap'
@@ -59,39 +59,44 @@ export default function ProjectDetail() {
   }
 
   const fetchMeetings = async () => {
-    const { data, error } = await supabase
-      .from('meetings')
-      .select(`
-        *,
-        attendees:meeting_attendees(name),
-        photos:meeting_photos(photo_url)
-      `)
-      .eq('project_id', id)
-      .eq('is_draft', false)
-      .order('date', { ascending: false })
-      .order('time', { ascending: false })
+    try {
+      const data = await fetchAllPages(() => supabase
+        .from('meetings')
+        .select(`
+          *,
+          attendees:meeting_attendees(name),
+          photos:meeting_photos(photo_url)
+        `)
+        .eq('project_id', id)
+        .eq('is_draft', false)
+        .order('date', { ascending: false })
+        .order('time', { ascending: false }))
 
-    if (!error && data) {
       const meetingIds = data.map(m => m.id)
-      if (meetingIds.length > 0) {
-        const { data: checklistsData } = await supabase
-          .from('meeting_checklists')
-          .select('meeting_id, checklist:checklists(name)')
-          .in('meeting_id', meetingIds)
-
-        const checklistsByMeeting = {}
-        checklistsData?.forEach(mc => {
-          if (!checklistsByMeeting[mc.meeting_id]) checklistsByMeeting[mc.meeting_id] = []
-          checklistsByMeeting[mc.meeting_id].push(mc.checklist)
-        })
-
-        setMeetings(data.map(m => ({
-          ...m,
-          checklists: checklistsByMeeting[m.id] || [],
-        })))
-      } else {
+      if (meetingIds.length === 0) {
         setMeetings([])
+        return
       }
+
+      const checklistsData = await fetchByIdsInBatches({
+        table: 'meeting_checklists',
+        select: 'meeting_id, checklist:checklists(name)',
+        ids: meetingIds,
+        idColumn: 'meeting_id',
+      })
+
+      const checklistsByMeeting = {}
+      checklistsData.forEach(mc => {
+        if (!checklistsByMeeting[mc.meeting_id]) checklistsByMeeting[mc.meeting_id] = []
+        checklistsByMeeting[mc.meeting_id].push(mc.checklist)
+      })
+
+      setMeetings(data.map(m => ({
+        ...m,
+        checklists: checklistsByMeeting[m.id] || [],
+      })))
+    } catch (error) {
+      setMeetings([])
     }
   }
 
@@ -133,10 +138,13 @@ export default function ProjectDetail() {
   }
 
   const handleToggleActionStatus = async (actionId, currentStatus) => {
+    const { data: { user } } = await supabase.auth.getUser()
+
     const newStatus = currentStatus === 'open' ? 'completed' : 'open'
     const updateData = {
       status: newStatus,
       completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+      updated_by: user?.id || null,
     }
     const { error } = await supabase
       .from('corrective_actions')

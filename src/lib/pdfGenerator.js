@@ -637,6 +637,23 @@ export const generateChecklistCompletionPDF = async (data) => {
         </div>`)
     : ''
 
+  const signerName = data.completion?.signer_name
+  const signerType = data.completion?.signer_type
+  const signatureUrl = data.completion?.signature_url
+  const signatureHTML = (signerName || signatureUrl)
+    ? section('Signature', `
+        <div class="pdf-fields">
+          ${signerName ? field('Signed by', `${signerName}${signerType ? ` <span style="font-size:11px;color:#0369a1;background:#e0f2fe;border-radius:10px;padding:2px 8px;font-weight:600;text-transform:capitalize">${signerType}</span>` : ''}`) : ''}
+        </div>
+        ${signatureUrl ? `<div style="margin-top:8px"><img src="${signatureUrl}" crossorigin="anonymous"
+          style="max-height:80px;max-width:260px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:6px;background:#fff" /></div>`
+          : `<div style="margin-top:12px;display:flex;gap:32px">
+               <div><div style="width:200px;border-bottom:1.5px solid #374151;margin-bottom:4px"></div>
+               <div style="font-size:11px;color:#6b7280">Signature</div></div>
+               <div><div style="width:120px;border-bottom:1.5px solid #374151;margin-bottom:4px"></div>
+               <div style="font-size:11px;color:#6b7280">Date</div></div></div>`}`)
+    : ''
+
   const html = baseHTML(`
     <div class="pdf-header" style="background:#14532d">
       <div class="pdf-header-type">Completed Checklist</div>
@@ -657,6 +674,7 @@ export const generateChecklistCompletionPDF = async (data) => {
         `<div style="border:1px solid ${BORDER};border-radius:8px;overflow:hidden">${itemsHTML}</div>`
       )}
       ${globalPhotosHTML}
+      ${signatureHTML}
     </div>
     ${footer()}
   `)

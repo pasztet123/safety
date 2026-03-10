@@ -21,6 +21,7 @@ import Projects from './pages/Projects'
 import ProjectDetail from './pages/ProjectDetail'
 import SafetyTopics from './pages/SafetyTopics'
 import CorrectiveActions from './pages/CorrectiveActions'
+import DisciplinaryActions from './pages/DisciplinaryActions'
 import BulkImport from './pages/BulkImport'
 import People from './pages/People'
 import PersonDetail from './pages/PersonDetail'
@@ -66,6 +67,7 @@ function App() {
           <Route path="/meetings/:id/edit" element={<MeetingForm />} />
           <Route path="/safety-topics" element={<SafetyTopics />} />
           <Route path="/corrective-actions" element={<CorrectiveActions />} />
+          <Route path="/disciplinary-actions" element={<DisciplinaryActions />} />
           <Route path="/incidents" element={<Incidents />} />
           <Route path="/incidents/new" element={<IncidentForm />} />
           <Route path="/incidents/:id" element={<IncidentDetails />} />

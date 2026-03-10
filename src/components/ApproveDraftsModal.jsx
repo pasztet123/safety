@@ -41,13 +41,13 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
       .order('name')
     if (data) {
       setLeaders(data)
-      // Pre-select Bo Mikuta
-      const bo = data.find(l => l.name === 'Bo Mikuta') || data[0]
-      if (bo) {
-        setLeaderId(bo.id)
-        setLeaderName(bo.name)
-        setLeaderDefaultSig(bo.default_signature_url || null)
-        setSigMode(bo.default_signature_url ? 'default' : 'draw')
+      // Pre-select the first leader alphabetically — admin must confirm/change
+      const first = data[0]
+      if (first) {
+        setLeaderId(first.id)
+        setLeaderName(first.name)
+        setLeaderDefaultSig(first.default_signature_url || null)
+        setSigMode(first.default_signature_url ? 'default' : 'draw')
       }
     }
   }
@@ -124,6 +124,8 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   const handleApprove = async () => {
     setSaving(true)
     try {
+      const { data: { user } } = await supabase.auth.getUser()
+
       // Upload global signature once (if not per-meeting)
       const globalSigInput = resolveSignatureInput(null)
       const globalSigUrl = await uploadSignature(globalSigInput)
@@ -142,6 +144,7 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
         const updateData = {
           is_draft: false,
           completed: true,
+          updated_by: user?.id || null,
           ...(effectiveLeaderId ? { leader_id: effectiveLeaderId } : {}),
           leader_name: effectiveLeaderName,
           ...(sigUrl !== undefined ? { signature_url: sigUrl } : {}),

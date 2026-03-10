@@ -39,6 +39,7 @@ export default function Incidents() {
       const q = searchText.toLowerCase()
       result = result.filter(i =>
         i.type_name?.toLowerCase().includes(q) ||
+        i.safety_violation_type?.toLowerCase().includes(q) ||
         i.employee_name?.toLowerCase().includes(q) ||
         i.reporter_name?.toLowerCase().includes(q) ||
         i.project?.name?.toLowerCase().includes(q) ||
@@ -142,10 +143,13 @@ export default function Incidents() {
   }
   
   const handleToggleActionStatus = async (actionId, currentStatus) => {
+    const { data: { user } } = await supabase.auth.getUser()
+
     const newStatus = currentStatus === 'open' ? 'completed' : 'open'
     const updateData = {
       status: newStatus,
-      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null
+      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+      updated_by: user?.id || null,
     }
     
     const { error } = await supabase
@@ -234,6 +238,11 @@ export default function Incidents() {
                         {incident.incident_subtype.replace(/_/g, ' ')}
                       </span>
                     )}
+                    {incident.safety_violation_type && (
+                      <span className="incident-subtype-badge">
+                        {incident.safety_violation_type}
+                      </span>
+                    )}
                   </div>
                   <p className="incident-meta">
                     {new Date(incident.date).toLocaleDateString()} at{' '}
@@ -265,6 +274,11 @@ export default function Incidents() {
                 <div className="incident-detail-item">
                   <strong>Employee:</strong> {incident.employee_name}
                 </div>
+                {incident.safety_violation_type && (
+                  <div className="incident-detail-item">
+                    <strong>Safety violation:</strong> {incident.safety_violation_type}
+                  </div>
+                )}
                 {incident.phone && (
                   <div className="incident-detail-item">
                     <strong>Phone:</strong> {incident.phone}

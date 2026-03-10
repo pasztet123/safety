@@ -402,6 +402,59 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
   saveAs(new Blob([buf], { type: 'application/pdf' }), `corrective-actions-${dateStr}.pdf`)
 }
 
+export const downloadDisciplinaryActionsListPDF = async (
+  actions,
+  persons = [],
+  leaders = [],
+  incidents = [],
+  title = 'Disciplinary Actions Report',
+  subtitle = ''
+) => {
+  const personMap = Object.fromEntries(persons.map(person => [person.id, person.name]))
+  const leaderMap = Object.fromEntries(leaders.map(leader => [leader.id, leader.name]))
+  const incidentMap = Object.fromEntries(incidents.map(incident => [incident.id, incident]))
+
+  const cardsHTML = actions.map(action => {
+    const incident = action.incident_id ? incidentMap[action.incident_id] : null
+    const recipient = action.recipient_person_id ? personMap[action.recipient_person_id] : null
+    const leader = action.responsible_leader_id ? leaderMap[action.responsible_leader_id] : null
+    return `
+      <div class="act-card">
+        <div class="act-desc">${esc(action.action_type)}</div>
+        <div class="act-meta">
+          ${incident?.safety_violation_type ? `Violation: <strong>${esc(incident.safety_violation_type)}</strong>` : 'Violation: —'}
+          ${incident?.date ? ` · Incident: ${fmtDateShort(incident.date)}` : ''}
+          ${action.action_date ? ` · Action date: ${fmtDateShort(action.action_date)}` : ''}
+          ${action.action_time ? ` · Time: ${esc(String(action.action_time).slice(0, 5))}` : ''}
+        </div>
+        <div class="act-meta">
+          ${recipient ? `Recipient: <strong>${esc(recipient)}</strong>` : 'Recipient: —'}
+          ${leader ? ` · Leader: <strong>${esc(leader)}</strong>` : ''}
+          ${incident?.employee_name ? ` · Employee: ${esc(incident.employee_name)}` : ''}
+        </div>
+        ${action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}
+      </div>
+    `
+  }).join('')
+
+  const html = bulkBaseHTML(`
+    <div class="ml-header" style="background:#7c2d12">
+      <div class="ml-header-eyebrow">Export — Disciplinary Actions</div>
+      <div class="ml-header-title">${esc(title)}</div>
+      <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
+    </div>
+    <div class="ml-body">
+      <div class="ml-count-bar">${actions.length} action${actions.length !== 1 ? 's' : ''}</div>
+      ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No disciplinary actions found.</p>'}
+    </div>
+    ${footer()}
+  `)
+
+  const buf = await renderHTMLtoPDFBuffer(html)
+  const dateStr = new Date().toISOString().split('T')[0]
+  saveAs(new Blob([buf], { type: 'application/pdf' }), `disciplinary-actions-${dateStr}.pdf`)
+}
+
 // ─── Checklist History List PDF ───────────────────────────────────────────────
 
 export const downloadChecklistHistoryPDF = async (completions, title = 'Checklist History Report', subtitle = '') => {

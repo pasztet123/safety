@@ -25,6 +25,7 @@ export default function CorrectiveActions() {
     incident_id: '',
     description: '',
     responsible_person_id: '',
+    declared_created_date: new Date().toISOString().split('T')[0],
     due_date: '',
     status: 'open'
   })
@@ -92,7 +93,8 @@ export default function CorrectiveActions() {
     const { data, error } = await supabase
       .from('corrective_actions')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('declared_created_date', { ascending: false })
+      .order('due_date', { ascending: false })
     
     if (!error && data) {
       setActions(data)
@@ -132,11 +134,14 @@ export default function CorrectiveActions() {
 
   const handleToggleStatus = async (actionId, currentStatus) => {
     if (!isAdmin) return
+
+    const { data: { user } } = await supabase.auth.getUser()
     
     const newStatus = currentStatus === 'open' ? 'completed' : 'open'
     const updateData = {
       status: newStatus,
-      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null
+      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+      updated_by: user?.id || null,
     }
     
     const { error } = await supabase
@@ -164,20 +169,25 @@ export default function CorrectiveActions() {
     setEditForm({
       description: action.description,
       responsible_person_id: action.responsible_person_id || '',
+      declared_created_date: action.declared_created_date || '',
       due_date: action.due_date || '',
       status: action.status,
     })
   }
 
   const handleSaveEdit = async (actionId) => {
+    const { data: { user } } = await supabase.auth.getUser()
+
     const { error } = await supabase
       .from('corrective_actions')
       .update({
         description: editForm.description,
         responsible_person_id: editForm.responsible_person_id || null,
+        declared_created_date: editForm.declared_created_date || null,
         due_date: editForm.due_date || null,
         status: editForm.status,
         completion_date: editForm.status === 'completed' ? (editForm.due_date || new Date().toISOString().split('T')[0]) : null,
+        updated_by: user?.id || null,
       })
       .eq('id', actionId)
     if (!error) {
@@ -191,6 +201,8 @@ export default function CorrectiveActions() {
       alert('Please select an incident and enter a description')
       return
     }
+
+    const { data: { user } } = await supabase.auth.getUser()
     
     const { error } = await supabase
       .from('corrective_actions')
@@ -198,8 +210,11 @@ export default function CorrectiveActions() {
         incident_id: newAction.incident_id,
         description: newAction.description,
         responsible_person_id: newAction.responsible_person_id || null,
+        declared_created_date: newAction.declared_created_date || null,
         due_date: newAction.due_date || null,
-        status: newAction.status
+        status: newAction.status,
+        created_by: user?.id || null,
+        updated_by: user?.id || null,
       }])
     
     if (error) {
@@ -211,6 +226,7 @@ export default function CorrectiveActions() {
       incident_id: '',
       description: '',
       responsible_person_id: '',
+      declared_created_date: new Date().toISOString().split('T')[0],
       due_date: '',
       status: 'open'
     })
@@ -312,7 +328,7 @@ export default function CorrectiveActions() {
               />
             </div>
 
-            <div className="form-row">
+            <div className="form-row form-row--three">
               <div className="form-group">
                 <label>Responsible Person</label>
                 <select
@@ -326,6 +342,15 @@ export default function CorrectiveActions() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="form-group">
+                <label>Declared Created Date</label>
+                <input
+                  type="date"
+                  value={newAction.declared_created_date}
+                  onChange={(e) => setNewAction({...newAction, declared_created_date: e.target.value})}
+                />
               </div>
 
               <div className="form-group">
@@ -353,6 +378,7 @@ export default function CorrectiveActions() {
                     incident_id: '',
                     description: '',
                     responsible_person_id: '',
+                    declared_created_date: new Date().toISOString().split('T')[0],
                     due_date: '',
                     status: 'open'
                   })
@@ -432,6 +458,15 @@ export default function CorrectiveActions() {
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
                         </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Declared Created Date</label>
+                        <input
+                          type="date"
+                          className="form-input"
+                          value={editForm.declared_created_date}
+                          onChange={e => setEditForm({ ...editForm, declared_created_date: e.target.value })}
+                        />
                       </div>
                       <div className="form-group">
                         <label className="form-label">Due Date</label>
@@ -523,9 +558,11 @@ export default function CorrectiveActions() {
                           <strong>Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
                         </span>
                       )}
-                      <span className="meta-item meta-created">
-                        Created: {new Date(action.created_at).toLocaleDateString()}
-                      </span>
+                      {action.declared_created_date && (
+                        <span className="meta-item meta-created">
+                          Created on: {new Date(action.declared_created_date).toLocaleDateString()}
+                        </span>
+                      )}
                     </div>
                   </>
                 )}

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import './People.css'
 
 export default function PersonDetail() {
@@ -12,6 +12,7 @@ export default function PersonDetail() {
   const [projects, setProjects] = useState([])
   const [incidents, setIncidents] = useState([])
   const [correctiveActions, setCorrectiveActions] = useState([])
+  const [disciplinaryActions, setDisciplinaryActions] = useState([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('meetings')
 
@@ -27,6 +28,7 @@ export default function PersonDetail() {
         fetchMeetings(personData),
         fetchIncidents(personData),
         type === 'worker' ? fetchCorrectiveActions() : Promise.resolve(),
+        fetchDisciplinaryActions(),
       ])
     }
     setLoading(false)
@@ -67,22 +69,22 @@ export default function PersonDetail() {
 
       // Also as leader (if linked)
       if (personData.leader_id) {
-        const { data: leaderMeetings } = await supabase
+        const leaderMeetings = await fetchAllPages(() => supabase
           .from('meetings')
           .select('id')
           .eq('leader_id', personData.leader_id)
-          .eq('is_draft', false)
+          .eq('is_draft', false))
         ;(leaderMeetings || []).forEach((r) => {
           if (!meetingIds.includes(r.id)) meetingIds.push(r.id)
         })
       }
     } else {
       // Leader: meetings where leader_id = id
-      const { data: leaderMeetings } = await supabase
+      const leaderMeetings = await fetchAllPages(() => supabase
         .from('meetings')
         .select('id')
         .eq('leader_id', id)
-        .eq('is_draft', false)
+        .eq('is_draft', false))
 
       meetingIds = (leaderMeetings || []).map((r) => r.id)
     }
@@ -93,12 +95,14 @@ export default function PersonDetail() {
       return
     }
 
-    const { data: meetingData } = await supabase
-      .from('meetings')
-      .select('id, date, topic, project_id, project:projects(id, name, job_address)')
-      .in('id', meetingIds)
-      .eq('is_draft', false)
-      .order('date', { ascending: false })
+    const meetingData = await fetchByIdsInBatches({
+      table: 'meetings',
+      select: 'id, date, topic, project_id, project:projects(id, name, job_address)',
+      ids: meetingIds,
+      buildQuery: (query) => query.eq('is_draft', false),
+    })
+
+    meetingData.sort((left, right) => (right.date || '').localeCompare(left.date || ''))
 
     setMeetings(meetingData || [])
 
@@ -187,9 +191,25 @@ export default function PersonDetail() {
       .from('corrective_actions')
       .select('*, incident:incidents(details, date)')
       .eq('responsible_person_id', id)
-      .order('created_at', { ascending: false })
+      .order('declared_created_date', { ascending: false })
+      .order('due_date', { ascending: false })
 
     setCorrectiveActions(data || [])
+  }
+
+  const fetchDisciplinaryActions = async () => {
+    const query = type === 'worker'
+      ? supabase
+          .from('disciplinary_actions')
+          .select('*, incident:incidents(id, details, date, safety_violation_type), recipient:involved_persons(name)')
+          .eq('recipient_person_id', id)
+      : supabase
+          .from('disciplinary_actions')
+          .select('*, incident:incidents(id, details, date, safety_violation_type), recipient:involved_persons(name)')
+          .eq('responsible_leader_id', id)
+
+    const { data } = await query.order('action_date', { ascending: false }).order('action_time', { ascending: false })
+    setDisciplinaryActions(data || [])
   }
 
   if (loading) return <div className="spinner"></div>
@@ -210,8 +230,11 @@ export default function PersonDetail() {
     { key: 'projects', label: `Projects (${projects.length})` },
     { key: 'incidents', label: `Incidents (${incidents.length})` },
     ...(type === 'worker'
-      ? [{ key: 'corrective', label: `Corrective Actions (${correctiveActions.length})` }]
-      : []),
+      ? [
+          { key: 'corrective', label: `Corrective Actions (${correctiveActions.length})` },
+          { key: 'disciplinary', label: `Disciplinary Actions (${disciplinaryActions.length})` },
+        ]
+      : [{ key: 'disciplinary', label: `Disciplinary Actions (${disciplinaryActions.length})` }]),
   ]
 
   return (
@@ -419,6 +442,41 @@ export default function PersonDetail() {
                   </div>
                   <span className={`person-ca-status person-ca-status--${ca.status}`}>
                     {ca.status === 'completed' ? 'Completed' : 'Open'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )
+        )}
+
+        {activeTab === 'disciplinary' && (
+          disciplinaryActions.length === 0 ? (
+            <div className="person-empty-section">
+              {type === 'worker' ? 'No disciplinary actions assigned.' : 'No disciplinary actions recorded under this leader.'}
+            </div>
+          ) : (
+            <div className="person-activity-list">
+              {disciplinaryActions.map((action) => (
+                <button
+                  key={action.id}
+                  className="person-activity-row"
+                  onClick={() => navigate(action.incident?.id ? `/incidents/${action.incident.id}` : '/disciplinary-actions')}
+                >
+                  <div className="person-activity-main">
+                    <span className="person-activity-title">{action.action_type}</span>
+                    <span className="person-activity-sub">
+                      {action.incident?.safety_violation_type || 'Safety violation'}
+                      {type === 'leader' && action.recipient?.name ? ` · Recipient: ${action.recipient.name}` : ''}
+                      {action.incident?.date ? ` · Incident date: ${new Date(action.incident.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                    </span>
+                    {action.action_notes && (
+                      <span className="person-activity-sub">{action.action_notes.substring(0, 90)}{action.action_notes.length > 90 ? '…' : ''}</span>
+                    )}
+                  </div>
+                  <span className="person-ca-status person-ca-status--open">
+                    {new Date(action.action_date).toLocaleDateString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                    })}
                   </span>
                 </button>
               ))}

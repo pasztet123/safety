@@ -1,16 +1,35 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase'
+import { useNavigate } from 'react-router-dom'
+import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import SignaturePad from '../components/SignaturePad'
+import AdminAnalyticsDashboard from '../components/AdminAnalyticsDashboard'
 import './AdminPanel.css'
 
+const ADMIN_TABS = [
+  { key: 'meetings', label: 'Meetings' },
+  { key: 'incidents', label: 'Incidents' },
+  { key: 'users', label: 'Users' },
+  { key: 'leaders', label: 'Leaders' },
+  { key: 'involved-persons', label: 'Workers & Subs' },
+  { key: 'companies', label: 'Companies' },
+  { key: 'topic-checklists', label: 'Topic Checklists' },
+  { key: 'settings', label: 'Settings' },
+  { key: 'analytics', label: 'Analytics' },
+]
+
 export default function AdminPanel() {
+  const navigate = useNavigate()
+  const tabsRef = useRef(null)
   const newUserSignatureRef = useRef()
   const newLeaderSignatureRef = useRef()
   const editLeaderSignatureRef = useRef()
   const newInvolvedPersonSignatureRef = useRef()
   const editInvolvedPersonSignatureRef = useRef()
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [adminChecked, setAdminChecked] = useState(false)
   const [activeTab, setActiveTab] = useState('meetings')
+  const [tabScrollState, setTabScrollState] = useState({ canScrollLeft: false, canScrollRight: false })
 
   // ── Topic → Checklist Suggestions tool ──
   const [tcTopics, setTcTopics] = useState([])
@@ -64,12 +83,201 @@ export default function AdminPanel() {
   const [editInvolvedPersonShowSignature, setEditInvolvedPersonShowSignature] = useState(false)
   const [newCompany, setNewCompany] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
 
+  // ── Draft leader migration ──
+  const [draftMigrationRunning, setDraftMigrationRunning] = useState(false)
+  const [draftMigrationResult, setDraftMigrationResult] = useState(null) // { updated, skipped, total }
+
+  // Batch-fix leader_name/leader_id on all draft meetings.
+  // Logic mirrors autoDetectLeader: for each draft, look at attendees and find
+  // the first one linked to a leader (via involved_persons.leader_id) or whose
+  // name matches a leader directly.
+  const handleFixDraftLeaders = async () => {
+    if (!window.confirm(
+      'This will update leader_name and leader_id on ALL draft meetings based on their attendees. Approved (non-draft) meetings will NOT be touched. Continue?'
+    )) return
+
+    setDraftMigrationRunning(true)
+    setDraftMigrationResult(null)
+    try {
+      // 1. Load everything we need in parallel
+      const [draftsRes, leadersRes, involvedRes] = await Promise.all([
+        supabase
+          .from('meetings')
+          .select('id, leader_id, leader_name, attendees:meeting_attendees(name)')
+          .eq('is_draft', true),
+        supabase
+          .from('leaders')
+          .select('id, name, default_signature_url')
+          .order('name'),
+        supabase
+          .from('involved_persons')
+          .select('name, leader_id'),
+      ])
+
+      const allDrafts    = draftsRes.data    || []
+      const allLeaders   = leadersRes.data   || []
+      const allPersons   = involvedRes.data  || []
+
+      // Build lookup maps
+      const personByName  = {}  // lowercase name → { leader_id }
+      allPersons.forEach(p => { personByName[(p.name || '').toLowerCase().trim()] = p })
+      const leaderById   = {}  // id → leader
+      const leaderByName = {}  // lowercase name → leader
+      allLeaders.forEach(l => {
+        leaderById[l.id]  = l
+        leaderByName[(l.name || '').toLowerCase().trim()] = l
+      })
+
+      // 2. For each draft decide the correct leader
+      const updates = []  // { id, leader_id, leader_name }
+      let skipped   = 0
+
+      for (const draft of allDrafts) {
+        const attendees = draft.attendees || []
+        let found = null
+
+        // Pass 1: via involved_persons.leader_id
+        for (const a of attendees) {
+          const key = (a.name || '').toLowerCase().trim()
+          const person = personByName[key]
+          if (person?.leader_id && leaderById[person.leader_id]) {
+            found = leaderById[person.leader_id]
+            break
+          }
+        }
+        // Pass 2: attendee IS a leader (direct name match)
+        if (!found) {
+          for (const a of attendees) {
+            const key = (a.name || '').toLowerCase().trim()
+            if (leaderByName[key]) { found = leaderByName[key]; break }
+          }
+        }
+
+        if (!found) { skipped++; continue }
+
+        // Only queue update if something actually changes
+        if (found.id !== draft.leader_id || found.name !== draft.leader_name) {
+          updates.push({ id: draft.id, leader_id: found.id, leader_name: found.name })
+        } else {
+          skipped++
+        }
+      }
+
+      // 3. Apply updates in batches of 50
+      const BATCH = 50
+      for (let i = 0; i < updates.length; i += BATCH) {
+        const batch = updates.slice(i, i + BATCH)
+        // Supabase JS v2 doesn't support bulk upsert by different IDs in one call,
+        // so we fire parallel updates within the batch
+        await Promise.all(
+          batch.map(u =>
+            supabase
+              .from('meetings')
+              .update({ leader_id: u.leader_id, leader_name: u.leader_name })
+              .eq('id', u.id)
+          )
+        )
+      }
+
+      setDraftMigrationResult({ updated: updates.length, skipped, total: allDrafts.length })
+    } catch (err) {
+      console.error('Draft leader migration error:', err)
+      alert('Migration error: ' + err.message)
+    } finally {
+      setDraftMigrationRunning(false)
+    }
+  }
+
   useEffect(() => {
+    checkAdmin()
+  }, [])
+
+  useEffect(() => {
+    if (!adminChecked || !isAdmin) return
+
     fetchData()
     if (activeTab === 'involved-persons') {
       fetchCompaniesForSelect()
     }
+  }, [activeTab, adminChecked, isAdmin])
+
+  useEffect(() => {
+    const tabsNode = tabsRef.current
+    if (!tabsNode) return undefined
+
+    const updateTabScrollState = () => {
+      const maxScrollLeft = tabsNode.scrollWidth - tabsNode.clientWidth
+      setTabScrollState({
+        canScrollLeft: tabsNode.scrollLeft > 4,
+        canScrollRight: maxScrollLeft - tabsNode.scrollLeft > 4,
+      })
+    }
+
+    updateTabScrollState()
+    tabsNode.addEventListener('scroll', updateTabScrollState, { passive: true })
+    window.addEventListener('resize', updateTabScrollState)
+
+    return () => {
+      tabsNode.removeEventListener('scroll', updateTabScrollState)
+      window.removeEventListener('resize', updateTabScrollState)
+    }
+  }, [adminChecked, isAdmin])
+
+  useEffect(() => {
+    const tabsNode = tabsRef.current
+    if (!tabsNode) return
+
+    const activeButton = tabsNode.querySelector('.admin-tab.active')
+    if (!activeButton) return
+
+    activeButton.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' })
   }, [activeTab])
+
+  const scrollTabsBy = (direction) => {
+    const tabsNode = tabsRef.current
+    if (!tabsNode) return
+
+    const amount = Math.max(180, Math.round(tabsNode.clientWidth * 0.45))
+    tabsNode.scrollBy({ left: direction * amount, behavior: 'smooth' })
+  }
+
+  const closeLeaderEditModal = () => {
+    setEditingLeader(null)
+    setEditLeaderShowSignature(false)
+    if (editLeaderSignatureRef.current) {
+      editLeaderSignatureRef.current.clear()
+    }
+  }
+
+  const closeInvolvedPersonEditModal = () => {
+    setEditingInvolvedPerson(null)
+    setEditInvolvedPersonShowSignature(false)
+    if (editInvolvedPersonSignatureRef.current) {
+      editInvolvedPersonSignatureRef.current.clear()
+    }
+  }
+
+  const checkAdmin = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      navigate('/')
+      return
+    }
+
+    const { data } = await supabase
+      .from('users')
+      .select('is_admin')
+      .eq('id', user.id)
+      .single()
+
+    if (!data?.is_admin) {
+      navigate('/meetings')
+      return
+    }
+
+    setIsAdmin(true)
+    setAdminChecked(true)
+  }
 
   const fetchCompaniesForSelect = async () => {
     const { data } = await supabase
@@ -81,15 +289,20 @@ export default function AdminPanel() {
 
   const fetchData = async () => {
     setLoading(true)
+
+    if (activeTab === 'analytics') {
+      setLoading(false)
+      return
+    }
     
     if (activeTab === 'meetings') {
-      const { data } = await supabase
+      const data = await fetchAllPages(() => supabase
         .from('meetings')
         .select(`
           *,
           project:projects(name)
         `)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }))
       if (data) setMeetings(data)
     } else if (activeTab === 'incidents') {
       const { data } = await supabase
@@ -608,14 +821,14 @@ export default function AdminPanel() {
     } else {
       // If a new default signature was uploaded, offer to propagate it to associated draft meetings
       if (defaultSignatureUrl) {
-        const { data: draftMeetings } = await supabase
+        const allDraftMeetings = await fetchAllPages(() => supabase
           .from('meetings')
           .select('id')
           .eq('leader_id', editingLeader.id)
-          .eq('is_draft', true)
+          .eq('is_draft', true))
 
-        if (draftMeetings && draftMeetings.length > 0) {
-          const count = draftMeetings.length
+        if (allDraftMeetings && allDraftMeetings.length > 0) {
+          const count = allDraftMeetings.length
           const apply = window.confirm(
             `There ${count === 1 ? 'is' : 'are'} ${count} draft meeting${count !== 1 ? 's' : ''} associated with ${editingLeader.name}. Would you like to update their leader signature with the new default?`
           )
@@ -623,7 +836,7 @@ export default function AdminPanel() {
             await supabase
               .from('meetings')
               .update({ signature_url: defaultSignatureUrl })
-              .in('id', draftMeetings.map(m => m.id))
+              .in('id', allDraftMeetings.map(m => m.id))
           }
         }
       }
@@ -655,6 +868,7 @@ export default function AdminPanel() {
   const handleAddInvolvedPerson = async (e) => {
     e.preventDefault()
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
 
     // Upload default signature if present
     let defaultSignatureUrl = null
@@ -682,7 +896,9 @@ export default function AdminPanel() {
       email: newInvolvedPerson.email || null,
       phone: newInvolvedPerson.phone || null,
       company_id: newInvolvedPerson.company_id || null,
-      default_signature_url: defaultSignatureUrl
+      default_signature_url: defaultSignatureUrl,
+      created_by: user?.id || null,
+      updated_by: user?.id || null
     }
 
     const { error } = await supabase
@@ -707,6 +923,7 @@ export default function AdminPanel() {
   const handleUpdateInvolvedPerson = async (e) => {
     e.preventDefault()
     setLoading(true)
+    const { data: { user } } = await supabase.auth.getUser()
 
     // Upload new signature if present
     let defaultSignatureUrl = editingInvolvedPerson.default_signature_url
@@ -733,7 +950,8 @@ export default function AdminPanel() {
       name: editingInvolvedPerson.name,
       email: editingInvolvedPerson.email || null,
       phone: editingInvolvedPerson.phone || null,
-      company_id: editingInvolvedPerson.company_id || null
+      company_id: editingInvolvedPerson.company_id || null,
+      updated_by: user?.id || null
     }
 
     // Only update signature URL if a new one was uploaded
@@ -805,58 +1023,43 @@ export default function AdminPanel() {
     }
   }
 
+  if (!adminChecked) {
+    return <div className="spinner"></div>
+  }
+
   return (
     <div className="admin-panel">
       <h2 className="page-title">Admin Panel</h2>
 
-      <div className="admin-tabs">
+      <div className="admin-tabs-shell">
         <button
-          className={`admin-tab ${activeTab === 'meetings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('meetings')}
+          type="button"
+          className={`admin-tabs-arrow admin-tabs-arrow-left ${!tabScrollState.canScrollLeft ? 'is-hidden' : ''}`}
+          onClick={() => scrollTabsBy(-1)}
+          aria-label="Scroll tabs left"
+          disabled={!tabScrollState.canScrollLeft}
         >
-          Meetings
+          ‹
         </button>
+        <div className="admin-tabs" ref={tabsRef}>
+          {ADMIN_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              className={`admin-tab ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         <button
-          className={`admin-tab ${activeTab === 'incidents' ? 'active' : ''}`}
-          onClick={() => setActiveTab('incidents')}
+          type="button"
+          className={`admin-tabs-arrow admin-tabs-arrow-right ${!tabScrollState.canScrollRight ? 'is-hidden' : ''}`}
+          onClick={() => scrollTabsBy(1)}
+          aria-label="Scroll tabs right"
+          disabled={!tabScrollState.canScrollRight}
         >
-          Incidents
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`}
-          onClick={() => setActiveTab('users')}
-        >
-          Users
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'leaders' ? 'active' : ''}`}
-          onClick={() => setActiveTab('leaders')}
-        >
-          Leaders
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'involved-persons' ? 'active' : ''}`}
-          onClick={() => setActiveTab('involved-persons')}
-        >
-          Involved Persons
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'companies' ? 'active' : ''}`}
-          onClick={() => setActiveTab('companies')}
-        >
-          Companies
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'topic-checklists' ? 'active' : ''}`}
-          onClick={() => setActiveTab('topic-checklists')}
-        >
-          Topic Checklists
-        </button>
-        <button
-          className={`admin-tab ${activeTab === 'settings' ? 'active' : ''}`}
-          onClick={() => setActiveTab('settings')}
-        >
-          Settings
+          ›
         </button>
       </div>
 
@@ -864,6 +1067,8 @@ export default function AdminPanel() {
         <div className="spinner"></div>
       ) : (
         <div className="admin-content">
+          {activeTab === 'analytics' && <AdminAnalyticsDashboard />}
+
           {activeTab === 'meetings' && (
             <div className="data-table">
               <h3 className="section-title">All Meetings ({meetings.length})</h3>
@@ -1104,7 +1309,6 @@ export default function AdminPanel() {
                         <th>Name</th>
                         <th>Email</th>
                         <th>Admin</th>
-                        <th>Created</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
@@ -1114,7 +1318,6 @@ export default function AdminPanel() {
                           <td>{user.name}</td>
                           <td>{user.email}</td>
                           <td>{user.is_admin ? '✓' : '-'}</td>
-                          <td>{new Date(user.created_at).toLocaleDateString()}</td>
                           <td>
                             <div className="table-actions">
                               <button
@@ -1227,9 +1430,213 @@ export default function AdminPanel() {
                 </form>
               )}
 
-              {editingLeader && (
-                <form className="form-card" onSubmit={handleUpdateLeader}>
-                  <h4>Edit Leader</h4>
+              {leaders.length === 0 ? (
+                <p>No leaders found.</p>
+              ) : (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leaders.map((leader) => (
+                        <tr key={leader.id}>
+                          <td>{leader.name}</td>
+                          <td>{leader.email || '-'}</td>
+                          <td>{leader.phone || '-'}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                className="btn-icon btn-edit"
+                                onClick={() => {
+                                  setEditingLeader(leader)
+                                  setShowLeaderForm(false)
+                                  setEditLeaderShowSignature(false)
+                                  if (editLeaderSignatureRef.current) {
+                                    editLeaderSignatureRef.current.clear()
+                                  }
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeleteLeader(leader.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'involved-persons' && (
+            <div className="data-table">
+              <div className="section-header">
+                <h3 className="section-title">Workers & Subs ({involvedPersons.length})</h3>
+                <button className="btn btn-primary" onClick={() => {
+                  setShowInvolvedPersonForm(!showInvolvedPersonForm)
+                  setEditingInvolvedPerson(null)
+                }}>
+                  {showInvolvedPersonForm ? 'Cancel' : '+ Add Worker/Sub'}
+                </button>
+              </div>
+
+              {showInvolvedPersonForm && (
+                <form className="form-card" onSubmit={handleAddInvolvedPerson}>
+                  <h4>Add New Involved Person</h4>
+                  <div className="form-group">
+                    <label>Name *</label>
+                    <input
+                      type="text"
+                      value={newInvolvedPerson.name}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, name: e.target.value})}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Email</label>
+                    <input
+                      type="email"
+                      value={newInvolvedPerson.email}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, email: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Phone</label>
+                    <input
+                      type="tel"
+                      value={newInvolvedPerson.phone}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, phone: e.target.value})}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Company</label>
+                    <select
+                      value={newInvolvedPerson.company_id}
+                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, company_id: e.target.value})}
+                    >
+                      <option value="">Select Company</option>
+                      {companies.map(company => (
+                        <option key={company.id} value={company.id}>{company.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div className="form-group">
+                    <label className="checkbox-label">
+                      <input
+                        type="checkbox"
+                        checked={newInvolvedPersonShowSignature}
+                        onChange={(e) => setNewInvolvedPersonShowSignature(e.target.checked)}
+                      />
+                      Add default signature (optional)
+                    </label>
+                  </div>
+                  
+                  {newInvolvedPersonShowSignature && (
+                    <div className="form-group">
+                      <label>Default Signature</label>
+                      <div style={{ 
+                        border: '1px solid var(--color-border)', 
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}>
+                        <SignaturePad
+                          ref={newInvolvedPersonSignatureRef}
+                          height={150}
+                          style={{ borderRadius: '8px' }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ marginTop: '8px' }}
+                        onClick={() => newInvolvedPersonSignatureRef.current?.clear()}
+                      >
+                        Clear Signature
+                      </button>
+                      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+                        This signature will be automatically loaded when this person adds a drawn signature in meetings.
+                      </p>
+                    </div>
+                  )}
+                  
+                  <button type="submit" className="btn btn-primary" disabled={loading}>
+                    {loading ? 'Adding...' : 'Add Worker/Sub'}
+                  </button>
+                </form>
+              )}
+
+              {involvedPersons.length === 0 ? (
+                <p>No workers or subs found.</p>
+              ) : (
+                <div className="table-container">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Company</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {involvedPersons.map((person) => (
+                        <tr key={person.id}>
+                          <td>{person.name}</td>
+                          <td>{person.email || '-'}</td>
+                          <td>{person.phone || '-'}</td>
+                          <td>{person.company?.name || '-'}</td>
+                          <td>
+                            <div className="table-actions">
+                              <button
+                                className="btn-icon"
+                                onClick={() => {
+                                  setEditingInvolvedPerson(person)
+                                  setEditInvolvedPersonShowSignature(false)
+                                  setShowInvolvedPersonForm(false)
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="btn-icon btn-delete"
+                                onClick={() => handleDeleteInvolvedPerson(person.id)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {editingLeader && (
+            <div className="admin-edit-modal-overlay" onClick={closeLeaderEditModal}>
+              <div className="admin-edit-modal" onClick={(event) => event.stopPropagation()}>
+                <form className="form-card admin-edit-form-card" onSubmit={handleUpdateLeader}>
+                  <div className="admin-edit-modal-header">
+                    <h4>Edit Leader</h4>
+                    <button type="button" className="admin-edit-modal-close" onClick={closeLeaderEditModal}>×</button>
+                  </div>
                   <div className="form-group">
                     <label>Name *</label>
                     <input
@@ -1318,172 +1725,24 @@ export default function AdminPanel() {
                     <button 
                       type="button" 
                       className="btn btn-secondary" 
-                      onClick={() => {
-                        setEditingLeader(null)
-                        setEditLeaderShowSignature(false)
-                        if (editLeaderSignatureRef.current) {
-                          editLeaderSignatureRef.current.clear()
-                        }
-                      }}
+                      onClick={closeLeaderEditModal}
                     >
                       Cancel
                     </button>
                   </div>
                 </form>
-              )}
-
-              {leaders.length === 0 ? (
-                <p>No leaders found.</p>
-              ) : (
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {leaders.map((leader) => (
-                        <tr key={leader.id}>
-                          <td>{leader.name}</td>
-                          <td>{leader.email || '-'}</td>
-                          <td>{leader.phone || '-'}</td>
-                          <td>
-                            <div className="table-actions">
-                              <button
-                                className="btn-icon btn-edit"
-                                onClick={() => {
-                                  setEditingLeader(leader)
-                                  setShowLeaderForm(false)
-                                  setEditLeaderShowSignature(false)
-                                  if (editLeaderSignatureRef.current) {
-                                    editLeaderSignatureRef.current.clear()
-                                  }
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="btn-icon btn-delete"
-                                onClick={() => handleDeleteLeader(leader.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              </div>
             </div>
           )}
 
-          {activeTab === 'involved-persons' && (
-            <div className="data-table">
-              <div className="section-header">
-                <h3 className="section-title">Involved Persons ({involvedPersons.length})</h3>
-                <button className="btn btn-primary" onClick={() => {
-                  setShowInvolvedPersonForm(!showInvolvedPersonForm)
-                  setEditingInvolvedPerson(null)
-                }}>
-                  {showInvolvedPersonForm ? 'Cancel' : '+ Add Involved Person'}
-                </button>
-              </div>
-
-              {showInvolvedPersonForm && (
-                <form className="form-card" onSubmit={handleAddInvolvedPerson}>
-                  <h4>Add New Involved Person</h4>
-                  <div className="form-group">
-                    <label>Name *</label>
-                    <input
-                      type="text"
-                      value={newInvolvedPerson.name}
-                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, name: e.target.value})}
-                      required
-                    />
+          {editingInvolvedPerson && (
+            <div className="admin-edit-modal-overlay" onClick={closeInvolvedPersonEditModal}>
+              <div className="admin-edit-modal" onClick={(event) => event.stopPropagation()}>
+                <form className="form-card admin-edit-form-card" onSubmit={handleUpdateInvolvedPerson}>
+                  <div className="admin-edit-modal-header">
+                    <h4>Edit Worker/Sub</h4>
+                    <button type="button" className="admin-edit-modal-close" onClick={closeInvolvedPersonEditModal}>×</button>
                   </div>
-                  <div className="form-group">
-                    <label>Email</label>
-                    <input
-                      type="email"
-                      value={newInvolvedPerson.email}
-                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, email: e.target.value})}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Phone</label>
-                    <input
-                      type="tel"
-                      value={newInvolvedPerson.phone}
-                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, phone: e.target.value})}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Company</label>
-                    <select
-                      value={newInvolvedPerson.company_id}
-                      onChange={(e) => setNewInvolvedPerson({...newInvolvedPerson, company_id: e.target.value})}
-                    >
-                      <option value="">Select Company</option>
-                      {companies.map(company => (
-                        <option key={company.id} value={company.id}>{company.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  
-                  <div className="form-group">
-                    <label className="checkbox-label">
-                      <input
-                        type="checkbox"
-                        checked={newInvolvedPersonShowSignature}
-                        onChange={(e) => setNewInvolvedPersonShowSignature(e.target.checked)}
-                      />
-                      Add default signature (optional)
-                    </label>
-                  </div>
-                  
-                  {newInvolvedPersonShowSignature && (
-                    <div className="form-group">
-                      <label>Default Signature</label>
-                      <div style={{ 
-                        border: '1px solid var(--color-border)', 
-                        borderRadius: '8px',
-                        marginTop: '8px'
-                      }}>
-                        <SignaturePad
-                          ref={newInvolvedPersonSignatureRef}
-                          height={150}
-                          style={{ borderRadius: '8px' }}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ marginTop: '8px' }}
-                        onClick={() => newInvolvedPersonSignatureRef.current?.clear()}
-                      >
-                        Clear Signature
-                      </button>
-                      <p style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
-                        This signature will be automatically loaded when this person adds a drawn signature in meetings.
-                      </p>
-                    </div>
-                  )}
-                  
-                  <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? 'Adding...' : 'Add Involved Person'}
-                  </button>
-                </form>
-              )}
-
-              {editingInvolvedPerson && (
-                <form className="form-card" onSubmit={handleUpdateInvolvedPerson}>
-                  <h4>Edit Involved Person</h4>
                   <div className="form-group">
                     <label>Name *</label>
                     <input
@@ -1583,61 +1842,13 @@ export default function AdminPanel() {
                     <button 
                       type="button" 
                       className="btn btn-secondary"
-                      onClick={() => setEditingInvolvedPerson(null)}
+                      onClick={closeInvolvedPersonEditModal}
                     >
                       Cancel
                     </button>
                   </div>
                 </form>
-              )}
-
-              {involvedPersons.length === 0 ? (
-                <p>No involved persons found.</p>
-              ) : (
-                <div className="table-container">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>Company</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {involvedPersons.map((person) => (
-                        <tr key={person.id}>
-                          <td>{person.name}</td>
-                          <td>{person.email || '-'}</td>
-                          <td>{person.phone || '-'}</td>
-                          <td>{person.company?.name || '-'}</td>
-                          <td>
-                            <div className="table-actions">
-                              <button
-                                className="btn-icon"
-                                onClick={() => {
-                                  setEditingInvolvedPerson(person)
-                                  setEditInvolvedPersonShowSignature(false)
-                                  setShowInvolvedPersonForm(false)
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="btn-icon btn-delete"
-                                onClick={() => handleDeleteInvolvedPerson(person.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1916,6 +2127,38 @@ export default function AdminPanel() {
           {/* ── Settings tab ── */}
           {activeTab === 'settings' && (
             <div>
+
+              {/* ── Maintenance ── */}
+              <div style={{ marginBottom: '40px', padding: '20px', background: '#fef9f0', border: '1.5px solid #fcd34d', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#92400e' }}>Maintenance</h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#78350f' }}>
+                  One-time data repair tools. These operations modify records in the database directly.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '14px', color: '#374151', marginBottom: '4px' }}>Fix draft meeting leaders</div>
+                    <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '10px' }}>
+                      Re-assigns correct leader on all draft meetings based on their attendees.<br/>
+                      Only draft meetings are affected — approved meetings are untouched.
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      onClick={handleFixDraftLeaders}
+                      disabled={draftMigrationRunning}
+                    >
+                      {draftMigrationRunning ? 'Running…' : 'Run migration'}
+                    </button>
+                    {draftMigrationResult && (
+                      <span style={{ marginLeft: '14px', fontSize: '13px', color: '#16a34a', fontWeight: 600 }}>
+                        ✓ {draftMigrationResult.updated} updated, {draftMigrationResult.skipped} already correct (of {draftMigrationResult.total} drafts)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <h3 className="section-title">Topic Category Settings</h3>
               <p style={{ color: '#6b7280', marginBottom: '24px', fontSize: '14px' }}>
                 Choose which categories appear at the top of the Topic Picker in the meeting form.

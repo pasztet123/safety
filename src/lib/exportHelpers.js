@@ -5,7 +5,7 @@
 
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
-import { supabase } from './supabase'
+import { fetchAllPages, fetchByIdsInBatches, supabase } from './supabase'
 
 // ─── Fetch Meetings (with filters) ───────────────────────────────────────────
 
@@ -22,32 +22,47 @@ import { supabase } from './supabase'
  * @param {string} [filters.topic]         partial topic match (client-side)
  */
 export const fetchMeetingsFull = async (filters = {}) => {
-  let q = supabase
-    .from('meetings')
-    .select(`
-      *,
-      project:projects(name),
-      attendees:meeting_attendees(name),
-      photos:meeting_photos(photo_url)
-    `)
-    .eq('is_draft', false)
-    .order('date', { ascending: false })
-    .order('time', { ascending: false })
+  let data = []
 
-  if (filters.dateFrom) q = q.gte('date', filters.dateFrom)
-  if (filters.dateTo)   q = q.lte('date', filters.dateTo)
-  if (filters.projectId) q = q.eq('project_id', filters.projectId)
-  if (filters.trade)    q = q.eq('trade', filters.trade)
+  try {
+    data = await fetchAllPages(() => {
+      let query = supabase
+        .from('meetings')
+        .select(`
+          *,
+          project:projects(name),
+          attendees:meeting_attendees(name),
+          photos:meeting_photos(photo_url)
+        `)
+        .eq('is_draft', false)
+        .order('date', { ascending: false })
+        .order('time', { ascending: false })
 
-  const { data, error } = await q
-  if (error || !data) return []
+      if (filters.dateFrom) query = query.gte('date', filters.dateFrom)
+      if (filters.dateTo) query = query.lte('date', filters.dateTo)
+      if (filters.projectId) query = query.eq('project_id', filters.projectId)
+      if (filters.trade) query = query.eq('trade', filters.trade)
+
+      return query
+    })
+  } catch (error) {
+    return []
+  }
 
   // Fetch checklist names for all meetings
   const meetingIds = data.map(m => m.id)
-  const { data: checklistsData } = await supabase
-    .from('meeting_checklists')
-    .select('meeting_id, checklist:checklists(name)')
-    .in('meeting_id', meetingIds)
+  let checklistsData = []
+
+  try {
+    checklistsData = await fetchByIdsInBatches({
+      table: 'meeting_checklists',
+      select: 'meeting_id, checklist:checklists(name)',
+      ids: meetingIds,
+      idColumn: 'meeting_id',
+    })
+  } catch (error) {
+    checklistsData = []
+  }
 
   const checklistsByMeeting = {}
   checklistsData?.forEach(mc => {
@@ -100,11 +115,12 @@ export const fetchCorrectiveActionsFull = async (filters = {}) => {
   let q = supabase
     .from('corrective_actions')
     .select('*')
-    .order('created_at', { ascending: false })
+    .order('due_date', { ascending: true, nullsFirst: false })
+    .order('declared_created_date', { ascending: false })
 
   if (filters.status && filters.status !== 'all') q = q.eq('status', filters.status)
-  if (filters.dateFrom) q = q.gte('created_at', filters.dateFrom)
-  if (filters.dateTo)   q = q.lte('created_at', filters.dateTo + 'T23:59:59')
+  if (filters.dateFrom) q = q.gte('due_date', filters.dateFrom)
+  if (filters.dateTo)   q = q.lte('due_date', filters.dateTo)
 
   const { data, error } = await q
   if (error) return []
@@ -251,9 +267,9 @@ const buildStatisticsCSV = (meetings, incidents, actions) => {
     }
   }
   for (const a of actions) {
-    // Use created_at month for stats
-    if (a.created_at) {
-      const ym = a.created_at.substring(0, 7)
+    // Use due date month for corrective action stats
+    if (a.due_date) {
+      const ym = a.due_date.substring(0, 7)
       const entry = ensure(ym, '', 'All Projects')
       if (a.status === 'open') entry.open_actions++
       else entry.completed_actions++

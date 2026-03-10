@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase'
+import { fetchTrades } from '../lib/trades'
+import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
 import ExportProgress from '../components/ExportProgress'
@@ -64,6 +65,60 @@ export default function Meetings() {
   const [selectedDraftIds, setSelectedDraftIds] = useState(new Set())
   const [showApproveModal, setShowApproveModal] = useState(false)
 
+  // Draft filters
+  const [draftFilterLeader, setDraftFilterLeader] = useState('')
+  const [draftFilterAttendee, setDraftFilterAttendee] = useState('')
+  const [draftSortBy, setDraftSortBy] = useState('date-desc')
+
+  // Draft editing
+  const [showDraftEditModal, setShowDraftEditModal] = useState(false)
+  const [draftEditIds, setDraftEditIds] = useState([])
+  const [editLeaders, setEditLeaders] = useState([])
+  const [editTrades, setEditTrades] = useState([])
+  const [editTopics, setEditTopics] = useState([])
+  const [draftEditFields, setDraftEditFields] = useState({ leader_id: '', leader_name: '', trade: '', topic: '', addAttendees: '' })
+  const [draftEditLoading, setDraftEditLoading] = useState(false)
+
+  const draftLeaderOptions = useMemo(() => {
+    const s = new Set(draftMeetings.map(d => d.leader_name).filter(Boolean))
+    return [...s].sort()
+  }, [draftMeetings])
+
+  const draftAttendeeOptions = useMemo(() => {
+    const s = new Set()
+    draftMeetings.forEach(d => d.attendees?.forEach(a => a.name && s.add(a.name)))
+    return [...s].sort()
+  }, [draftMeetings])
+
+  const filteredDrafts = useMemo(() => {
+    let result = draftMeetings
+    if (draftFilterLeader) result = result.filter(d => d.leader_name === draftFilterLeader)
+    if (draftFilterAttendee) result = result.filter(d => d.attendees?.some(a => a.name === draftFilterAttendee))
+    result = [...result]
+    switch (draftSortBy) {
+      case 'date-asc': result.sort((a, b) => a.date.localeCompare(b.date)); break
+      case 'trade': result.sort((a, b) => (a.trade || '').localeCompare(b.trade || '')); break
+      case 'topic': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
+      case 'time': result.sort((a, b) => (a.time || '').localeCompare(b.time || '')); break
+      case 'attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
+      default: result.sort((a, b) => { const d = b.date.slice(0, 10).localeCompare(a.date.slice(0, 10)); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
+    }
+    return result
+  }, [draftMeetings, draftFilterLeader, draftFilterAttendee, draftSortBy])
+
+  // Pagination
+  const DRAFT_PAGE_SIZE = 50
+  const MEETING_PAGE_SIZE = 50
+  const [draftPage, setDraftPage] = useState(1)
+  const [meetingPage, setMeetingPage] = useState(1)
+  const [syncRunning, setSyncRunning] = useState(false)
+  const [syncResult, setSyncResult] = useState(null)
+
+  const draftTotalPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFT_PAGE_SIZE))
+  const pagedDrafts = filteredDrafts.slice((draftPage - 1) * DRAFT_PAGE_SIZE, draftPage * DRAFT_PAGE_SIZE)
+  const meetingTotalPages = Math.max(1, Math.ceil(filteredMeetings.length / MEETING_PAGE_SIZE))
+  const pagedMeetings = filteredMeetings.slice((meetingPage - 1) * MEETING_PAGE_SIZE, meetingPage * MEETING_PAGE_SIZE)
+
   useEffect(() => {
     checkAdmin()
     fetchMeetings()
@@ -71,8 +126,16 @@ export default function Meetings() {
 
   // Load drafts once we know we're admin
   useEffect(() => {
-    if (isAdmin) fetchDraftMeetings()
+    if (isAdmin) {
+      fetchDraftMeetings()
+      fetchEditOptions()
+    }
   }, [isAdmin])
+
+  // Reset meeting page when filters change
+  useEffect(() => { setMeetingPage(1) }, [searchText, filterTrade, filterPerson, sortBy])
+  // Reset draft page when draft filters/sort change
+  useEffect(() => { setDraftPage(1) }, [draftFilterLeader, draftFilterAttendee, draftSortBy])
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -88,11 +151,8 @@ export default function Meetings() {
   }
 
   const fetchDraftMeetings = async () => {
-    const PAGE = 1000
-    let all = []
-    let from = 0
-    while (true) {
-      const { data, error } = await supabase
+    try {
+      const data = await fetchAllPages(() => supabase
         .from('meetings')
         .select(`
           *,
@@ -100,59 +160,70 @@ export default function Meetings() {
           attendees:meeting_attendees(name)
         `)
         .eq('is_draft', true)
-        .order('date', { ascending: false })
-        .range(from, from + PAGE - 1)
-      if (error || !data || data.length === 0) break
-      all = all.concat(data)
-      if (data.length < PAGE) break
-      from += PAGE
+        .order('date', { ascending: false }))
+
+      setDraftMeetings(data)
+    } catch (error) {
+      setDraftMeetings([])
     }
-    setDraftMeetings(all)
+  }
+
+  const fetchEditOptions = async () => {
+    const [{ data: ld }, { data: tp }] = await Promise.all([
+      supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+      supabase.from('safety_topics').select('name').order('name'),
+    ])
+    setEditLeaders(ld || [])
+    setEditTopics((tp || []).map(t => t.name))
+    const tr = await fetchTrades()
+    setEditTrades(tr || [])
   }
 
   const fetchMeetings = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('meetings')
-      .select(`
-        *,
-        project:projects(name),
-        attendees:meeting_attendees(name),
-        photos:meeting_photos(photo_url)
-      `)
-      .eq('is_draft', false)
-      .order('date', { ascending: false })
-      .order('time', { ascending: false })
-
-    if (!error && data) {
-      // Fetch checklists for all meetings
-      const meetingIds = data.map(m => m.id)
-      const { data: checklistsData } = await supabase
-        .from('meeting_checklists')
+    try {
+      const data = await fetchAllPages(() => supabase
+        .from('meetings')
         .select(`
+          *,
+          project:projects(name),
+          attendees:meeting_attendees(name),
+          photos:meeting_photos(photo_url)
+        `)
+        .eq('is_draft', false)
+        .order('date', { ascending: false })
+        .order('time', { ascending: false }))
+
+      const meetingIds = data.map(m => m.id)
+      const checklistsData = await fetchByIdsInBatches({
+        table: 'meeting_checklists',
+        select: `
           meeting_id,
           checklist:checklists(name)
-        `)
-        .in('meeting_id', meetingIds)
-      
-      // Group checklists by meeting_id
+        `,
+        ids: meetingIds,
+        idColumn: 'meeting_id',
+      })
+
       const checklistsByMeeting = {}
-      checklistsData?.forEach(mc => {
+      checklistsData.forEach(mc => {
         if (!checklistsByMeeting[mc.meeting_id]) {
           checklistsByMeeting[mc.meeting_id] = []
         }
         checklistsByMeeting[mc.meeting_id].push(mc.checklist)
       })
-      
-      // Add checklists to meetings
+
       const meetingsWithChecklists = data.map(meeting => ({
         ...meeting,
         checklists: checklistsByMeeting[meeting.id] || []
       }))
-      
+
       setMeetings(meetingsWithChecklists)
+    } catch (error) {
+      setMeetings([])
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const toggleDraftSelect = (id) => {
@@ -164,10 +235,19 @@ export default function Meetings() {
   }
 
   const toggleSelectAllDrafts = () => {
-    if (selectedDraftIds.size === draftMeetings.length) {
-      setSelectedDraftIds(new Set())
+    const allPageSelected = pagedDrafts.length > 0 && pagedDrafts.every(d => selectedDraftIds.has(d.id))
+    if (allPageSelected) {
+      setSelectedDraftIds(prev => {
+        const next = new Set(prev)
+        pagedDrafts.forEach(d => next.delete(d.id))
+        return next
+      })
     } else {
-      setSelectedDraftIds(new Set(draftMeetings.map(d => d.id)))
+      setSelectedDraftIds(prev => {
+        const next = new Set(prev)
+        pagedDrafts.forEach(d => next.add(d.id))
+        return next
+      })
     }
   }
 
@@ -176,7 +256,7 @@ export default function Meetings() {
     : []
 
   const handleApproveAll = () => {
-    setSelectedDraftIds(new Set(draftMeetings.map(d => d.id)))
+    setSelectedDraftIds(new Set(pagedDrafts.map(d => d.id)))
     setShowApproveModal(true)
   }
 
@@ -196,6 +276,141 @@ export default function Meetings() {
     if (!confirm(`Delete draft "${topic}"? This cannot be undone.`)) return
     await supabase.from('meetings').delete().eq('id', meetingId)
     fetchDraftMeetings()
+  }
+
+  const handleOpenDraftEdit = (ids, singleDraft = null) => {
+    setDraftEditIds(ids)
+    if (singleDraft) {
+      setDraftEditFields({
+        leader_id: singleDraft.leader_id || '',
+        leader_name: singleDraft.leader_name || '',
+        trade: singleDraft.trade || '',
+        topic: singleDraft.topic || '',
+        addAttendees: '',
+      })
+    } else {
+      setDraftEditFields({ leader_id: '', leader_name: '', trade: '', topic: '', addAttendees: '' })
+    }
+    setShowDraftEditModal(true)
+  }
+
+  const handleSaveDraftEdit = async () => {
+    setDraftEditLoading(true)
+    try {
+      const updates = {}
+      if (draftEditFields.leader_id) {
+        updates.leader_id = draftEditFields.leader_id
+        updates.leader_name = draftEditFields.leader_name
+        const leader = editLeaders.find(l => l.id === draftEditFields.leader_id)
+        if (leader?.default_signature_url) updates.signature_url = leader.default_signature_url
+      }
+      if (draftEditFields.trade) updates.trade = draftEditFields.trade
+      if (draftEditFields.topic) updates.topic = draftEditFields.topic
+
+      const newAttendeeNames = draftEditFields.addAttendees
+        .split('\n')
+        .map(n => n.trim())
+        .filter(Boolean)
+
+      for (const meetingId of draftEditIds) {
+        if (Object.keys(updates).length > 0) {
+          await supabase.from('meetings').update(updates).eq('id', meetingId)
+        }
+        if (newAttendeeNames.length > 0) {
+          const { data: existing } = await supabase
+            .from('meeting_attendees')
+            .select('name')
+            .eq('meeting_id', meetingId)
+          const existingNames = new Set((existing || []).map(a => a.name.toLowerCase().trim()))
+          const toInsert = newAttendeeNames
+            .filter(n => !existingNames.has(n.toLowerCase()))
+            .map(name => ({ meeting_id: meetingId, name, signed_with_checkbox: true }))
+          if (toInsert.length > 0) {
+            await supabase.from('meeting_attendees').insert(toInsert)
+          }
+        }
+      }
+      setShowDraftEditModal(false)
+      fetchDraftMeetings()
+    } catch (err) {
+      alert('Error saving: ' + err.message)
+    } finally {
+      setDraftEditLoading(false)
+    }
+  }
+
+  const handleSyncDrafts = async () => {
+    if (!confirm(`Sync all ${draftMeetings.length} drafts? This will auto-assign leaders and signatures based on attendees.`)) return
+    setSyncRunning(true)
+    setSyncResult(null)
+    try {
+      // Load leaders and involved_persons once
+      const { data: leaders } = await supabase.from('leaders').select('id, name, default_signature_url').order('name')
+      const { data: involvedPersons } = await supabase.from('involved_persons').select('id, name, leader_id').order('name')
+
+      const leaderMap = {}
+      ;(leaders || []).forEach(l => { leaderMap[l.name.toLowerCase().trim()] = l })
+
+      const personToLeader = {}
+      ;(involvedPersons || []).forEach(p => {
+        const leader = (leaders || []).find(l => l.id === p.leader_id)
+        if (leader) personToLeader[p.name.toLowerCase().trim()] = leader
+      })
+
+      let fixed = 0
+      let skipped = 0
+      const seen = new Map() // "date|project_id|sorted_attendee_names" -> meeting id (duplicate detection)
+
+      // Fetch full attendees for all drafts
+      const allDraftIds = draftMeetings.map(d => d.id)
+      const { data: allAttendees } = await supabase
+        .from('meeting_attendees')
+        .select('meeting_id, name')
+        .in('meeting_id', allDraftIds)
+
+      const attendeesByMeeting = {}
+      ;(allAttendees || []).forEach(a => {
+        if (!attendeesByMeeting[a.meeting_id]) attendeesByMeeting[a.meeting_id] = []
+        attendeesByMeeting[a.meeting_id].push(a.name)
+      })
+
+      for (const draft of draftMeetings) {
+        const names = (attendeesByMeeting[draft.id] || []).map(n => n.toLowerCase().trim())
+        const key = `${draft.date}|${draft.project_id || ''}|${[...names].sort().join(',')}`
+        if (seen.has(key)) {
+          // Duplicate — delete this draft
+          await supabase.from('meetings').delete().eq('id', draft.id)
+          skipped++
+          continue
+        }
+        seen.set(key, draft.id)
+
+        // Detect leader from attendees
+        let detectedLeader = null
+        for (const name of names) {
+          if (leaderMap[name]) { detectedLeader = leaderMap[name]; break }
+          if (personToLeader[name]) { detectedLeader = personToLeader[name]; break }
+        }
+
+        if (detectedLeader) {
+          await supabase.from('meetings').update({
+            leader_id: detectedLeader.id,
+            leader_name: detectedLeader.name,
+            signature_url: detectedLeader.default_signature_url || null,
+          }).eq('id', draft.id)
+          fixed++
+        } else {
+          skipped++
+        }
+      }
+
+      setSyncResult(`Done: ${fixed} leaders assigned, ${skipped} skipped/deleted as duplicates.`)
+      fetchDraftMeetings()
+    } catch (err) {
+      setSyncResult('Error: ' + err.message)
+    } finally {
+      setSyncRunning(false)
+    }
   }
 
   const handleDelete = async (meetingId, topic) => {
@@ -344,6 +559,77 @@ export default function Meetings() {
         />
       )}
 
+      {/* ── Draft Edit Modal ── */}
+      {showDraftEditModal && (
+        <div className="modal-overlay" onClick={() => setShowDraftEditModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
+                {draftEditIds.length === 1 ? 'Edit Draft' : `Bulk Edit — ${draftEditIds.length} drafts`}
+              </h3>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowDraftEditModal(false)}>✕</button>
+            </div>
+            {draftEditIds.length > 1 && (
+              <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '16px', background: '#f9fafb', padding: '8px 12px', borderRadius: '6px' }}>
+                Leave a field blank to keep existing values. Only filled fields will be updated.
+              </p>
+            )}
+            <div className="form-group">
+              <label className="form-label">Leader</label>
+              <select
+                className="form-select"
+                value={draftEditFields.leader_id}
+                onChange={e => {
+                  const leader = editLeaders.find(l => l.id === e.target.value)
+                  setDraftEditFields(prev => ({ ...prev, leader_id: e.target.value, leader_name: leader?.name || '' }))
+                }}
+              >
+                <option value="">{draftEditIds.length > 1 ? '— no change —' : '— select leader —'}</option>
+                {editLeaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Trade</label>
+              <select
+                className="form-select"
+                value={draftEditFields.trade}
+                onChange={e => setDraftEditFields(prev => ({ ...prev, trade: e.target.value }))}
+              >
+                <option value="">{draftEditIds.length > 1 ? '— no change —' : '— select trade —'}</option>
+                {editTrades.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Topic</label>
+              <select
+                className="form-select"
+                value={draftEditFields.topic}
+                onChange={e => setDraftEditFields(prev => ({ ...prev, topic: e.target.value }))}
+              >
+                <option value="">{draftEditIds.length > 1 ? '— no change —' : '— select topic —'}</option>
+                {editTopics.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Add attendees <span style={{ fontWeight: 400, color: '#6b7280' }}>(one name per line, duplicates skipped)</span></label>
+              <textarea
+                className="form-control"
+                rows={4}
+                value={draftEditFields.addAttendees}
+                onChange={e => setDraftEditFields(prev => ({ ...prev, addAttendees: e.target.value }))}
+                placeholder={`John Smith\nJane Doe`}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '20px' }}>
+              <button className="btn btn-secondary" onClick={() => setShowDraftEditModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleSaveDraftEdit} disabled={draftEditLoading}>
+                {draftEditLoading ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="page-header">
         <h2 className="page-title">Toolbox Meetings</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -386,6 +672,17 @@ export default function Meetings() {
               <span className="drafts-badge">{draftMeetings.length}</span>
             </h3>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {syncResult && (
+                <span style={{ fontSize: '12px', color: '#6b7280' }}>{syncResult}</span>
+              )}
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={handleSyncDrafts}
+                disabled={syncRunning}
+                title="Auto-assign leaders and remove duplicate drafts"
+              >
+                {syncRunning ? '⟳ Syncing…' : '⟳ Sync'}
+              </button>
               {selectedDraftIds.size > 0 && (
                 <button
                   className="btn btn-secondary btn-sm"
@@ -400,6 +697,51 @@ export default function Meetings() {
             </div>
           </div>
 
+          {/* Draft filter bar */}
+          <div className="draft-filter-bar">
+            <select
+              className="filter-select"
+              value={draftFilterLeader}
+              onChange={e => setDraftFilterLeader(e.target.value)}
+            >
+              <option value="">All leaders</option>
+              {draftLeaderOptions.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+            <select
+              className="filter-select"
+              value={draftFilterAttendee}
+              onChange={e => setDraftFilterAttendee(e.target.value)}
+            >
+              <option value="">All attendees</option>
+              {draftAttendeeOptions.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+            <select
+              className="filter-select"
+              value={draftSortBy}
+              onChange={e => setDraftSortBy(e.target.value)}
+            >
+              <option value="date-desc">Date ↓</option>
+              <option value="date-asc">Date ↑</option>
+              <option value="trade">Trade A→Z</option>
+              <option value="topic">Topic A→Z</option>
+              <option value="time">Time ↑</option>
+              <option value="attendees">Most attendees</option>
+            </select>
+            {(draftFilterLeader || draftFilterAttendee) && (
+              <button className="filter-clear-btn" onClick={() => { setDraftFilterLeader(''); setDraftFilterAttendee('') }}>Clear</button>
+            )}
+            {selectedDraftIds.size > 0 && (
+              <button className="btn btn-secondary btn-sm" onClick={() => handleOpenDraftEdit(Array.from(selectedDraftIds))}>
+                ✎ Edit ({selectedDraftIds.size})
+              </button>
+            )}
+            <span className="pagination-info" style={{ marginLeft: 'auto' }}>
+              {filteredDrafts.length !== draftMeetings.length
+                ? `${filteredDrafts.length} of ${draftMeetings.length}`
+                : `${draftMeetings.length} total`}
+            </span>
+          </div>
+
           <div className="drafts-table-wrap">
             <table className="drafts-table">
               <thead>
@@ -407,9 +749,9 @@ export default function Meetings() {
                   <th>
                     <input
                       type="checkbox"
-                      checked={selectedDraftIds.size === draftMeetings.length && draftMeetings.length > 0}
+                      checked={pagedDrafts.length > 0 && pagedDrafts.every(d => selectedDraftIds.has(d.id))}
                       onChange={toggleSelectAllDrafts}
-                      title="Select all"
+                      title="Select all on this page"
                     />
                   </th>
                   <th>Date</th>
@@ -422,7 +764,7 @@ export default function Meetings() {
                 </tr>
               </thead>
               <tbody>
-                {draftMeetings.map(d => (
+                {pagedDrafts.map(d => (
                   <tr key={d.id} className={selectedDraftIds.has(d.id) ? 'draft-row--selected' : ''}>
                     <td>
                       <input
@@ -431,7 +773,7 @@ export default function Meetings() {
                         onChange={() => toggleDraftSelect(d.id)}
                       />
                     </td>
-                    <td className="draft-cell-date">{d.date}</td>
+                    <td className="draft-cell-date">{d.date ? d.date.slice(0, 10) : '—'}</td>
                     <td>{d.project?.name || '—'}</td>
                     <td>{d.time}</td>
                     <td>{d.trade || '—'}</td>
@@ -441,9 +783,21 @@ export default function Meetings() {
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <button
                           className="btn btn-secondary btn-sm"
-                          onClick={() => navigate(`/meetings/${d.id}/edit`)}
+                          onClick={() => navigate(`/meetings/${d.id}/edit`, {
+                            state: {
+                              draftIds: pagedDrafts.map(x => x.id),
+                              draftIndex: pagedDrafts.findIndex(x => x.id === d.id),
+                            }
+                          })}
                         >
                           Review
+                        </button>
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleOpenDraftEdit([d.id], d)}
+                          title="Quick edit leader, trade, topic or add attendees"
+                        >
+                          ✎
                         </button>
                         <button
                           className="btn btn-danger btn-sm"
@@ -458,6 +812,14 @@ export default function Meetings() {
               </tbody>
             </table>
           </div>
+
+          {draftTotalPages > 1 && (
+            <div className="pagination-bar">
+              <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.max(1, p - 1))} disabled={draftPage === 1}>← Prev</button>
+              <span className="pagination-info">Page {draftPage} of {draftTotalPages} ({filteredDrafts.length} total)</span>
+              <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.min(draftTotalPages, p + 1))} disabled={draftPage === draftTotalPages}>Next →</button>
+            </div>
+          )}
         </div>
       )}
 
@@ -498,7 +860,7 @@ export default function Meetings() {
             <p>{meetings.length === 0 ? 'No meetings recorded yet. Create your first safety meeting!' : 'Brak wyników dla podanych filtrów.'}</p>
           </div>
         ) : (
-          filteredMeetings.map((meeting) => (
+          pagedMeetings.map((meeting) => (
             <div key={meeting.id} className="card">
               <div className="meeting-header">
                 <div>
@@ -579,6 +941,14 @@ export default function Meetings() {
               </div>
             </div>
           ))
+        )}
+
+        {meetingTotalPages > 1 && (
+          <div className="pagination-bar">
+            <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.max(1, p - 1))} disabled={meetingPage === 1}>← Prev</button>
+            <span className="pagination-info">Page {meetingPage} of {meetingTotalPages} ({filteredMeetings.length} total)</span>
+            <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.min(meetingTotalPages, p + 1))} disabled={meetingPage === meetingTotalPages}>Next →</button>
+          </div>
         )}
       </div>
     </div>

@@ -93,6 +93,10 @@
   gap: 16px;
 }
 
+.form-row--three {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .form-actions {
   display: flex;
   gap: 12px;
@@ -406,6 +410,11 @@
 
 /* Responsive */
 @media (max-width: 768px) {
+  .form-row,
+  .form-row--three {
+    grid-template-columns: 1fr;
+  }
+
   .corrective-actions-page {
     padding: 16px;
   }
