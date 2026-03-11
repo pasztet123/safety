@@ -212,15 +212,20 @@ export default function IncidentForm() {
     if (data) setLeaders(data)
   }
 
-  const handleReporterSelect = (name) => {
-    setFormData(prev => ({ ...prev, reporter_name: name }))
-    if (!name) { setReporterDefaultSignature(null); return }
+  const getReporterDefaultSignature = (name) => {
+    if (!name) return null
+
     const allPeople = [
       ...leaders.map(l => ({ name: l.name, default_signature_url: l.default_signature_url })),
-      ...involvedPersons.map(p => ({ name: p.name, default_signature_url: p.default_signature_url }))
+      ...involvedPersons.map(p => ({ name: p.name, default_signature_url: p.default_signature_url })),
     ]
-    const found = allPeople.find(p => p.name === name)
-    setReporterDefaultSignature(found?.default_signature_url || null)
+
+    return allPeople.find(person => person.name === name)?.default_signature_url || null
+  }
+
+  const handleReporterSelect = (name) => {
+    setFormData(prev => ({ ...prev, reporter_name: name }))
+    setReporterDefaultSignature(getReporterDefaultSignature(name))
     setChosenDefaultSigUrl(null)
     setManualSigDataUrl(null)
   }
@@ -286,17 +291,11 @@ export default function IncidentForm() {
     setLoading(false)
   }
 
-  // When editing, sync reporter's default signature once people lists are loaded
+  // Keep the reporter's default signature in sync regardless of whether the
+  // incident record or the people lists finish loading first.
   useEffect(() => {
-    if (formData.reporter_name && (leaders.length > 0 || involvedPersons.length > 0)) {
-      const allPeople = [
-        ...leaders.map(l => ({ name: l.name, default_signature_url: l.default_signature_url })),
-        ...involvedPersons.map(p => ({ name: p.name, default_signature_url: p.default_signature_url }))
-      ]
-      const found = allPeople.find(p => p.name === formData.reporter_name)
-      if (found?.default_signature_url) setReporterDefaultSignature(found.default_signature_url)
-    }
-  }, [leaders, involvedPersons])
+    setReporterDefaultSignature(getReporterDefaultSignature(formData.reporter_name))
+  }, [formData.reporter_name, leaders, involvedPersons])
 
   const handleTypeSelect = (typeName) => {
     const dbType = incidentTypes.find(t => t.name === typeName)
@@ -963,7 +962,7 @@ export default function IncidentForm() {
                           {responsible && <span>Responsible: {responsible.name}</span>}
                           {a.declared_created_date && <span>Created on: {new Date(a.declared_created_date).toLocaleDateString()}</span>}
                           {a.due_date && <span>Due: {new Date(a.due_date).toLocaleDateString()}</span>}
-                          <select className="if-action-status-select" value={a.status} onChange={e => updateAction(i, 'status', e.target.value)}>
+                          <select className="form-select if-action-status-select" value={a.status} onChange={e => updateAction(i, 'status', e.target.value)}>
                             <option value="open">Open</option>
                             <option value="completed">Completed</option>
                           </select>

@@ -11,9 +11,11 @@ import html2canvas from 'html2canvas'
 import {
   renderHTMLtoPDFBuffer,
   buildMeetingHTMLForExport,
-  BASE_CSS, baseHTML, footer, field, section,
+  BASE_CSS, baseHTML, exportSummary, footer, field, section,
   ACCENT, PRIMARY, GRAY, BORDER,
 } from './pdfGenerator'
+import { createPdfExportContext } from './compliance'
+import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 import { supabase } from './supabase'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -134,6 +136,25 @@ const bulkBaseHTML = (content) => `
  * @param {string} [subtitle] - optional subtitle / filter description
  */
 export const generateMeetingListPDF = async (meetings, title = 'Toolbox Meetings Report', subtitle = '') => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains toolbox meeting records.',
+    details: `${meetings.length} meeting${meetings.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return null
+
+  const slug = title.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `meetings-${slug}-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.meetings_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: meetings.length,
+    },
+  })
+
   const cardsHTML = meetings.map(m => {
     const d = m.date ? new Date(m.date) : null
     const day = d ? d.getDate().toString().padStart(2,'0') : '??'
@@ -169,22 +190,23 @@ export const generateMeetingListPDF = async (meetings, title = 'Toolbox Meetings
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="ml-body">
       <div class="ml-count-bar">${meetings.length} meeting${meetings.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No meetings found for the selected filters.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
-  const slug = title.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')
-  const dateStr = new Date().toISOString().split('T')[0]
   const buf = await renderHTMLtoPDFBuffer(html)
-  return { buffer: buf, filename: `meetings-${slug}-${dateStr}.pdf` }
+  return { buffer: buf, filename }
 }
 
 /** Same as generateMeetingListPDF but also saves the file immediately. */
 export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
-  const { buffer, filename } = await generateMeetingListPDF(meetings, title, subtitle)
+  const result = await generateMeetingListPDF(meetings, title, subtitle)
+  if (!result?.buffer || !result?.filename) return
+  const { buffer, filename } = result
   saveAs(new Blob([buffer], { type: 'application/pdf' }), filename)
 }
 
@@ -199,6 +221,45 @@ const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
   wrap.innerHTML = html
 
   try {
+    const A4W = 210, A4H = 297
+    const PAGE_MARGIN_MM = { top: 10, right: 10, bottom: 12, left: 10 }
+    const contentWmm = A4W - PAGE_MARGIN_MM.left - PAGE_MARGIN_MM.right
+    const repeatedHeader = wrap.querySelector('.pdf-wrap > .pdf-header, .pdf-wrap > .ml-header')
+    const repeatedFooter = wrap.querySelector('.pdf-wrap > .pdf-fixed-footer')
+
+    let headerCanvas = null
+    let headerHmm = 0
+    let headerImgData = null
+    let footerCanvas = null
+    let footerHmm = 0
+    let footerImgData = null
+
+    if (repeatedHeader) {
+      headerCanvas = await html2canvas(repeatedHeader, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      headerHmm = (headerCanvas.height / headerCanvas.width) * A4W
+      headerImgData = headerCanvas.toDataURL('image/jpeg', 0.94)
+      repeatedHeader.remove()
+    }
+
+    if (repeatedFooter) {
+      footerCanvas = await html2canvas(repeatedFooter, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      footerHmm = (footerCanvas.height / footerCanvas.width) * A4W
+      footerImgData = footerCanvas.toDataURL('image/jpeg', 0.94)
+      repeatedFooter.remove()
+    }
+
     const canvas = await html2canvas(wrap, {
       scale: 2,
       useCORS: true,
@@ -209,30 +270,60 @@ const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
 
     if (!canvas.width || !canvas.height) return
 
-    const A4W = 210, A4H = 297
-    const pxW = canvas.width                              // 1588 at scale:2
+    const bodyTopMm = headerCanvas ? headerHmm + 4 : PAGE_MARGIN_MM.top
+    const bodyBottomMm = footerCanvas ? PAGE_MARGIN_MM.bottom + footerHmm + 4 : PAGE_MARGIN_MM.bottom
+    const contentHmm = A4H - bodyTopMm - bodyBottomMm
+    const pxW = canvas.width
     const pxH = canvas.height
-    const pageHpx = Math.round((A4H / A4W) * pxW)        // ~2246 px per A4 page
+    const pageHpx = Math.round((contentHmm / contentWmm) * pxW)
 
     let y = 0
     let needAddPage = addPageBeforeFirstSlice
 
     while (y < pxH) {
       const sliceH = Math.min(pageHpx, pxH - y)
-      // Blit slice onto a fresh A4-sized canvas (white background)
+      // Blit slice onto a temp canvas and place it inside real page margins.
       const tmp = document.createElement('canvas')
       tmp.width = pxW
-      tmp.height = pageHpx
+      tmp.height = sliceH
       const ctx = tmp.getContext('2d')
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, pxW, pageHpx)
+      ctx.fillRect(0, 0, pxW, sliceH)
       ctx.drawImage(canvas, 0, y, pxW, sliceH, 0, 0, pxW, sliceH)
 
       if (needAddPage) doc.addPage()
       needAddPage = true   // always addPage for subsequent slices of the same chunk
 
-      doc.addImage(tmp.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, A4W, A4H)
-      y += pageHpx
+      const imgHmm = Math.min((sliceH / pxW) * contentWmm, contentHmm)
+      if (headerImgData) {
+        doc.addImage(
+          headerImgData,
+          'JPEG',
+          0,
+          0,
+          A4W,
+          headerHmm,
+        )
+      }
+      doc.addImage(
+        tmp.toDataURL('image/jpeg', 0.92),
+        'JPEG',
+        PAGE_MARGIN_MM.left,
+        bodyTopMm,
+        contentWmm,
+        imgHmm,
+      )
+      if (footerImgData) {
+        doc.addImage(
+          footerImgData,
+          'JPEG',
+          0,
+          A4H - PAGE_MARGIN_MM.bottom - footerHmm,
+          A4W,
+          footerHmm,
+        )
+      }
+      y += sliceH
     }
   } finally {
     document.body.removeChild(wrap)
@@ -246,6 +337,17 @@ const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
  * Each topic is rendered independently (prevents canvas-size overflow → black pages).
  */
 export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety Topics Brochure') => {
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `safety-topics-brochure-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.safety_topics_brochure',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      record_count: topics.length,
+    },
+  })
+
   const HEADER_BG = { low:'#15803d', medium:'#854d0e', high:'#9a3412', critical:'#991b1b' }
   const RISK_PILL_CLASS = { low:'risk-low', medium:'risk-medium', high:'risk-high', critical:'risk-critical' }
 
@@ -268,12 +370,13 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${topics.length} topics · Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="toc-section">
       <div class="toc-title">Table of Contents</div>
       <div class="toc-subtitle">${topics.length} topics across ${[...new Set(topics.map(t => t.category).filter(Boolean))].length} categories</div>
       ${tocEntries || '<p style="color:#9ca3af">No topics found.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
   // ── helper to build a single topic's HTML ────────────────────────────────
@@ -310,12 +413,28 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
     await _renderChunkIntoDoc(buildTopicHTML(topics[i], i), doc, true)  // each topic: new page
   }
 
-  const dateStr = new Date().toISOString().split('T')[0]
-  const filename = `safety-topics-brochure-${dateStr}.pdf`
   saveAs(new Blob([doc.output('arraybuffer')], { type: 'application/pdf' }), filename)
 }
 
 export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains incident records.',
+    details: `${incidents.length} incident${incidents.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `incidents-report-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.incidents_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: incidents.length,
+    },
+  })
+
   const SEV_PILL = (sev) => {
     const cls = { lost_time:'sev-high', first_aid:'sev-low', near_miss:'sev-medium',
       property_damage:'sev-medium', medical_treatment:'sev-medium', recordable:'sev-high', fatality:'sev-critical' }[sev] || 'sev-medium'
@@ -346,21 +465,39 @@ export const downloadIncidentListPDF = async (incidents, title = 'Incidents Repo
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="ml-body">
       <div class="ml-count-bar">${incidents.length} incident${incidents.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No incidents found.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  const dateStr = new Date().toISOString().split('T')[0]
-  saveAs(new Blob([buf], { type: 'application/pdf' }), `incidents-report-${dateStr}.pdf`)
+  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
 }
 
 // ─── Corrective Actions List PDF ──────────────────────────────────────────────
 
 export const downloadCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '') => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains corrective action records.',
+    details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `corrective-actions-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.corrective_actions_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: actions.length,
+    },
+  })
+
   const personMap = Object.fromEntries(persons.map(p => [p.id, p.name]))
   const incidentMap = Object.fromEntries(incidents.map(i => [i.id, i]))
 
@@ -390,16 +527,16 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="ml-body">
       <div class="ml-count-bar">${actions.length} action${actions.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No corrective actions found.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  const dateStr = new Date().toISOString().split('T')[0]
-  saveAs(new Blob([buf], { type: 'application/pdf' }), `corrective-actions-${dateStr}.pdf`)
+  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
 }
 
 export const downloadDisciplinaryActionsListPDF = async (
@@ -410,6 +547,24 @@ export const downloadDisciplinaryActionsListPDF = async (
   title = 'Disciplinary Actions Report',
   subtitle = ''
 ) => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains disciplinary action records.',
+    details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `disciplinary-actions-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.disciplinary_actions_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: actions.length,
+    },
+  })
+
   const personMap = Object.fromEntries(persons.map(person => [person.id, person.name]))
   const leaderMap = Object.fromEntries(leaders.map(leader => [leader.id, leader.name]))
   const incidentMap = Object.fromEntries(incidents.map(incident => [incident.id, incident]))
@@ -443,21 +598,39 @@ export const downloadDisciplinaryActionsListPDF = async (
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="ml-body">
       <div class="ml-count-bar">${actions.length} action${actions.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No disciplinary actions found.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  const dateStr = new Date().toISOString().split('T')[0]
-  saveAs(new Blob([buf], { type: 'application/pdf' }), `disciplinary-actions-${dateStr}.pdf`)
+  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
 }
 
 // ─── Checklist History List PDF ───────────────────────────────────────────────
 
 export const downloadChecklistHistoryPDF = async (completions, title = 'Checklist History Report', subtitle = '') => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains completed checklist records.',
+    details: `${completions.length} completion${completions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const dateStr = new Date().toISOString().split('T')[0]
+  const filename = `checklist-history-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.checklist_history_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: completions.length,
+    },
+  })
+
   const cardsHTML = completions.map(c => {
     const dt = c.completion_datetime ? new Date(c.completion_datetime).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : '—'
     return `
@@ -479,16 +652,16 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="ml-body">
       <div class="ml-count-bar">${completions.length} completion${completions.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No checklist completions found.</p>'}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  const dateStr = new Date().toISOString().split('T')[0]
-  saveAs(new Blob([buf], { type: 'application/pdf' }), `checklist-history-${dateStr}.pdf`)
+  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
 }
 
 // ─── ZIP of Individual Meeting PDFs ──────────────────────────────────────────
@@ -502,8 +675,15 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
  * @param {function} onProgress - callback (done, total)
  */
 export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains individual toolbox meeting records in a ZIP archive.',
+    details: `${meetings.length} meeting PDF${meetings.length === 1 ? '' : 's'}`,
+  })
+  if (!confirmed) return
+
   const zip = new JSZip()
   const total = meetings.length
+  const zipBatchId = crypto.randomUUID()
 
   for (let i = 0; i < total; i++) {
     const m = meetings[i]
@@ -577,14 +757,25 @@ export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => 
       }
 
       // Build the full meeting HTML using the shared builder
-      const meetingWithExtras = { ...data, topicDetails, checklistCompletions }
-      const html = buildMeetingHTMLForExport(meetingWithExtras)
-      const buf = await renderHTMLtoPDFBuffer(html)
-
-      // File name inside ZIP
       const topicSlug = (data.topic || 'meeting').replace(/[^a-zA-Z0-9]/g, '-').replace(/-+/g, '-')
       const datePart = data.date ? data.date.replace(/-/g, '') : 'nodate'
       const filename = `${String(i + 1).padStart(3, '0')}_${datePart}_${topicSlug}.pdf`
+      const exportMeta = await createPdfExportContext({
+        eventType: 'pdf_export.meeting_zip_item',
+        tableName: 'meetings',
+        recordId: data.id,
+        fileName: filename,
+        metadata: {
+          meeting_id: data.id,
+          zip_batch_id: zipBatchId,
+          zip_position: i + 1,
+          zip_total: total,
+        },
+      })
+
+      const meetingWithExtras = { ...data, topicDetails, checklistCompletions }
+      const html = buildMeetingHTMLForExport(meetingWithExtras, exportMeta)
+      const buf = await renderHTMLtoPDFBuffer(html)
 
       zip.file(filename, buf)
     } catch (err) {

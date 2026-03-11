@@ -18,6 +18,27 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    const insertAuditEvent = async ({
+      actorUserId,
+      actorEmail,
+      eventType,
+      recordId = null,
+      metadata = {},
+    }) => {
+      const { error } = await supabaseAdmin.from('audit_events').insert([{
+        event_type: eventType,
+        table_name: 'users',
+        record_id: recordId,
+        actor_user_id: actorUserId,
+        actor_email: actorEmail,
+        metadata,
+      }])
+
+      if (error) {
+        console.error('Audit insert error:', error)
+      }
+    }
+
     // Verify the request is from an admin user
     const authHeader = req.headers.get('Authorization')!
     const token = authHeader.replace('Bearer ', '')
@@ -46,17 +67,44 @@ serve(async (req) => {
 
     const { userId, newPassword } = await req.json()
 
+    const { data: targetUser } = await supabaseAdmin
+      .from('users')
+      .select('id, email, name')
+      .eq('id', userId)
+      .maybeSingle()
+
     // Reset password
     const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       password: newPassword,
     })
 
     if (updateError) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.reset_password_failed',
+        recordId: userId,
+        metadata: {
+          target_email: targetUser?.email || null,
+          reason: updateError.message,
+        },
+      })
       return new Response(JSON.stringify({ error: updateError.message }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
     }
+
+    await insertAuditEvent({
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      eventType: 'admin.reset_password',
+      recordId: userId,
+      metadata: {
+        target_email: targetUser?.email || null,
+        target_name: targetUser?.name || null,
+      },
+    })
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

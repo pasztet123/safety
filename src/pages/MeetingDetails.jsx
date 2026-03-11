@@ -43,6 +43,7 @@ export default function MeetingDetails() {
         attendees:meeting_attendees(*),
         photos:meeting_photos(*)
       `)
+      .is('deleted_at', null)
       .eq('id', id)
       .single()
 

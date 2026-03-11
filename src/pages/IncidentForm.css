@@ -559,12 +559,18 @@
 }
 
 .if-action-status-select {
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 2px 6px;
+  width: auto;
+  min-width: 132px;
+  padding: 8px 36px 8px 12px;
+  border-radius: 8px;
   font-size: 12px;
+  line-height: 1.2;
   font-family: inherit;
-  cursor: pointer;
+  background-position: right 12px center;
+}
+
+.if-action-status-select:focus {
+  box-shadow: 0 0 0 3px var(--color-accent-light);
 }
 
 .btn-remove {

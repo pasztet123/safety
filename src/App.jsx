@@ -26,6 +26,8 @@ import BulkImport from './pages/BulkImport'
 import People from './pages/People'
 import PersonDetail from './pages/PersonDetail'
 import ExportPanel from './pages/ExportPanel'
+import SystemRecords from './pages/SystemRecords'
+import UserManual from './pages/UserManual'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -84,6 +86,8 @@ function App() {
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/bulk-import" element={<BulkImport />} />
           <Route path="/export" element={<ExportPanel />} />
+          <Route path="/system-records" element={<SystemRecords />} />
+          <Route path="/user-manual" element={<UserManual />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </Layout>

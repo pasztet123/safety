@@ -18,6 +18,27 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    const insertAuditEvent = async ({
+      actorUserId,
+      actorEmail,
+      eventType,
+      recordId = null,
+      metadata = {},
+    }) => {
+      const { error } = await supabaseAdmin.from('audit_events').insert([{
+        event_type: eventType,
+        table_name: 'users',
+        record_id: recordId,
+        actor_user_id: actorUserId,
+        actor_email: actorEmail,
+        metadata,
+      }])
+
+      if (error) {
+        console.error('Audit insert error:', error)
+      }
+    }
+
     // Verify the request is from an admin user
     const authHeader = req.headers.get('Authorization')!
     const token = authHeader.replace('Bearer ', '')
@@ -46,13 +67,33 @@ serve(async (req) => {
 
     const { userId } = await req.json()
 
-    // Delete from users table first
+    const { data: targetUser } = await supabaseAdmin
+      .from('users')
+      .select('id, email, name')
+      .eq('id', userId)
+      .maybeSingle()
+
+    const deletedAt = new Date().toISOString()
+
     const { error: dbError } = await supabaseAdmin
       .from('users')
-      .delete()
+      .update({
+        deleted_at: deletedAt,
+        deleted_by: user.id,
+      })
       .eq('id', userId)
 
     if (dbError) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.delete_user_failed',
+        recordId: userId,
+        metadata: {
+          target_email: targetUser?.email || null,
+          reason: dbError.message,
+        },
+      })
       return new Response(JSON.stringify({ error: dbError.message }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
@@ -63,11 +104,33 @@ serve(async (req) => {
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
     if (deleteError) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.delete_user_failed',
+        recordId: userId,
+        metadata: {
+          target_email: targetUser?.email || null,
+          reason: deleteError.message,
+        },
+      })
       return new Response(JSON.stringify({ error: deleteError.message }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 400,
       })
     }
+
+    await insertAuditEvent({
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      eventType: 'admin.delete_user',
+      recordId: userId,
+      metadata: {
+        target_email: targetUser?.email || null,
+        target_name: targetUser?.name || null,
+        deleted_at: deletedAt,
+      },
+    })
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

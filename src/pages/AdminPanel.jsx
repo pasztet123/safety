@@ -302,6 +302,7 @@ export default function AdminPanel() {
           *,
           project:projects(name)
         `)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false }))
       if (data) setMeetings(data)
     } else if (activeTab === 'incidents') {
@@ -544,6 +545,8 @@ export default function AdminPanel() {
     
     if (!error) {
       fetchData()
+    } else {
+      alert('Error deleting meeting: ' + error.message)
     }
   }
 

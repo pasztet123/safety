@@ -1,11 +1,19 @@
 import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
+import { createPdfExportContext } from './compliance'
+import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const ACCENT   = '#E53935'
 export const PRIMARY  = '#171717'
 export const GRAY     = '#6b7280'
 export const BORDER   = '#e5e5e5'
+
+const PAGE_MARGIN_MM = { top: 10, right: 10, bottom: 12, left: 10 }
+const REPEATED_HEADER_GAP_MM = 4
+const REPEATED_FOOTER_GAP_MM = 4
+const REPEATED_HEADER_SELECTOR = '.pdf-wrap > .pdf-header, .pdf-wrap > .ml-header'
+const REPEATED_FOOTER_SELECTOR = '.pdf-wrap > .pdf-fixed-footer'
 
 // ─── Core renderer ───────────────────────────────────────────────────────────
 
@@ -18,6 +26,44 @@ const _buildPDFDoc = async (html) => {
   wrap.innerHTML = html
 
   try {
+    const A4W_MM = 210
+    const A4H_MM = 297
+    const repeatedHeader = wrap.querySelector(REPEATED_HEADER_SELECTOR)
+    const repeatedFooter = wrap.querySelector(REPEATED_FOOTER_SELECTOR)
+
+    let headerCanvas = null
+    let headerHmm = 0
+    let headerImgData = null
+    let footerCanvas = null
+    let footerHmm = 0
+    let footerImgData = null
+
+    if (repeatedHeader) {
+      headerCanvas = await html2canvas(repeatedHeader, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      headerHmm = (headerCanvas.height / headerCanvas.width) * A4W_MM
+      headerImgData = headerCanvas.toDataURL('image/jpeg', 0.94)
+      repeatedHeader.remove()
+    }
+
+    if (repeatedFooter) {
+      footerCanvas = await html2canvas(repeatedFooter, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+      })
+      footerHmm = (footerCanvas.height / footerCanvas.width) * A4W_MM
+      footerImgData = footerCanvas.toDataURL('image/jpeg', 0.94)
+      repeatedFooter.remove()
+    }
+
     const canvas = await html2canvas(wrap, {
       scale: 2,
       useCORS: true,
@@ -26,16 +72,14 @@ const _buildPDFDoc = async (html) => {
       logging: false,
     })
 
-    const A4W_MM = 210
-    const A4H_MM = 297
     const pxW = canvas.width   // 794 * 2 = 1588 canvas px
     const pxH = canvas.height
-    // Leave a 22 mm bottom margin: cuts happen earlier so text is never sliced at the
-    // very edge, and we pad each page image with matching white space below.
-    const BOTTOM_MARGIN_MM = 22
-    const pxPerMM = pxW / A4W_MM
-    const pageHpx    = Math.round((A4H_MM - BOTTOM_MARGIN_MM) / A4W_MM * pxW)
-    const bottomPadPx = Math.round(BOTTOM_MARGIN_MM * pxPerMM)
+    const contentWmm = A4W_MM - PAGE_MARGIN_MM.left - PAGE_MARGIN_MM.right
+    const bodyTopMm = headerCanvas ? headerHmm + REPEATED_HEADER_GAP_MM : PAGE_MARGIN_MM.top
+    const bodyBottomMm = footerCanvas ? PAGE_MARGIN_MM.bottom + footerHmm + REPEATED_FOOTER_GAP_MM : PAGE_MARGIN_MM.bottom
+    const contentHmm = A4H_MM - bodyTopMm - bodyBottomMm
+    const pxPerMM = pxW / contentWmm
+    const pageHpx = Math.round(contentHmm * pxPerMM)
 
     // Read the entire canvas once into a flat RGBA array — avoids per-row getImageData calls
     const ctx = canvas.getContext('2d')
@@ -92,10 +136,7 @@ const _buildPDFDoc = async (html) => {
       return bestMidRow
     }
 
-    // Build pages using A4 mm dimensions for accuracy
     const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
-    const A4W_PX_doc = A4W_MM  // 210mm
-    const A4H_PX_doc = A4H_MM  // 297mm
 
     let cutTop    = 0
     let pageIndex = 0
@@ -106,11 +147,10 @@ const _buildPDFDoc = async (html) => {
       const sliceH        = cutBottom - cutTop
       if (sliceH <= 0) break
 
-      // Render this slice onto a temp canvas; add white bottom padding so the
-      // last line of text on a page never sits right at the page edge.
+      // Render the page slice at the printable width and place it inside real page margins.
       const pageCanvas  = document.createElement('canvas')
       pageCanvas.width  = pxW
-      pageCanvas.height = sliceH + bottomPadPx
+      pageCanvas.height = sliceH
       const pctx = pageCanvas.getContext('2d')
       pctx.fillStyle = '#ffffff'
       pctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
@@ -118,11 +158,38 @@ const _buildPDFDoc = async (html) => {
 
       const imgData = pageCanvas.toDataURL('image/jpeg', 0.92)
 
-      // Image height in mm, proportional to A4 width (keeps aspect ratio, never taller than A4)
-      const imgHmm = Math.min(((sliceH + bottomPadPx) / pxW) * A4W_PX_doc, A4H_PX_doc)
+      // Image height in mm, proportional to the printable width.
+      const imgHmm = Math.min((sliceH / pxW) * contentWmm, contentHmm)
 
       if (pageIndex > 0) doc.addPage()
-      doc.addImage(imgData, 'JPEG', 0, 0, A4W_PX_doc, imgHmm)
+      if (headerImgData) {
+        doc.addImage(
+          headerImgData,
+          'JPEG',
+          0,
+          0,
+          A4W_MM,
+          headerHmm,
+        )
+      }
+      doc.addImage(
+        imgData,
+        'JPEG',
+        PAGE_MARGIN_MM.left,
+        bodyTopMm,
+        contentWmm,
+        imgHmm,
+      )
+      if (footerImgData) {
+        doc.addImage(
+          footerImgData,
+          'JPEG',
+          0,
+          A4H_MM - PAGE_MARGIN_MM.bottom - footerHmm,
+          A4W_MM,
+          footerHmm,
+        )
+      }
 
       cutTop = cutBottom
       pageIndex++
@@ -135,7 +202,7 @@ const _buildPDFDoc = async (html) => {
 }
 
 /** Renders HTML to a PDF and saves it as a file download. */
-const renderHTMLtoPDF = async (html, filename) => {
+export const renderHTMLtoPDF = async (html, filename) => {
   const doc = await _buildPDFDoc(html)
   doc.save(filename)
 }
@@ -220,6 +287,7 @@ export const BASE_CSS = `
   .pdf-sig-caption{font-size:10px;color:${GRAY}}
 
   /* footer */
+  .pdf-fixed-footer{background:#f9fafb}
   .pdf-footer{padding:12px 36px 6px;border-top:1px solid ${BORDER};display:flex;
               justify-content:space-between;align-items:center;
               background:#f9fafb;font-size:10px;color:${GRAY}}
@@ -245,22 +313,45 @@ export const baseHTML = (content) => `
   <div class="pdf-wrap">${content}</div>
 `
 
-export const footer = () => {
-  const now = new Date()
-  const tz = 'America/Chicago'
-  const date = now.toLocaleDateString('en-US', {timeZone: tz, month:'long', day:'numeric', year:'numeric'})
-  const time = now.toLocaleTimeString('en-US', {timeZone: tz, hour:'2-digit', minute:'2-digit'})
-  const tzAbbr = now.toLocaleDateString('en-US', {timeZone: tz, timeZoneName:'short'}).split(', ').pop()
-    || new Intl.DateTimeFormat('en-US', {timeZone: tz, timeZoneName:'short'}).formatToParts(now).find(p => p.type === 'timeZoneName')?.value || 'CT'
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+
+export const exportSummary = (exportMeta) => {
+  if (!exportMeta) return ''
+
   return `
-    <div class="pdf-footer">
-      <div></div>
-      <div>Exported ${date} at ${time} ${tzAbbr}</div>
+    <div style="padding:14px 36px 0;background:#fff">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;border:1px solid ${BORDER};border-radius:8px;padding:12px 14px;background:#fafafa">
+        <div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:${GRAY};margin-bottom:3px">Generated By</div>
+          <div style="font-size:12px;font-weight:600;color:${PRIMARY}">${escapeHtml(exportMeta.generatedByLabel)}</div>
+        </div>
+        <div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:${GRAY};margin-bottom:3px">Data Retrieved</div>
+          <div style="font-size:12px;font-weight:600;color:${PRIMARY}">${escapeHtml(exportMeta.generatedAtLabel)}</div>
+        </div>
+      </div>
     </div>
-    <div class="pdf-disclaimer">
-      This document was generated using safety management software and reflects information entered by authorized users.
-      The software provider does not independently verify the accuracy or completeness of the information contained herein.
-      Responsibility for the accuracy and completeness of this record rests with the meeting leader and any designated safety officer who created or approved it.
+  `
+}
+
+export const footer = (exportMeta) => {
+  const exportedAtLabel = exportMeta?.generatedAtLabel || `${new Date().toISOString()} UTC`
+  const exportId = exportMeta?.exportId || 'Unavailable'
+  return `
+    <div class="pdf-fixed-footer">
+      <div class="pdf-footer">
+        <div></div>
+        <div>Exported ${escapeHtml(exportedAtLabel)}</div>
+      </div>
+      <div class="pdf-disclaimer">
+        This document was generated using safety management software and reflects information entered by authorized users.
+        The software provider does not independently verify the accuracy or completeness of the information contained herein.
+        Responsibility for the accuracy and completeness of this record rests with the meeting leader and any designated safety officer who created or approved it.
+        <div style="font-size:4px;line-height:1.2;margin-top:4px;color:#9ca3af">Print UUID: ${escapeHtml(exportId)}</div>
+      </div>
     </div>
   `
 }
@@ -292,7 +383,7 @@ export const toDataURL = (url) => new Promise((resolve) => {
 // ─── Meeting PDF ──────────────────────────────────────────────────────────────
 
 /** Builds the full HTML string for a meeting PDF (used by both single-PDF and ZIP export). */
-export const buildMeetingHTMLForExport = (meeting) => {
+export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
   const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
   const timeStr = meeting.time ? meeting.time.substring(0, 5) : ''
 
@@ -375,6 +466,7 @@ export const buildMeetingHTMLForExport = (meeting) => {
       <div class="pdf-header-title">${meeting.topic || 'Safety Meeting'}</div>
       <div class="pdf-header-sub">${dateStr}${timeStr ? ' · ' + timeStr : ''}${meeting.project ? ' · ' + meeting.project.name : ''}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="pdf-body">
       ${section('Meeting Info', `
         <div class="pdf-fields">
@@ -391,20 +483,43 @@ export const buildMeetingHTMLForExport = (meeting) => {
       ${meeting.photos && meeting.photos.length > 0 ? section('Photos', photosHTML) : ''}
       ${section('Leader Signature', leaderSigHTML)}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 }
 
 export const generateMeetingPDF = async (meeting) => {
-  const html = buildMeetingHTMLForExport(meeting)
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains a toolbox meeting record.',
+    details: `${meeting.topic || 'Safety meeting'}${meeting.date ? ` · ${new Date(meeting.date).toLocaleDateString('en-US')}` : ''}`,
+  })
+  if (!confirmed) return
+
   const slug = (meeting.topic || 'meeting').replace(/\s+/g, '-')
   const datePart = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
-  await renderHTMLtoPDF(html, 'meeting-' + slug + '-' + datePart + '.pdf')
+  const fileName = 'meeting-' + slug + '-' + datePart + '.pdf'
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.meeting',
+    tableName: 'meetings',
+    recordId: meeting.id || null,
+    fileName,
+    metadata: {
+      meeting_id: meeting.id || null,
+      topic: meeting.topic || null,
+    },
+  })
+  const html = buildMeetingHTMLForExport(meeting, exportMeta)
+  await renderHTMLtoPDF(html, fileName)
 }
 
 // ─── Incident PDF ─────────────────────────────────────────────────────────────
 
 export const generateIncidentPDF = async (incident) => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains an incident record.',
+    details: `${incident.type_name || 'Incident'}${incident.employee_name ? ` · ${incident.employee_name}` : ''}`,
+  })
+  if (!confirmed) return
+
   const dateStr = incident.date ? new Date(incident.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
   const sev = incident.severity || ''
   const sevClass = 'sev-' + (sev.toLowerCase() || 'medium')
@@ -427,12 +542,27 @@ export const generateIncidentPDF = async (incident) => {
     ? `<img src="${incident.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" />`
     : ''
 
+  const slug = (incident.type_name || 'incident').replace(/\s+/g, '-')
+  const datePart = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
+  const fileName = 'incident-' + slug + '-' + datePart + '.pdf'
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.incident',
+    tableName: 'incidents',
+    recordId: incident.id || null,
+    fileName,
+    metadata: {
+      incident_id: incident.id || null,
+      incident_type: incident.type_name || null,
+    },
+  })
+
   const html = baseHTML(`
     <div class="pdf-header" style="background:#991b1b">
       <div class="pdf-header-type">Incident Report</div>
       <div class="pdf-header-title">${incident.type_name || 'Incident'}</div>
       <div class="pdf-header-sub">${dateStr}${incident.time ? ' · ' + incident.time : ''}${sevLabel ? ' · ' + sevLabel : ''}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="pdf-body">
       ${section('Classification', `
         <div class="pdf-fields">
@@ -477,12 +607,10 @@ export const generateIncidentPDF = async (incident) => {
       ${incident.photo_url ? section('Photo', photoHTML) : ''}
       ${section('Signature', sigHTML)}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
-  const slug = (incident.type_name || 'incident').replace(/\s+/g, '-')
-  const datePart = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
-  await renderHTMLtoPDF(html, 'incident-' + slug + '-' + datePart + '.pdf')
+  await renderHTMLtoPDF(html, fileName)
 }
 
 // ─── Safety Topic PDF ─────────────────────────────────────────────────────────
@@ -496,12 +624,26 @@ export const generateSafetyTopicPDF = async (topic) => {
     low: '#15803d', medium: '#854d0e', high: '#9a3412', critical: '#991b1b'
   }[topic.risk_level] || '#171717'
 
+  const slug = topic.name.replace(/\s+/g, '-').toLowerCase()
+  const fileName = 'safety-topic-' + slug + '.pdf'
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.safety_topic',
+    tableName: 'safety_topics',
+    recordId: topic.id || null,
+    fileName,
+    metadata: {
+      topic_id: topic.id || null,
+      topic_name: topic.name || null,
+    },
+  })
+
   const html = baseHTML(`
     <div class="pdf-header" style="background:${headerBg}">
       <div class="pdf-header-type">Safety Topic · ${topic.category || ''}</div>
       <div class="pdf-header-title">${topic.name}</div>
       <div class="pdf-header-sub">${topic.osha_reference ? 'OSHA ' + topic.osha_reference : ''}</div>
     </div>
+    ${exportSummary(exportMeta)}
     ${topic.image_url ? `<img src="${topic.image_url}" crossorigin="anonymous" style="width:100%;max-height:220px;object-fit:cover;display:block" />` : ''}
     <div class="pdf-body">
       ${section('Details', `
@@ -513,11 +655,10 @@ export const generateSafetyTopicPDF = async (topic) => {
       `)}
       ${topic.description ? section('Description', `<div class="pdf-text">${topic.description}</div>`) : ''}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
-  const slug = topic.name.replace(/\s+/g, '-').toLowerCase()
-  await renderHTMLtoPDF(html, 'safety-topic-' + slug + '.pdf')
+  await renderHTMLtoPDF(html, fileName)
 }
 
 // ─── Checklist PDF ────────────────────────────────────────────────────────────
@@ -538,12 +679,26 @@ export const generateChecklistPDF = async (checklist, items) => {
     </div>
   ` : '<p style="color:#9ca3af;font-size:13px">No items</p>'
 
+  const slug = checklist.name.replace(/\s+/g, '-').toLowerCase()
+  const fileName = 'checklist-' + slug + '.pdf'
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.checklist',
+    tableName: 'checklists',
+    recordId: checklist.id || null,
+    fileName,
+    metadata: {
+      checklist_id: checklist.id || null,
+      checklist_name: checklist.name || null,
+    },
+  })
+
   const html = baseHTML(`
     <div class="pdf-header" style="background:#14532d">
       <div class="pdf-header-type">Safety Checklist · ${checklist.category || ''}</div>
       <div class="pdf-header-title">${checklist.name}</div>
       <div class="pdf-header-sub">${checklist.trades && checklist.trades.length > 0 ? checklist.trades.join(' · ') : ''}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="pdf-body">
       ${checklist.description || (checklist.trades && checklist.trades.length > 0) ? section('Info', `
         <div class="pdf-fields">
@@ -559,11 +714,10 @@ export const generateChecklistPDF = async (checklist, items) => {
         </div>
       `)}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
-  const slug = checklist.name.replace(/\s+/g, '-').toLowerCase()
-  await renderHTMLtoPDF(html, 'checklist-' + slug + '.pdf')
+  await renderHTMLtoPDF(html, fileName)
 }
 
 // ─── Checklist Completion PDF ─────────────────────────────────────────────────
@@ -583,6 +737,12 @@ export const generateChecklistPDF = async (checklist, items) => {
  */
 export const generateChecklistCompletionPDF = async (data) => {
   const { checklist, completion, project, user, items = [], photos = [] } = data
+
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains a completed checklist record.',
+    details: `${checklist?.name || 'Checklist completion'}${project?.name ? ` · ${project.name}` : ''}`,
+  })
+  if (!confirmed) return
 
   const dateStr = completion?.completion_datetime
     ? new Date(completion.completion_datetime).toLocaleString('en-US', {
@@ -654,12 +814,30 @@ export const generateChecklistCompletionPDF = async (data) => {
                <div style="font-size:11px;color:#6b7280">Date</div></div></div>`}`)
     : ''
 
+  const slug = (checklist?.name || 'checklist').replace(/\s+/g, '-').toLowerCase()
+  const datePart = completion?.completion_datetime
+    ? new Date(completion.completion_datetime).toISOString().split('T')[0]
+    : 'nodate'
+  const fileName = `checklist-completion-${slug}-${datePart}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.checklist_completion',
+    tableName: 'checklist_completions',
+    recordId: completion?.id || null,
+    fileName,
+    metadata: {
+      checklist_completion_id: completion?.id || null,
+      checklist_id: checklist?.id || null,
+      checklist_name: checklist?.name || null,
+    },
+  })
+
   const html = baseHTML(`
     <div class="pdf-header" style="background:#14532d">
       <div class="pdf-header-type">Completed Checklist</div>
       <div class="pdf-header-title">${(checklist?.name || 'Checklist').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
       <div class="pdf-header-sub">${dateStr}${project ? ' · ' + project.name : ''}</div>
     </div>
+    ${exportSummary(exportMeta)}
     <div class="pdf-body">
       ${section('Completion Details', `
         <div class="pdf-fields">
@@ -676,12 +854,8 @@ export const generateChecklistCompletionPDF = async (data) => {
       ${globalPhotosHTML}
       ${signatureHTML}
     </div>
-    ${footer()}
+    ${footer(exportMeta)}
   `)
 
-  const slug = (checklist?.name || 'checklist').replace(/\s+/g, '-').toLowerCase()
-  const datePart = completion?.completion_datetime
-    ? new Date(completion.completion_datetime).toISOString().split('T')[0]
-    : 'nodate'
-  await renderHTMLtoPDF(html, `checklist-completion-${slug}-${datePart}.pdf`)
+  await renderHTMLtoPDF(html, fileName)
 }

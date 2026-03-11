@@ -20,6 +20,27 @@ serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     )
 
+    const insertAuditEvent = async ({
+      actorUserId,
+      actorEmail,
+      eventType,
+      recordId = null,
+      metadata = {},
+    }) => {
+      const { error } = await supabaseAdmin.from('audit_events').insert([{
+        event_type: eventType,
+        table_name: 'users',
+        record_id: recordId,
+        actor_user_id: actorUserId,
+        actor_email: actorEmail,
+        metadata,
+      }])
+
+      if (error) {
+        console.error('Audit insert error:', error)
+      }
+    }
+
     console.log('Supabase admin client created')
 
     // Verify the request is from an admin user
@@ -65,6 +86,15 @@ serve(async (req) => {
       .single()
 
     if (existingUser) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.create_user_failed',
+        metadata: {
+          target_email: email,
+          reason: 'user_exists_in_public_users',
+        },
+      })
       console.log('User already exists in database:', email)
       return new Response(JSON.stringify({ error: 'User with this email already exists in database' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -97,6 +127,15 @@ serve(async (req) => {
       })
 
       if (createError) {
+        await insertAuditEvent({
+          actorUserId: user.id,
+          actorEmail: user.email ?? null,
+          eventType: 'admin.create_user_failed',
+          metadata: {
+            target_email: email,
+            reason: createError.message,
+          },
+        })
         console.error('Auth creation error:', createError)
         return new Response(JSON.stringify({ error: `Auth error: ${createError.message}` }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -118,6 +157,16 @@ serve(async (req) => {
       .single()
 
     if (existingUserById) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.create_user_failed',
+        recordId: userId,
+        metadata: {
+          target_email: email,
+          reason: 'user_exists_by_id_in_public_users',
+        },
+      })
       console.log('User already exists in database with this ID:', userId, existingUserById.email)
       return new Response(JSON.stringify({ error: 'User with this ID already exists in database' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -137,6 +186,16 @@ serve(async (req) => {
       }])
 
     if (dbError) {
+      await insertAuditEvent({
+        actorUserId: user.id,
+        actorEmail: user.email ?? null,
+        eventType: 'admin.create_user_failed',
+        recordId: userId,
+        metadata: {
+          target_email: email,
+          reason: dbError.message,
+        },
+      })
       console.error('Database insert error:', dbError)
       // If insert failed and we just created the auth user, clean it up
       if (!existingAuthUser) {
@@ -151,6 +210,18 @@ serve(async (req) => {
     }
 
     console.log('User successfully created:', email)
+
+    await insertAuditEvent({
+      actorUserId: user.id,
+      actorEmail: user.email ?? null,
+      eventType: 'admin.create_user',
+      recordId: userId,
+      metadata: {
+        target_email: email,
+        target_name: name,
+        is_admin,
+      },
+    })
 
     return new Response(JSON.stringify({ success: true, userId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

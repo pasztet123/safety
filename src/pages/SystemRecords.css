@@ -1,0 +1,241 @@
+.system-records-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.system-records-header {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.system-records-subtitle {
+  margin: 0.35rem 0 0;
+  color: #5b6672;
+  max-width: 52rem;
+}
+
+.system-records-actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.system-records-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.system-records-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid #d7e2ea;
+  background: linear-gradient(135deg, #f7fafc 0%, #eef4f8 100%);
+}
+
+.system-records-stat strong {
+  font-size: 2rem;
+  line-height: 1;
+  color: #16324f;
+}
+
+.system-records-stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #5b6672;
+}
+
+.system-records-stat-note {
+  color: #5b6672;
+  font-size: 0.9rem;
+}
+
+.system-records-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+.system-records-tabs {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.system-records-tab {
+  border: 1px solid #cdd8e1;
+  background: #f7fafc;
+  color: #17324d;
+  border-radius: 999px;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.system-records-tab.is-active {
+  background: #17324d;
+  border-color: #17324d;
+  color: #fff;
+}
+
+.system-records-filters {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.system-records-filters .filter-search-input {
+  max-width: 28rem;
+}
+
+.system-records-error,
+.system-records-empty {
+  padding: 1rem 1.2rem;
+}
+
+.system-records-error {
+  border-left: 4px solid #c0392b;
+  color: #7b241c;
+}
+
+.system-records-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.system-record-card {
+  padding: 1.2rem;
+  border: 1px solid #d7e2ea;
+  box-shadow: 0 14px 30px rgba(17, 37, 63, 0.06);
+}
+
+.system-record-card h3 {
+  margin: 0.55rem 0 1rem;
+  color: #13293d;
+}
+
+.system-record-card-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.system-record-badge,
+.system-record-type {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.65rem;
+}
+
+.system-record-badge {
+  background: #e3edf5;
+  color: #17324d;
+}
+
+.system-record-type {
+  background: #edf3d8;
+  color: #4d5d1a;
+}
+
+.operation-delete {
+  background: #f8dbd7;
+  color: #8a1f17;
+}
+
+.operation-update {
+  background: #e8eff8;
+  color: #194976;
+}
+
+.operation-insert {
+  background: #dff3e4;
+  color: #22643d;
+}
+
+.system-record-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.system-record-meta-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.system-record-meta-label {
+  font-size: 0.74rem;
+  color: #667788;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.system-record-details {
+  margin-top: 0.8rem;
+  border-top: 1px solid #e4ebf1;
+  padding-top: 0.8rem;
+}
+
+.system-record-details summary {
+  cursor: pointer;
+  color: #17324d;
+  font-weight: 600;
+}
+
+.system-record-details pre {
+  margin: 0.75rem 0 0;
+  padding: 0.9rem;
+  background: #0f1720;
+  color: #dde6ef;
+  border-radius: 12px;
+  overflow: auto;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 960px) {
+  .system-records-summary,
+  .system-record-meta-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .system-records-toolbar {
+    flex-direction: column;
+  }
+
+  .system-records-filters {
+    justify-content: stretch;
+    flex-direction: column;
+  }
+
+  .system-records-filters .filter-search-input {
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .system-records-actions,
+  .system-records-tabs,
+  .system-records-summary,
+  .system-record-meta-grid {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .system-record-card-topline {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

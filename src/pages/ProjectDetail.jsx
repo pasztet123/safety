@@ -67,6 +67,7 @@ export default function ProjectDetail() {
           attendees:meeting_attendees(name),
           photos:meeting_photos(photo_url)
         `)
+        .is('deleted_at', null)
         .eq('project_id', id)
         .eq('is_draft', false)
         .order('date', { ascending: false })
@@ -155,7 +156,11 @@ export default function ProjectDetail() {
 
   const handleDeleteMeeting = async (meetingId, topic) => {
     if (!confirm(`Delete meeting "${topic}"? This cannot be undone.`)) return
-    await supabase.from('meetings').delete().eq('id', meetingId)
+    const { error } = await supabase.from('meetings').delete().eq('id', meetingId)
+    if (error) {
+      alert('Error deleting meeting: ' + error.message)
+      return
+    }
     fetchMeetings()
   }
 

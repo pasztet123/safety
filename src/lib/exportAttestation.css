@@ -1,0 +1,135 @@
+.export-attestation-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 32, 0.62);
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.export-attestation-modal {
+  width: min(100%, 640px);
+  max-height: min(92vh, 760px);
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 18px;
+  box-shadow: 0 28px 90px rgba(15, 23, 32, 0.24);
+  border: 1px solid #d8e1e7;
+}
+
+.export-attestation-header {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid #e6edf2;
+}
+
+.export-attestation-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #18324a;
+}
+
+.export-attestation-header p {
+  margin: 0.45rem 0 0;
+  color: #5f6d7a;
+  font-size: 0.95rem;
+}
+
+.export-attestation-body {
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.export-attestation-docmeta {
+  background: linear-gradient(135deg, #f7fafc 0%, #edf3f7 100%);
+  border: 1px solid #dbe5ec;
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+
+.export-attestation-docmeta strong {
+  display: block;
+  color: #17324d;
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+}
+
+.export-attestation-docmeta span {
+  color: #5f6d7a;
+  font-size: 0.92rem;
+}
+
+.export-attestation-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid #d7e2ea;
+  background: #fcfdfe;
+}
+
+.export-attestation-check input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+}
+
+.export-attestation-check label {
+  color: #1b2e42;
+  line-height: 1.55;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.export-attestation-note {
+  font-size: 0.88rem;
+  color: #6a7784;
+}
+
+.export-attestation-footer {
+  padding: 16px 24px 22px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #e6edf2;
+}
+
+.export-attestation-btn {
+  border-radius: 999px;
+  border: 1px solid #ccd7df;
+  background: #ffffff;
+  color: #18324a;
+  padding: 0.72rem 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.export-attestation-btn:hover {
+  background: #f6f9fb;
+}
+
+.export-attestation-btn.primary {
+  background: #18324a;
+  border-color: #18324a;
+  color: #ffffff;
+}
+
+.export-attestation-btn.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .export-attestation-footer {
+    flex-direction: column-reverse;
+  }
+
+  .export-attestation-btn {
+    width: 100%;
+  }
+}

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
+import { DISCIPLINARY_ACTION_TYPES, SAFETY_VIOLATION_OPTIONS, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import { downloadDisciplinaryActionsListPDF } from '../lib/pdfBulkGenerator'
 import './DisciplinaryActions.css'
 
@@ -26,9 +26,12 @@ export default function DisciplinaryActions() {
   const [leaderFilter, setLeaderFilter] = useState('all')
   const [newAction, setNewAction] = useState({
     incident_id: presetIncidentId,
+    violation_type: '',
     ...createEmptyDisciplinaryAction(),
   })
   const [editForm, setEditForm] = useState({})
+
+  const normalizeId = (value) => String(value || '')
 
   useEffect(() => {
     loadData()
@@ -36,10 +39,17 @@ export default function DisciplinaryActions() {
 
   useEffect(() => {
     if (presetIncidentId) {
-      setNewAction(prev => ({ ...prev, incident_id: presetIncidentId }))
+      setNewAction(prev => {
+        const presetIncident = incidents.find(incident => normalizeId(incident.id) === normalizeId(presetIncidentId))
+        return {
+          ...prev,
+          incident_id: presetIncidentId,
+          violation_type: presetIncident?.safety_violation_type || prev.violation_type || '',
+        }
+      })
       setShowAddForm(true)
     }
-  }, [presetIncidentId])
+  }, [presetIncidentId, incidents])
 
   const loadData = async () => {
     setLoading(true)
@@ -101,7 +111,7 @@ export default function DisciplinaryActions() {
     if (!error) setLeaders(data || [])
   }
 
-  const getIncident = (incidentId) => incidents.find(incident => incident.id === incidentId)
+  const getIncident = (incidentId) => incidents.find(incident => normalizeId(incident.id) === normalizeId(incidentId))
   const getPersonName = (personId) => involvedPersons.find(person => person.id === personId)?.name || 'Unknown'
   const getLeaderName = (leaderId) => leaders.find(leader => leader.id === leaderId)?.name || 'Unknown'
 
@@ -131,24 +141,42 @@ export default function DisciplinaryActions() {
   }, [actions, searchTerm, actionTypeFilter, violationFilter, leaderFilter, incidents, involvedPersons, leaders])
 
   const validateAction = (action) => {
-    return Boolean(
-      action.incident_id &&
-      action.recipient_person_id &&
-      action.responsible_leader_id &&
-      action.action_type &&
-      action.action_date &&
-      action.action_time
-    )
+    if (!action.incident_id) return 'Select a safety violation incident'
+    if (!getIncident(action.incident_id)) return 'Selected safety violation incident is no longer available'
+    if (!action.violation_type) return 'Select a violation type'
+    if (!action.recipient_person_id) return 'Select a recipient'
+    if (!action.responsible_leader_id) return 'Select a responsible leader'
+    if (!action.action_type) return 'Select an action taken'
+    if (!action.action_date) return 'Select an action date'
+    if (!action.action_time) return 'Select an action time'
+
+    return ''
   }
 
   const handleAddAction = async () => {
-    if (!validateAction(newAction)) {
-      alert('Please complete all required disciplinary action fields')
+    const validationError = validateAction(newAction)
+    if (validationError) {
+      alert(validationError)
       return
     }
 
     setSaving(true)
     const { data: { user } } = await supabase.auth.getUser()
+    const { error: incidentUpdateError } = await supabase
+      .from('incidents')
+      .update({
+        safety_violation_type: newAction.violation_type,
+        updated_by: user?.id || null,
+      })
+      .eq('id', newAction.incident_id)
+
+    if (incidentUpdateError) {
+      setSaving(false)
+      console.error(incidentUpdateError)
+      alert('Unable to save violation type for the selected incident')
+      return
+    }
+
     const { error } = await supabase
       .from('disciplinary_actions')
       .insert([{
@@ -170,7 +198,8 @@ export default function DisciplinaryActions() {
       return
     }
 
-    setNewAction({ incident_id: presetIncidentId, ...createEmptyDisciplinaryAction() })
+    await fetchIncidents()
+    setNewAction({ incident_id: presetIncidentId, violation_type: '', ...createEmptyDisciplinaryAction() })
     setShowAddForm(false)
     await fetchActions()
   }
@@ -179,6 +208,7 @@ export default function DisciplinaryActions() {
     setEditingActionId(action.id)
     setEditForm({
       incident_id: action.incident_id,
+      violation_type: getIncident(action.incident_id)?.safety_violation_type || '',
       recipient_person_id: action.recipient_person_id,
       responsible_leader_id: action.responsible_leader_id,
       action_type: action.action_type,
@@ -189,12 +219,26 @@ export default function DisciplinaryActions() {
   }
 
   const handleSaveEdit = async (actionId) => {
-    if (!validateAction(editForm)) {
-      alert('Please complete all required disciplinary action fields')
+    const validationError = validateAction(editForm)
+    if (validationError) {
+      alert(validationError)
       return
     }
 
     const { data: { user } } = await supabase.auth.getUser()
+    const { error: incidentUpdateError } = await supabase
+      .from('incidents')
+      .update({
+        safety_violation_type: editForm.violation_type,
+        updated_by: user?.id || null,
+      })
+      .eq('id', editForm.incident_id)
+
+    if (incidentUpdateError) {
+      console.error(incidentUpdateError)
+      alert('Unable to save violation type for the selected incident')
+      return
+    }
 
     const { error } = await supabase
       .from('disciplinary_actions')
@@ -218,6 +262,7 @@ export default function DisciplinaryActions() {
 
     setEditingActionId(null)
     setEditForm({})
+    await fetchIncidents()
     await fetchActions()
   }
 
@@ -230,6 +275,8 @@ export default function DisciplinaryActions() {
   if (loading) {
     return <div className="loading">Loading disciplinary actions...</div>
   }
+
+  const selectedNewIncident = getIncident(newAction.incident_id)
 
   return (
     <div className="corrective-actions-page disciplinary-actions-page">
@@ -273,7 +320,19 @@ export default function DisciplinaryActions() {
           <div className="if-row-2">
             <div className="form-group">
               <label className="form-label">Safety violation incident *</label>
-              <select className="form-select" value={newAction.incident_id} onChange={e => setNewAction(prev => ({ ...prev, incident_id: e.target.value }))}>
+              <select
+                className="form-select"
+                value={newAction.incident_id}
+                onChange={e => {
+                  const incidentId = e.target.value
+                  const selectedIncident = getIncident(incidentId)
+                  setNewAction(prev => ({
+                    ...prev,
+                    incident_id: incidentId,
+                    violation_type: selectedIncident?.safety_violation_type || '',
+                  }))
+                }}
+              >
                 <option value="">Select incident</option>
                 {incidents.map(incident => (
                   <option key={incident.id} value={incident.id}>
@@ -283,8 +342,16 @@ export default function DisciplinaryActions() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Violation type</label>
-              <input className="form-input" value={getIncident(newAction.incident_id)?.safety_violation_type || ''} readOnly placeholder="Select incident first" />
+              <label className="form-label">Violation type *</label>
+              <select
+                className="form-select"
+                value={newAction.violation_type}
+                onChange={e => setNewAction(prev => ({ ...prev, violation_type: e.target.value }))}
+                disabled={!newAction.incident_id}
+              >
+                <option value="">Select violation type</option>
+                {SAFETY_VIOLATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+              </select>
             </div>
           </div>
           <div className="if-row-2">
@@ -382,7 +449,19 @@ export default function DisciplinaryActions() {
                       <div className="if-row-2">
                         <div className="form-group">
                           <label className="form-label">Incident *</label>
-                          <select className="form-select" value={editForm.incident_id} onChange={e => setEditForm(prev => ({ ...prev, incident_id: e.target.value }))}>
+                          <select
+                            className="form-select"
+                            value={editForm.incident_id}
+                            onChange={e => {
+                              const incidentId = e.target.value
+                              const selectedIncident = getIncident(incidentId)
+                              setEditForm(prev => ({
+                                ...prev,
+                                incident_id: incidentId,
+                                violation_type: selectedIncident?.safety_violation_type || '',
+                              }))
+                            }}
+                          >
                             {incidents.map(incidentOption => (
                               <option key={incidentOption.id} value={incidentOption.id}>
                                 {incidentOption.safety_violation_type || 'Safety violation'} - {incidentOption.employee_name}
@@ -423,8 +502,15 @@ export default function DisciplinaryActions() {
                           <input type="time" className="form-input" value={editForm.action_time} onChange={e => setEditForm(prev => ({ ...prev, action_time: e.target.value }))} />
                         </div>
                         <div className="form-group">
-                          <label className="form-label">Violation</label>
-                          <input className="form-input" readOnly value={getIncident(editForm.incident_id)?.safety_violation_type || ''} />
+                          <label className="form-label">Violation *</label>
+                          <select
+                            className="form-select"
+                            value={editForm.violation_type || ''}
+                            onChange={e => setEditForm(prev => ({ ...prev, violation_type: e.target.value }))}
+                          >
+                            <option value="">Select violation type</option>
+                            {SAFETY_VIOLATION_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                          </select>
                         </div>
                       </div>
                       <div className="form-group">

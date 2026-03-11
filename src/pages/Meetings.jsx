@@ -159,6 +159,7 @@ export default function Meetings() {
           project:projects(name),
           attendees:meeting_attendees(name)
         `)
+        .is('deleted_at', null)
         .eq('is_draft', true)
         .order('date', { ascending: false }))
 
@@ -190,6 +191,7 @@ export default function Meetings() {
           attendees:meeting_attendees(name),
           photos:meeting_photos(photo_url)
         `)
+        .is('deleted_at', null)
         .eq('is_draft', false)
         .order('date', { ascending: false })
         .order('time', { ascending: false }))
@@ -274,7 +276,11 @@ export default function Meetings() {
 
   const handleDeleteDraft = async (meetingId, topic) => {
     if (!confirm(`Delete draft "${topic}"? This cannot be undone.`)) return
-    await supabase.from('meetings').delete().eq('id', meetingId)
+    const { error } = await supabase.from('meetings').delete().eq('id', meetingId)
+    if (error) {
+      alert('Error deleting draft: ' + error.message)
+      return
+    }
     fetchDraftMeetings()
   }
 
@@ -426,6 +432,7 @@ export default function Meetings() {
     if (error) {
       alert('Error deleting meeting: ' + error.message)
     } else {
+      fetchDraftMeetings()
       fetchMeetings()
     }
   }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { isAuditSuperadminEmail } from '../lib/compliance'
 import './Layout.css'
 
 /* ── Nav items definition ── */
@@ -86,6 +87,19 @@ const NAV_ITEMS = [
       </svg>
     ),
   },
+  {
+    title: 'User Manual',
+    path: '/user-manual',
+    icon: (
+      <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+        <path d="M9 7h6"/>
+        <path d="M9 11h6"/>
+        <path d="M9 15h4"/>
+      </svg>
+    ),
+  },
 ]
 
 const ADMIN_NAV_ITEM = {
@@ -99,11 +113,25 @@ const ADMIN_NAV_ITEM = {
   ),
 }
 
+const SYSTEM_RECORDS_NAV_ITEM = {
+  title: 'System Records',
+  path: '/system-records',
+  icon: (
+    <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3h6"/>
+      <path d="M12 3v6"/>
+      <path d="M12 9a7 7 0 1 0 7 7"/>
+      <path d="M12 13v4l3 2"/>
+    </svg>
+  ),
+}
+
 export default function Layout({ children, session }) {
   const navigate = useNavigate()
   const location = useLocation()
   const [userName, setUserName] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
+  const [isAuditSuperadmin, setIsAuditSuperadmin] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const hamburgerRef = useRef(null)
 
@@ -134,15 +162,17 @@ export default function Layout({ children, session }) {
     if (user) {
       const { data } = await supabase
         .from('users')
-        .select('name, is_admin')
+        .select('name, is_admin, email')
         .eq('id', user.id)
         .single()
       
       if (data) {
         setUserName(data.name || user.email)
         setIsAdmin(data.is_admin || false)
+        setIsAuditSuperadmin(isAuditSuperadminEmail(data.email || user.email))
       } else {
         setUserName(user.email)
+        setIsAuditSuperadmin(isAuditSuperadminEmail(user.email))
       }
     }
   }
@@ -157,7 +187,11 @@ export default function Layout({ children, session }) {
     navigate(path)
   }
 
-  const navItems = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS
+  const navItems = [
+    ...NAV_ITEMS,
+    ...(isAdmin ? [ADMIN_NAV_ITEM] : []),
+    ...(isAuditSuperadmin ? [SYSTEM_RECORDS_NAV_ITEM] : []),
+  ]
 
   return (
     <div className="layout">
@@ -250,7 +284,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v8.1.1</span>
+          <span className="app-footer-version">v8.2.1</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.
