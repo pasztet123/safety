@@ -14,7 +14,7 @@ import {
   BASE_CSS, baseHTML, exportSummary, footer, field, section,
   ACCENT, PRIMARY, GRAY, BORDER,
 } from './pdfGenerator'
-import { createPdfExportContext } from './compliance'
+import { createPdfExportContext, generateClientUuid } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 import { supabase } from './supabase'
 
@@ -683,7 +683,7 @@ export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => 
 
   const zip = new JSZip()
   const total = meetings.length
-  const zipBatchId = crypto.randomUUID()
+  const zipBatchId = generateClientUuid()
 
   for (let i = 0; i < total; i++) {
     const m = meetings[i]

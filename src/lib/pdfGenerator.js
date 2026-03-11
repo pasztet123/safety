@@ -3,6 +3,7 @@ import html2canvas from 'html2canvas'
 import { createPdfExportContext } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 import { LEGAL_CONFIRMATION_CLAUSE } from './legal'
+import { generateClientUuid } from './compliance'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const ACCENT   = '#E53935'
@@ -341,7 +342,7 @@ export const exportSummary = (exportMeta) => {
 
 export const footer = (exportMeta) => {
   const exportedAtLabel = exportMeta?.generatedAtLabel || `${new Date().toISOString()} UTC`
-  const exportId = exportMeta?.exportId || 'Unavailable'
+  const exportId = exportMeta?.exportId || generateClientUuid()
   return `
     <div class="pdf-fixed-footer">
       <div class="pdf-footer">
