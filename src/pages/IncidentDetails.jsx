@@ -42,6 +42,7 @@ export default function IncidentDetails() {
     const { data, error } = await supabase
       .from('incidents')
       .select(`*, project:projects(name)`)
+      .is('deleted_at', null)
       .eq('id', id)
       .single()
 

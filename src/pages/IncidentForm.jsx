@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { LegalClauseNotice } from '../components/LegalNotice'
 import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
@@ -237,7 +238,7 @@ export default function IncidentForm() {
 
   const fetchIncident = async () => {
     setLoading(true)
-    const { data, error } = await supabase.from('incidents').select('*').eq('id', id).single()
+    const { data, error } = await supabase.from('incidents').select('*').is('deleted_at', null).eq('id', id).single()
     if (!error && data) {
       setFormData({
         project_id: data.project_id || '',
@@ -1094,6 +1095,7 @@ export default function IncidentForm() {
             Final Review
           </div>
           <div className="if-verification">
+            <LegalClauseNotice className="if-legal-note" />
             <label className="if-verify-item">
               <input type="checkbox" checked={confirmedAccurate} onChange={e => setConfirmedAccurate(e.target.checked)} />
               I confirm this report is accurate and complete

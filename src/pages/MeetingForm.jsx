@@ -5,6 +5,8 @@ import { scoreChecklist, tradeBadgeLabel } from '../lib/suggestChecklists'
 import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import TopicPicker from '../components/TopicPicker'
+import { JurisdictionWarningNotice, LegalClauseNotice } from '../components/LegalNotice'
+import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
 import { fetchTrades } from '../lib/trades'
 import './MeetingForm.css'
 
@@ -90,6 +92,12 @@ export default function MeetingForm() {
   // Draft-to-draft navigation context (passed via React Router state)
   const [draftNavIds, setDraftNavIds] = useState([])
   const [draftNavIndex, setDraftNavIndex] = useState(-1)
+
+  const meetingDateTimeMismatchDetails = getSystemDateTimeMismatchDetails({
+    date: formData.date,
+    time: formData.time,
+  })
+  const showJurisdictionWarning = meetingDateTimeMismatchDetails.length > 0
 
   useEffect(() => {
     // Reset the one-shot guard whenever we navigate to a different meeting
@@ -892,6 +900,15 @@ export default function MeetingForm() {
         return
       }
 
+      const requiresFinalApproval = !isDraft || approveModeRef.current
+      if (requiresFinalApproval && showJurisdictionWarning) {
+        const confirmed = confirm(`The selected meeting ${describeSystemDateTimeMismatch(meetingDateTimeMismatchDetails)} from the current system values. ${JURISDICTION_WARNING_MESSAGE}`)
+        if (!confirmed) {
+          setLoading(false)
+          return
+        }
+      }
+
       // ── Signature upload ──────────────────────────────────────────────
       let signatureUrl = id ? undefined : null  // undefined = preserve existing on edit
 
@@ -1654,6 +1671,12 @@ export default function MeetingForm() {
           {/* Verification */}
           <div className="mf-verification">
             <h4 className="mf-verify-title">Verification</h4>
+            {showJurisdictionWarning && (
+              <JurisdictionWarningNotice className="mf-legal-note">
+                The selected meeting {describeSystemDateTimeMismatch(meetingDateTimeMismatchDetails)} from the current system values. {JURISDICTION_WARNING_MESSAGE}
+              </JurisdictionWarningNotice>
+            )}
+            <LegalClauseNotice className="mf-legal-note" />
             <label className="mf-verify-item">
               <input type="checkbox" checked={formData.completed}
                 onChange={(e) => setFormData({ ...formData, completed: e.target.checked })} />

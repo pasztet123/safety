@@ -75,6 +75,7 @@ export default function CorrectiveActions() {
     const { data } = await supabase
       .from('incidents')
       .select('id, type_name, date, project_id, employee_name')
+      .is('deleted_at', null)
       .order('date', { ascending: false })
     if (data) setIncidents(data)
   }

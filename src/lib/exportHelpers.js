@@ -95,6 +95,7 @@ export const fetchIncidentsFull = async (filters = {}) => {
   let q = supabase
     .from('incidents')
     .select('*, project:projects(name)')
+    .is('deleted_at', null)
     .order('date', { ascending: false })
     .order('time', { ascending: false })
 
@@ -139,6 +140,7 @@ export const fetchIncidentsList = async () => {
   const { data } = await supabase
     .from('incidents')
     .select('id, type_name, date, project_id, employee_name')
+    .is('deleted_at', null)
     .order('date', { ascending: false })
   return data || []
 }

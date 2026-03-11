@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { createPdfExportContext } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
+import { LEGAL_CONFIRMATION_CLAUSE } from './legal'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const ACCENT   = '#E53935'
@@ -283,6 +284,7 @@ export const BASE_CSS = `
   /* sig block */
   .pdf-sig-block{display:grid;grid-template-columns:1fr 1fr;gap:0 32px;margin-top:28px;
                  border-top:1px solid ${BORDER};padding-top:18px}
+  .pdf-legal-clause{font-size:11px;line-height:1.6;color:${GRAY};background:#fafafa;border:1px solid ${BORDER};border-radius:8px;padding:10px 12px;margin-bottom:12px}
   .pdf-sig-line{border-bottom:1.5px solid #d1d5db;height:40px;margin-bottom:6px}
   .pdf-sig-caption{font-size:10px;color:${GRAY}}
 
@@ -347,14 +349,14 @@ export const footer = (exportMeta) => {
         <div>Exported ${escapeHtml(exportedAtLabel)}</div>
       </div>
       <div class="pdf-disclaimer">
-        This document was generated using safety management software and reflects information entered by authorized users.
-        The software provider does not independently verify the accuracy or completeness of the information contained herein.
-        Responsibility for the accuracy and completeness of this record rests with the meeting leader and any designated safety officer who created or approved it.
+        ${escapeHtml(LEGAL_CONFIRMATION_CLAUSE)}
         <div style="font-size:4px;line-height:1.2;margin-top:4px;color:#9ca3af">Print UUID: ${escapeHtml(exportId)}</div>
       </div>
     </div>
   `
 }
+
+export const pdfLegalClause = () => `<div class="pdf-legal-clause">${escapeHtml(LEGAL_CONFIRMATION_CLAUSE)}</div>`
 
 export const field = (label, value) => {
   if (!value) return ''
@@ -405,8 +407,8 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
   ` : ''
 
   const leaderSigHTML = meeting.signature_url
-    ? `<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
-    : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+    ? `${pdfLegalClause()}<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+    : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
   const td = meeting.topicDetails
   const topicSectionHTML = td ? section('Topic Guidelines', `
@@ -535,8 +537,8 @@ export const generateIncidentPDF = async (incident) => {
   const sevLabel = sev ? (SEV_LABELS[sev.toLowerCase()] || sev.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())) : ''
 
   const sigHTML = incident.signature_url
-    ? `<div style="margin-top:8px"><img src="${incident.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
-    : `<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Reporter signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+    ? `${pdfLegalClause()}<div style="margin-top:8px"><img src="${incident.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+    : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Reporter signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
   const photoHTML = incident.photo_url
     ? `<img src="${incident.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" />`
@@ -708,6 +710,7 @@ export const generateChecklistPDF = async (checklist, items) => {
       `) : ''}
       ${section('Checklist Items (' + sorted.length + ')', itemsHTML)}
       ${section('Sign-off', `
+        ${pdfLegalClause()}
         <div class="pdf-sig-block">
           <div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Completed by (signature)</div></div>
           <div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div>
@@ -802,6 +805,7 @@ export const generateChecklistCompletionPDF = async (data) => {
   const signatureUrl = data.completion?.signature_url
   const signatureHTML = (signerName || signatureUrl)
     ? section('Signature', `
+        ${pdfLegalClause()}
         <div class="pdf-fields">
           ${signerName ? field('Signed by', `${signerName}${signerType ? ` <span style="font-size:11px;color:#0369a1;background:#e0f2fe;border-radius:10px;padding:2px 8px;font-weight:600;text-transform:capitalize">${signerType}</span>` : ''}`) : ''}
         </div>

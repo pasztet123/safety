@@ -124,11 +124,13 @@ export default function PersonDetail() {
       supabase
         .from('incidents')
         .select('*, project:projects(name)')
+        .is('deleted_at', null)
         .ilike('employee_name', name)
         .order('date', { ascending: false }),
       supabase
         .from('incidents')
         .select('*, project:projects(name)')
+        .is('deleted_at', null)
         .ilike('reporter_name', name)
         .order('date', { ascending: false }),
     ])
@@ -157,6 +159,7 @@ export default function PersonDetail() {
         const { data: witnessIncidents } = await supabase
           .from('incidents')
           .select('*, project:projects(name)')
+          .is('deleted_at', null)
           .in('id', witnessIds)
           .order('date', { ascending: false })
 

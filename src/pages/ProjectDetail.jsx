@@ -105,6 +105,7 @@ export default function ProjectDetail() {
     const { data, error } = await supabase
       .from('incidents')
       .select('*')
+      .is('deleted_at', null)
       .eq('project_id', id)
       .order('date', { ascending: false })
       .order('time', { ascending: false })

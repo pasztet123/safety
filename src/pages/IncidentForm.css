@@ -278,6 +278,10 @@
   background: var(--color-hover);
 }
 
+.if-legal-note {
+  margin-bottom: 14px;
+}
+
 /* ── Narrative textarea ── */
 .if-narrative-area {
   min-height: 160px;

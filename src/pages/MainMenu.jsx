@@ -158,7 +158,7 @@ export default function MainMenu() {
         const [m, c, i, a, t] = await Promise.all([
           supabase.from('meetings').select('id', { count: 'exact', head: true }),
           supabase.from('checklist_completions').select('id', { count: 'exact', head: true }),
-          supabase.from('incidents').select('date').order('date', { ascending: false }).limit(1),
+          supabase.from('incidents').select('date').is('deleted_at', null).order('date', { ascending: false }).limit(1),
           supabase.from('corrective_actions').select('id', { count: 'exact', head: true }).eq('status', 'open'),
           supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('date', today),
         ])
@@ -184,6 +184,7 @@ export default function MainMenu() {
         supabase.from('meetings')
           .select('id', { count: 'exact', head: true }).gte('date', monthStart),
         supabase.from('incidents')
+          .is('deleted_at', null)
           .select('id', { count: 'exact', head: true }).gte('date', thirtyDaysAgo),
         supabase.from('disciplinary_actions')
           .select('id', { count: 'exact', head: true }),
@@ -212,6 +213,7 @@ export default function MainMenu() {
           .select('id, topic, leader_name, date')
           .order('date', { ascending: false }).limit(3),
         supabase.from('incidents')
+          .is('deleted_at', null)
           .select('id, type_name, employee_name, date')
           .order('date', { ascending: false }).limit(3),
         supabase.from('corrective_actions')

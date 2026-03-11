@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { JurisdictionWarningNotice, LegalClauseNotice } from './LegalNotice'
 import SignaturePad from './SignaturePad'
+import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
 import './ApproveDraftsModal.css'
 
 /**
@@ -29,6 +31,10 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   const overrideSigRefs = useRef({})
 
   const [saving, setSaving] = useState(false)
+
+  const draftsWithDateTimeMismatch = drafts.filter((draft) => (
+    getSystemDateTimeMismatchDetails({ date: draft.date, time: draft.time }).length > 0
+  ))
 
   useEffect(() => {
     loadLeaders()
@@ -122,6 +128,13 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
 
   // ── Approve ──────────────────────────────────────────────────────────────
   const handleApprove = async () => {
+    if (draftsWithDateTimeMismatch.length > 0) {
+      const confirmed = confirm(
+        `${draftsWithDateTimeMismatch.length} draft meeting${draftsWithDateTimeMismatch.length === 1 ? '' : 's'} use a date or time different from the current system values. ${JURISDICTION_WARNING_MESSAGE}`
+      )
+      if (!confirmed) return
+    }
+
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
@@ -188,6 +201,12 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
                     <span className="adm-meeting-topic">{d.topic}</span>
                     {d.project?.name && <span className="adm-meeting-proj">{d.project.name}</span>}
                     {ovr && <span className="adm-ovr-badge">override: {ovr.leaderName}</span>}
+                    {(() => {
+                      const mismatch = getSystemDateTimeMismatchDetails({ date: d.date, time: d.time })
+                      return mismatch.length > 0 ? (
+                        <span className="adm-jurisdiction-badge">{describeSystemDateTimeMismatch(mismatch)}</span>
+                      ) : null
+                    })()}
                   </div>
                   <button
                     type="button"
@@ -272,6 +291,14 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
           {/* ── Global leader ── */}
           <div className="adm-global-section">
             <h4 className="adm-section-label">Global Leader (applies to all meetings without override)</h4>
+
+            {draftsWithDateTimeMismatch.length > 0 && (
+              <JurisdictionWarningNotice className="adm-legal-note">
+                {draftsWithDateTimeMismatch.length} draft meeting{draftsWithDateTimeMismatch.length === 1 ? '' : 's'} use a date or time different from the current system values. {JURISDICTION_WARNING_MESSAGE}
+              </JurisdictionWarningNotice>
+            )}
+
+            <LegalClauseNotice className="adm-legal-note" />
 
             <div className="form-group">
               <label className="form-label">Leader</label>

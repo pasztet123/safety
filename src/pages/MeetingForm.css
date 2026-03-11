@@ -163,6 +163,10 @@
 
 .mf-accordion-body { padding: 4px 28px 24px; }
 
+.mf-legal-note {
+  margin-bottom: 14px;
+}
+
 /* ── Suggested bar ── */
 .mf-suggested-bar {
   display: flex;

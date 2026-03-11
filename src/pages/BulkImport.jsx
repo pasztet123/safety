@@ -182,6 +182,7 @@ export default function BulkImport() {
       const { data: { user } } = await supabase.auth.getUser()
       const toSave = draftMeetings.filter(d => !skippedDates.has(d.date))
       if (toSave.length === 0) { setSaving(false); return }
+      const failedDrafts = []
 
       // Generate a batch UUID (fallback for browsers without crypto.randomUUID)
       const batchId = (crypto.randomUUID
@@ -219,7 +220,8 @@ export default function BulkImport() {
             date: draft.date,
             time: draft.time,
             location: draft.location || null,
-            leader_name: null,  // intentionally blank — autoDetectLeader resolves on approval
+            // Drafts can be imported without a resolved leader, but the DB column is NOT NULL.
+            leader_name: '',
             trade: draft.trade || null,
             topic: draft.topic,
             notes: null,
@@ -233,28 +235,47 @@ export default function BulkImport() {
           .select()
           .single()
 
-        if (meetErr) { console.error('Error inserting draft:', meetErr); continue }
+        if (meetErr) {
+          console.error('Error inserting draft:', meetErr)
+          failedDrafts.push(`${draft.date}: ${meetErr.message}`)
+          continue
+        }
 
         // 3. Insert attendees
         if (draft.attendeeNames.length > 0) {
-          await supabase.from('meeting_attendees').insert(
+          const { error: attendeesErr } = await supabase.from('meeting_attendees').insert(
             draft.attendeeNames.map(name => ({
               meeting_id: meeting.id,
               name,
               signed_with_checkbox: false,
             }))
           )
+          if (attendeesErr) {
+            console.error('Error inserting attendees:', attendeesErr)
+            failedDrafts.push(`${draft.date} attendees: ${attendeesErr.message}`)
+          }
         }
         inserted++
       }
 
+      if (inserted === 0) {
+        throw new Error(failedDrafts[0] || 'No draft meetings were saved.')
+      }
+
       // 4. Log the import
-      await supabase.from('csv_imports').insert([{
+      const { error: importLogErr } = await supabase.from('csv_imports').insert([{
         project_id: projectId,
         imported_by: user.id,
         filename: fileName,
         meeting_count: inserted,
       }])
+      if (importLogErr) {
+        console.error('Error logging import:', importLogErr)
+      }
+
+      if (failedDrafts.length > 0) {
+        alert(`Imported ${inserted} drafts, but ${failedDrafts.length} item(s) failed. First error: ${failedDrafts[0]}`)
+      }
 
       setSaved(true)
       setTimeout(() => navigate('/meetings'), 1800)

@@ -312,6 +312,7 @@ export default function AdminPanel() {
           *,
           project:projects(name)
         `)
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (data) setIncidents(data)
     } else if (activeTab === 'users') {

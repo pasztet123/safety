@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { LegalClauseNotice } from '../components/LegalNotice'
 import { supabase } from '../lib/supabase'
 import SignaturePad from '../components/SignaturePad'
 import './ChecklistCompletion.css'
@@ -555,6 +556,7 @@ export default function ChecklistHistoryEdit() {
         {/* ── Signature ── */}
         <div className="form-section">
           <h3>Signature</h3>
+          <LegalClauseNotice className="cc-legal-note" />
           <div className="sig-type-toggle">
             <button
               type="button"

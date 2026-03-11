@@ -86,6 +86,7 @@ export default function DisciplinaryActions() {
     const { data, error } = await supabase
       .from('incidents')
       .select('id, type_name, date, time, employee_name, safety_violation_type, project:projects(name)')
+      .is('deleted_at', null)
       .eq('type_name', 'Safety violation')
       .order('date', { ascending: false })
       .order('time', { ascending: false })

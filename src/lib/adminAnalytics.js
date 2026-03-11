@@ -94,6 +94,7 @@ export const fetchAdminAnalyticsDataset = async ({ dateFrom, dateTo }) => {
   const incidentsQuery = supabase
     .from('incidents')
     .select('id, date, time, type_name, severity, employee_name, reporter_name, project:projects(name)')
+    .is('deleted_at', null)
     .order('date', { ascending: false })
     .order('time', { ascending: false })
 

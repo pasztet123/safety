@@ -88,6 +88,7 @@ export default function Incidents() {
         *,
         project:projects(name)
       `)
+      .is('deleted_at', null)
       .order('date', { ascending: false })
       .order('time', { ascending: false })
 

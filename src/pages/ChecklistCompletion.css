@@ -49,6 +49,10 @@
   transition: width 0.3s ease;
 }
 
+.cc-legal-note {
+  margin-bottom: 14px;
+}
+
 .completion-items-list {
   display: flex;
   flex-direction: column;

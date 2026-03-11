@@ -1,0 +1,35 @@
+.legal-notice {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fafafa;
+}
+
+.legal-notice--neutral {
+  background: #f8fafc;
+  border-color: #dbe3ea;
+}
+
+.legal-notice--warning {
+  background: #fff7ed;
+  border-color: #fdba74;
+}
+
+.legal-notice__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: var(--color-primary);
+}
+
+.legal-notice--warning .legal-notice__title {
+  color: #9a3412;
+}
+
+.legal-notice__body {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
