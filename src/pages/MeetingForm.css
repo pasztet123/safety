@@ -402,7 +402,7 @@
   box-shadow: var(--shadow-md);
   z-index: 100;
   overflow: hidden;
-  max-height: 240px;
+  max-height: 420px;
   overflow-y: auto;
 }
 

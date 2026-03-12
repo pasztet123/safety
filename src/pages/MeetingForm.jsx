@@ -1648,7 +1648,6 @@ export default function MeetingForm() {
                   {involvedPersons
                     .filter(p => !attendees.find(a => a.name === p.name) &&
                       (!attendeeSearch || p.name.toLowerCase().includes(attendeeSearch.toLowerCase())))
-                    .slice(0, 8)
                     .map(p => (
                       <button key={p.id} type="button" className="mf-attendee-option"
                         onMouseDown={(e) => { e.preventDefault(); addAttendeeFromPerson(p) }}>
