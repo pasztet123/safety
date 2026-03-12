@@ -157,6 +157,13 @@ export default function TopicPicker({ topics = [], selectedTrade = '', featuredC
     setSearch('')
   }
 
+  const handleClear = (e) => {
+    e.stopPropagation()
+    onChange('')
+    setOpen(false)
+    setSearch('')
+  }
+
   const TopicRow = ({ t, showCategory = false }) => {
     const tradeMatch = selectedTrade && Array.isArray(t.trades) && t.trades.includes(selectedTrade)
     return (
@@ -194,34 +201,46 @@ export default function TopicPicker({ topics = [], selectedTrade = '', featuredC
   return (
     <div className="tp-container" ref={containerRef}>
       {/* ── Trigger ── */}
-      <button
-        type="button"
-        className={['tp-trigger', open ? 'is-open' : '', isPlaceholder ? 'is-placeholder' : '']
-          .filter(Boolean)
-          .join(' ')}
-        onClick={() => setOpen(v => !v)}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-      >
-        {isPlaceholder ? (
-          <span className="tp-trigger-placeholder">Select a topic…</span>
-        ) : (
-          <span className="tp-trigger-text">
-            {value === 'custom' ? (
-              <em style={{ color: '#6b7280', fontStyle: 'normal' }}>+ Custom Topic</em>
-            ) : (
-              selectedLabel
-            )}
-          </span>
+      <div className="tp-trigger-wrap">
+        <button
+          type="button"
+          className={['tp-trigger', open ? 'is-open' : '', isPlaceholder ? 'is-placeholder' : '', value ? 'has-clear' : '']
+            .filter(Boolean)
+            .join(' ')}
+          onClick={() => setOpen(v => !v)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          {isPlaceholder ? (
+            <span className="tp-trigger-placeholder">Select a topic…</span>
+          ) : (
+            <span className="tp-trigger-text">
+              {value === 'custom' ? (
+                <em style={{ color: '#6b7280', fontStyle: 'normal' }}>+ Custom Topic</em>
+              ) : (
+                selectedLabel
+              )}
+            </span>
+          )}
+          <svg className="tp-chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path
+              fillRule="evenodd"
+              d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </button>
+        {value && (
+          <button
+            type="button"
+            className="tp-trigger-clear"
+            aria-label="Clear selected topic"
+            onClick={handleClear}
+          >
+            ×
+          </button>
         )}
-        <svg className="tp-chevron" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path
-            fillRule="evenodd"
-            d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06z"
-            clipRule="evenodd"
-          />
-        </svg>
-      </button>
+      </div>
 
       {/* ── Panel ── */}
       {open && (

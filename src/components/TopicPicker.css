@@ -9,6 +9,10 @@
   width: 100%;
 }
 
+.tp-trigger-wrap {
+  position: relative;
+}
+
 /* ────────────────────────────────────────────────────
    Trigger button
 ──────────────────────────────────────────────────── */
@@ -29,6 +33,10 @@
   text-align: left;
   transition: border-color 0.15s, box-shadow 0.15s;
   gap: 8px;
+}
+
+.tp-trigger.has-clear {
+  padding-right: 72px;
 }
 
 .tp-trigger:hover {
@@ -59,6 +67,38 @@
   white-space: nowrap;
   color: #9ca3af;
   font-weight: 400;
+}
+
+.tp-trigger-clear {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.tp-trigger.has-clear .tp-chevron {
+  margin-right: 28px;
+}
+
+.tp-trigger-clear:hover,
+.tp-trigger-clear:focus-visible {
+  background: #eef2f7;
+  color: #334155;
+  outline: none;
 }
 
 .tp-chevron {

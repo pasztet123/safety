@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatElapsedSince, getToolboxMeetingReminderForCurrentUser } from '../lib/personProfiles'
 import './MainMenu.css'
 
 /* ── Icons ── */
@@ -122,6 +123,8 @@ const readingTime = (text) => {
 export default function MainMenu() {
   const navigate = useNavigate()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [toolboxReminder, setToolboxReminder] = useState(null)
+  const [showToolboxReminder, setShowToolboxReminder] = useState(false)
   const [stats, setStats] = useState({
     meetings: '—', daysSafe: '—', checklists: '—', openActions: '—', todayMeetings: 0,
   })
@@ -134,7 +137,7 @@ export default function MainMenu() {
   useEffect(() => {
         const initAuth = async () => {
           const { data: { user } } = await supabase.auth.getUser()
-          if (!user) return false
+          if (!user) return { isAdmin: false, userId: null }
 
           const { data } = await supabase
             .from('users')
@@ -144,7 +147,7 @@ export default function MainMenu() {
 
           const admin = data?.is_admin || false
           setIsAdmin(admin)
-          return admin
+          return { isAdmin: admin, userId: user.id }
         }
 
     const today = new Date().toISOString().split('T')[0]
@@ -251,12 +254,26 @@ export default function MainMenu() {
       setRecentActivity(merged)
     }
 
+    const maybeShowToolboxReminder = async (userId) => {
+      if (!userId) return
+
+      const reminder = await getToolboxMeetingReminderForCurrentUser(userId)
+      if (!reminder?.shouldRemind) return
+
+      const dismissKey = `toolbox-reminder:${reminder.profileId}:${reminder.latestMeetingAt || 'none'}`
+      if (window.sessionStorage.getItem(dismissKey)) return
+
+      setToolboxReminder({ ...reminder, dismissKey })
+      setShowToolboxReminder(true)
+    }
+
     const init = async () => {
-      const admin = await initAuth()
+      const authContext = await initAuth()
       fetchStats()
       fetchExtraStats()
       fetchSpotlight()
-      if (admin) await fetchActivity()
+      await maybeShowToolboxReminder(authContext.userId)
+      if (authContext.isAdmin) await fetchActivity()
     }
 
     init()
@@ -320,8 +337,52 @@ export default function MainMenu() {
     },
   ]
 
+  const dismissToolboxReminder = () => {
+    if (toolboxReminder?.dismissKey) {
+      window.sessionStorage.setItem(toolboxReminder.dismissKey, '1')
+    }
+    setShowToolboxReminder(false)
+  }
+
   return (
     <div className="main-menu">
+      {showToolboxReminder && toolboxReminder && (
+        <div className="toolbox-reminder-overlay" onClick={dismissToolboxReminder}>
+          <div className="toolbox-reminder-card" onClick={(event) => event.stopPropagation()}>
+            <div className="toolbox-reminder-head">
+              <span className="toolbox-reminder-eyebrow">Toolbox Reminder</span>
+              <button className="toolbox-reminder-close" onClick={dismissToolboxReminder} aria-label="Dismiss toolbox reminder">
+                ×
+              </button>
+            </div>
+            <h3 className="toolbox-reminder-title">A new toolbox meeting is due for {toolboxReminder.displayName}.</h3>
+            <p className="toolbox-reminder-copy">
+              {toolboxReminder.latestMeetingAt
+                ? `The last non-deleted toolbox meeting linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${new Date(toolboxReminder.latestMeetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}.`
+                : 'No previous non-deleted toolbox meeting was found for this linked user.'}
+            </p>
+            <div className="toolbox-reminder-stats">
+              <div className="toolbox-reminder-stat">
+                <span className="toolbox-reminder-stat-label">Meetings linked</span>
+                <strong>{toolboxReminder.meetingCount}</strong>
+              </div>
+              <div className="toolbox-reminder-stat">
+                <span className="toolbox-reminder-stat-label">Elapsed</span>
+                <strong>{toolboxReminder.latestMeetingAt ? `${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago` : 'No record'}</strong>
+              </div>
+            </div>
+            <div className="toolbox-reminder-actions">
+              <button className="btn" onClick={dismissToolboxReminder}>Dismiss</button>
+              <button className="btn btn-primary" onClick={() => {
+                dismissToolboxReminder()
+                navigate('/meetings/new')
+              }}>
+                Schedule Toolbox Meeting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── KPI row ── */}
       <div className="stats-row">

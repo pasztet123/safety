@@ -5,6 +5,103 @@
   padding: 32px 0 0;
 }
 
+.toolbox-reminder-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1450;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(3px);
+}
+
+.toolbox-reminder-card {
+  width: min(560px, 100%);
+  border-radius: 24px;
+  background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+  border: 1px solid rgba(234, 88, 12, 0.16);
+  box-shadow: 0 32px 80px rgba(15, 23, 42, 0.24);
+  padding: 24px;
+}
+
+.toolbox-reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toolbox-reminder-eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #c2410c;
+}
+
+.toolbox-reminder-close {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--color-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.toolbox-reminder-title {
+  margin: 14px 0 8px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--color-primary);
+}
+
+.toolbox-reminder-copy {
+  margin: 0;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.toolbox-reminder-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.toolbox-reminder-stat {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.toolbox-reminder-stat-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-secondary);
+}
+
+.toolbox-reminder-stat strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.toolbox-reminder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
 /* ── Stats row ── */
 .stats-row {
   display: grid;
@@ -180,6 +277,9 @@
   .menu-grid  { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .menu-item  { padding: 22px 12px 18px; }
   .menu-label { font-size: 14px; }
+  .toolbox-reminder-card { padding: 20px; border-radius: 20px; }
+  .toolbox-reminder-stats { grid-template-columns: 1fr; }
+  .toolbox-reminder-actions { flex-direction: column-reverse; }
 }
 
 /* ── Safety Spotlight ── */

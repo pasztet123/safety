@@ -3,6 +3,12 @@ import { useNavigate } from 'react-router-dom'
 import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import { resolveMeetingLeader } from '../lib/meetingLeader'
+import {
+  fetchPersonLinkCandidates,
+  formatElapsedSince,
+  savePersonLink,
+  syncPersonProfileToLinkedRecords,
+} from '../lib/personProfiles'
 import SignaturePad from '../components/SignaturePad'
 import AdminAnalyticsDashboard from '../components/AdminAnalyticsDashboard'
 import './AdminPanel.css'
@@ -120,6 +126,15 @@ export default function AdminPanel() {
   const [users, setUsers] = useState([])
   const [leaders, setLeaders] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
+  const [personLinkCandidates, setPersonLinkCandidates] = useState([])
+  const [activeLinkCandidateKey, setActiveLinkCandidateKey] = useState('')
+  const [personLinkDrafts, setPersonLinkDrafts] = useState({})
+  const [personLinkBusy, setPersonLinkBusy] = useState(false)
+  const [personLinkSectionOpen, setPersonLinkSectionOpen] = useState({
+    users: false,
+    leaders: false,
+    'involved-persons': false,
+  })
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
   const [userFilters, setUserFilters] = useState({ ...EMPTY_PROFILE_FILTERS })
@@ -347,6 +362,371 @@ export default function AdminPanel() {
     if (data) setCompanies(data)
   }
 
+  const loadPersonLinkCandidates = async () => {
+    const data = await fetchPersonLinkCandidates()
+    setPersonLinkCandidates(data)
+  }
+
+  const getLinkSourceOptions = (candidate, draft) => {
+    const options = []
+
+    const selectedUser = candidate.users.find((user) => user.id === draft.selectedUserId)
+    const selectedLeader = candidate.leaders.find((leader) => leader.id === draft.selectedLeaderId)
+    const selectedInvolvedPerson = candidate.involvedPersons.find((person) => person.id === draft.selectedInvolvedPersonId)
+
+    if (selectedUser) options.push({ key: 'user', label: `User: ${selectedUser.name}`, record: selectedUser })
+    if (selectedLeader) options.push({ key: 'leader', label: `Meeting worker: ${selectedLeader.name}`, record: selectedLeader })
+    if (selectedInvolvedPerson) options.push({ key: 'worker', label: `Worker/Sub: ${selectedInvolvedPerson.name}`, record: selectedInvolvedPerson })
+    if (candidate.currentProfile) options.push({ key: 'profile', label: `Existing shared profile: ${candidate.currentProfile.display_name}`, record: candidate.currentProfile })
+
+    return options
+  }
+
+  const applyLinkSourceToDraft = (candidate, draft, sourceKey) => {
+    const sourceOption = getLinkSourceOptions(candidate, draft).find((option) => option.key === sourceKey)
+    const sourceRecord = sourceOption?.record || candidate.currentProfile || null
+
+    return {
+      ...draft,
+      sourceKey: sourceOption?.key || sourceKey,
+      sharedEmail: sourceRecord?.email || candidate.currentProfile?.email || '',
+      sharedPhone: sourceRecord?.phone || candidate.currentProfile?.phone || '',
+      sharedSignatureUrl: sourceRecord?.default_signature_url || candidate.currentProfile?.default_signature_url || '',
+    }
+  }
+
+  const buildPersonLinkDraft = (candidate) => {
+    const initialDraft = {
+      selectedUserId: candidate.users[0]?.id || '',
+      selectedLeaderId: candidate.leaders[0]?.id || '',
+      selectedInvolvedPersonId: candidate.involvedPersons[0]?.id || '',
+      sourceKey: candidate.currentProfile ? 'profile' : candidate.users[0] ? 'user' : candidate.leaders[0] ? 'leader' : 'worker',
+      sharedEmail: '',
+      sharedPhone: '',
+      sharedSignatureUrl: '',
+    }
+
+    return applyLinkSourceToDraft(candidate, initialDraft, initialDraft.sourceKey)
+  }
+
+  const getPersonLinkDraft = (candidate) => personLinkDrafts[candidate.normalizedName] || buildPersonLinkDraft(candidate)
+
+  const updatePersonLinkDraft = (candidate, updates) => {
+    setPersonLinkDrafts((prev) => {
+      const current = prev[candidate.normalizedName] || buildPersonLinkDraft(candidate)
+      const next = { ...current, ...updates }
+      const sourceOptions = getLinkSourceOptions(candidate, next)
+      const sourceStillExists = sourceOptions.some((option) => option.key === next.sourceKey)
+      const sourceKey = updates.sourceKey || (sourceStillExists ? next.sourceKey : sourceOptions[0]?.key || 'profile')
+
+      const finalDraft = updates.sourceKey || !sourceStillExists
+        ? applyLinkSourceToDraft(candidate, next, sourceKey)
+        : next
+
+      return {
+        ...prev,
+        [candidate.normalizedName]: finalDraft,
+      }
+    })
+  }
+
+  const toggleLinkCandidate = (candidate) => {
+    setActiveLinkCandidateKey((prev) => (prev === candidate.normalizedName ? '' : candidate.normalizedName))
+    setPersonLinkDrafts((prev) => {
+      if (prev[candidate.normalizedName]) return prev
+      return {
+        ...prev,
+        [candidate.normalizedName]: buildPersonLinkDraft(candidate),
+      }
+    })
+  }
+
+  const handleSavePersonLink = async (candidate) => {
+    const draft = getPersonLinkDraft(candidate)
+
+    if (!draft.selectedUserId && !draft.selectedLeaderId && !draft.selectedInvolvedPersonId) {
+      alert('Select at least one record to link into a shared profile.')
+      return
+    }
+
+    setPersonLinkBusy(true)
+    try {
+      await savePersonLink({
+        selectedUserId: draft.selectedUserId || null,
+        selectedLeaderId: draft.selectedLeaderId || null,
+        selectedInvolvedPersonId: draft.selectedInvolvedPersonId || null,
+        currentProfileId: candidate.currentProfile?.id || null,
+        attendeeNames: candidate.attendee.variants,
+        fallbackName: candidate.displayName,
+        sourceType: draft.sourceKey,
+        sharedEmail: draft.sharedEmail,
+        sharedPhone: draft.sharedPhone,
+        sharedSignatureUrl: draft.sharedSignatureUrl,
+      })
+      await loadPersonLinkCandidates()
+      alert(`Shared person profile saved for ${candidate.displayName}.`)
+    } catch (error) {
+      alert(`Error linking records: ${error.message}`)
+    } finally {
+      setPersonLinkBusy(false)
+    }
+  }
+
+  const handleSyncPersonLink = async (candidate) => {
+    if (!candidate.currentProfile?.id) return
+
+    setPersonLinkBusy(true)
+    try {
+      await syncPersonProfileToLinkedRecords(candidate.currentProfile.id)
+      await loadPersonLinkCandidates()
+      alert(`Linked records synchronized for ${candidate.displayName}.`)
+    } catch (error) {
+      alert(`Error syncing linked records: ${error.message}`)
+    } finally {
+      setPersonLinkBusy(false)
+    }
+  }
+
+  const formatAdminDateTime = (value) => {
+    if (!value) return 'Never'
+    const parsed = new Date(value)
+    if (Number.isNaN(parsed.getTime())) return 'Unknown'
+    return parsed.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  }
+
+  const togglePersonLinkSection = (sectionKey) => {
+    setPersonLinkSectionOpen((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }))
+  }
+
+  const renderPersonLinkFeature = ({ sectionKey, heading, candidates, emptyMessage }) => {
+    const isOpen = personLinkSectionOpen[sectionKey]
+
+    return (
+      <div className={`person-link-embedded ${isOpen ? 'is-open' : ''}`}>
+        <button
+          type="button"
+          className={`person-link-toggle ${isOpen ? 'is-open' : ''}`}
+          onClick={() => togglePersonLinkSection(sectionKey)}
+          aria-expanded={isOpen}
+        >
+          <div className="person-link-toggle-copy">
+            <div className="person-link-toggle-title-row">
+              <h4 className="section-title person-link-embedded-title">{heading}</h4>
+              <span className="person-link-toggle-count">{candidates.length}</span>
+            </div>
+            <p className="person-link-embedded-copy">Suggestions are grouped by exact normalized first and last name. Nothing is linked automatically.</p>
+          </div>
+          <span className="person-link-toggle-actions">
+            <span className="person-link-toggle-hint">{isOpen ? 'Hide' : 'Show'}</span>
+            <span className="person-link-toggle-chevron">⌄</span>
+          </span>
+        </button>
+
+        {isOpen && (
+          <div className="person-link-embedded-body">
+            <div className="person-link-embedded-toolbar">
+              <button className="btn btn-secondary" onClick={loadPersonLinkCandidates} disabled={personLinkBusy}>
+                Refresh Suggestions
+              </button>
+            </div>
+
+            {candidates.length === 0 ? (
+              <p className="person-link-empty">{emptyMessage}</p>
+            ) : (
+              <div className="person-link-list">
+          {candidates.map((candidate) => {
+            const expanded = activeLinkCandidateKey === candidate.normalizedName
+            const draft = getPersonLinkDraft(candidate)
+            const sourceOptions = getLinkSourceOptions(candidate, draft)
+
+            return (
+              <div
+                key={candidate.normalizedName}
+                className={`person-link-card ${candidate.hasConflict ? 'is-conflict' : ''} ${candidate.currentProfile ? 'is-linked' : ''}`}
+              >
+                <div className="person-link-card-header">
+                  <div>
+                    <div className="person-link-title-row">
+                      <h4>{candidate.displayName}</h4>
+                      {candidate.hasConflict ? (
+                        <span className="person-link-status status-conflict">Conflict</span>
+                      ) : candidate.currentProfile ? (
+                        <span className="person-link-status status-linked">Linked</span>
+                      ) : (
+                        <span className="person-link-status status-review">Needs Review</span>
+                      )}
+                    </div>
+                    <p className="person-link-subtitle">Exact name match suggestion: {candidate.displayName}</p>
+                  </div>
+                  <button className="btn-icon" onClick={() => toggleLinkCandidate(candidate)}>
+                    {expanded ? 'Hide' : 'Review'}
+                  </button>
+                </div>
+
+                <div className="person-link-summary-grid">
+                  <div className="person-link-summary-item">
+                    <span className="person-link-summary-label">Users</span>
+                    <strong>{candidate.users.length}</strong>
+                  </div>
+                  <div className="person-link-summary-item">
+                    <span className="person-link-summary-label">Meeting Workers</span>
+                    <strong>{candidate.leaders.length}</strong>
+                  </div>
+                  <div className="person-link-summary-item">
+                    <span className="person-link-summary-label">Workers & Subs</span>
+                    <strong>{candidate.involvedPersons.length}</strong>
+                  </div>
+                  <div className="person-link-summary-item">
+                    <span className="person-link-summary-label">Toolbox Meetings</span>
+                    <strong>{candidate.totalMeetingCount}</strong>
+                  </div>
+                </div>
+
+                <div className="person-link-summary-meta">
+                  <span>Last meeting: {formatAdminDateTime(candidate.overallLastMeetingAt)}</span>
+                  {candidate.overallLastMeetingAt && (
+                    <span>{formatElapsedSince(candidate.overallLastMeetingAt)} ago</span>
+                  )}
+                  {candidate.currentProfile && (
+                    <span>Shared profile: {candidate.currentProfile.display_name}</span>
+                  )}
+                </div>
+
+                {candidate.attendee.variants.length > 0 && (
+                  <div className="person-link-variants">
+                    {candidate.attendee.variants.map((variant) => (
+                      <span key={variant} className="person-link-variant-chip">{variant}</span>
+                    ))}
+                  </div>
+                )}
+
+                {expanded && (
+                  <div className="person-link-editor">
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>User</label>
+                        <select
+                          value={draft.selectedUserId}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { selectedUserId: event.target.value })}
+                        >
+                          <option value="">No linked user</option>
+                          {candidate.users.map((user) => (
+                            <option key={user.id} value={user.id}>{user.name} · {user.email}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Worker Performing the Meeting</label>
+                        <select
+                          value={draft.selectedLeaderId}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { selectedLeaderId: event.target.value })}
+                        >
+                          <option value="">No linked meeting worker</option>
+                          {candidate.leaders.map((leader) => (
+                            <option key={leader.id} value={leader.id}>{leader.name}{leader.email ? ` · ${leader.email}` : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Worker / Sub</label>
+                        <select
+                          value={draft.selectedInvolvedPersonId}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { selectedInvolvedPersonId: event.target.value })}
+                        >
+                          <option value="">No linked worker/sub</option>
+                          {candidate.involvedPersons.map((person) => (
+                            <option key={person.id} value={person.id}>{person.name}{person.email ? ` · ${person.email}` : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Source of Truth</label>
+                        <select
+                          value={draft.sourceKey}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { sourceKey: event.target.value })}
+                        >
+                          {sourceOptions.map((option) => (
+                            <option key={option.key} value={option.key}>{option.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label>Shared Email</label>
+                        <input
+                          type="email"
+                          value={draft.sharedEmail}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { sharedEmail: event.target.value })}
+                          placeholder="Shared email for linked records"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Shared Phone</label>
+                        <input
+                          type="tel"
+                          value={draft.sharedPhone}
+                          onChange={(event) => updatePersonLinkDraft(candidate, { sharedPhone: event.target.value })}
+                          placeholder="Shared phone for linked records"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="person-link-signature-panel">
+                      <div>
+                        <span className="person-link-summary-label">Shared Default Signature</span>
+                        <div className="person-link-signature-state">
+                          {draft.sharedSignatureUrl ? 'Linked signature will be synchronized.' : 'No default signature on the selected source.'}
+                        </div>
+                      </div>
+                      {draft.sharedSignatureUrl && (
+                        <img className="person-link-signature-preview" src={draft.sharedSignatureUrl} alt={`Default signature for ${candidate.displayName}`} />
+                      )}
+                    </div>
+
+                    <div className="person-link-actions-row">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        disabled={personLinkBusy}
+                        onClick={() => handleSavePersonLink(candidate)}
+                      >
+                        {personLinkBusy ? 'Saving...' : 'Link & Sync'}
+                      </button>
+                      {candidate.currentProfile?.id && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={personLinkBusy}
+                          onClick={() => handleSyncPersonLink(candidate)}
+                        >
+                          Sync Linked Records
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const fetchData = async () => {
     setLoading(true)
 
@@ -376,23 +756,35 @@ export default function AdminPanel() {
         .order('created_at', { ascending: false })
       if (data) setIncidents(data)
     } else if (activeTab === 'users') {
-      const { data } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false })
+      const [{ data }, candidates] = await Promise.all([
+        supabase
+          .from('users')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        fetchPersonLinkCandidates(),
+      ])
       if (data) setUsers(data)
+      setPersonLinkCandidates(candidates)
     } else if (activeTab === 'leaders') {
-      const { data } = await supabase
-        .from('leaders')
-        .select('*')
-        .order('name')
+      const [{ data }, candidates] = await Promise.all([
+        supabase
+          .from('leaders')
+          .select('*')
+          .order('name'),
+        fetchPersonLinkCandidates(),
+      ])
       if (data) setLeaders(data)
+      setPersonLinkCandidates(candidates)
     } else if (activeTab === 'involved-persons') {
-      const { data } = await supabase
-        .from('involved_persons')
-        .select('*, company:companies(name)')
-        .order('name')
+      const [{ data }, candidates] = await Promise.all([
+        supabase
+          .from('involved_persons')
+          .select('*, company:companies(name)')
+          .order('name'),
+        fetchPersonLinkCandidates(),
+      ])
       if (data) setInvolvedPersons(data)
+      setPersonLinkCandidates(candidates)
     } else if (activeTab === 'companies') {
       const { data } = await supabase
         .from('companies')
@@ -1195,16 +1587,22 @@ export default function AdminPanel() {
     includeSignature: true,
   }))
 
+  const userLinkCandidates = personLinkCandidates.filter((candidate) => candidate.users.length > 0)
+
   const filteredLeaders = leaders.filter((leader) => profileMatchesMissingFilters(leader, leaderFilters, {
     includePhone: true,
     includeSignature: true,
   }))
+
+  const leaderLinkCandidates = personLinkCandidates.filter((candidate) => candidate.leaders.length > 0)
 
   const filteredInvolvedPersons = involvedPersons.filter((person) => profileMatchesMissingFilters(person, involvedPersonFilters, {
     includePhone: true,
     includeCompany: true,
     includeSignature: true,
   }))
+
+  const involvedPersonLinkCandidates = personLinkCandidates.filter((candidate) => candidate.involvedPersons.length > 0)
 
   const formatFilteredCount = (filteredCount, totalCount) => (
     filteredCount === totalCount ? `${totalCount}` : `${filteredCount} of ${totalCount}`
@@ -1359,6 +1757,13 @@ export default function AdminPanel() {
 
               {renderProfileFilters(userFilters, setUserFilters, {
                 includeSignature: true,
+              })}
+
+              {renderPersonLinkFeature({
+                sectionKey: 'users',
+                heading: 'Link Users',
+                candidates: userLinkCandidates,
+                emptyMessage: 'No user-linked suggestions need review right now.',
               })}
 
               {editingUser && (
@@ -1568,6 +1973,13 @@ export default function AdminPanel() {
                 includeSignature: true,
               })}
 
+              {renderPersonLinkFeature({
+                sectionKey: 'leaders',
+                heading: 'Link Workers Performing the Meetings',
+                candidates: leaderLinkCandidates,
+                emptyMessage: 'No meeting-worker suggestions need review right now.',
+              })}
+
               {showLeaderForm && (
                 <form className="form-card" onSubmit={handleAddLeader}>
                   <h4>Add New Worker Performing the Meeting</h4>
@@ -1722,6 +2134,13 @@ export default function AdminPanel() {
                 includePhone: true,
                 includeCompany: true,
                 includeSignature: true,
+              })}
+
+              {renderPersonLinkFeature({
+                sectionKey: 'involved-persons',
+                heading: 'Link Workers & Subs',
+                candidates: involvedPersonLinkCandidates,
+                emptyMessage: 'No worker/sub suggestions need review right now.',
               })}
 
               {showInvolvedPersonForm && (

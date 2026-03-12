@@ -9,6 +9,149 @@ import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
 import './Meetings.css'
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
+
+const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
+
+const getProjectName = (meeting) => meeting?.project?.name || ''
+const getLocationName = (meeting) => meeting?.location || ''
+
+const getMeetingMinutes = (meeting) => {
+  const rawTime = (meeting?.time || '').trim()
+  const match = rawTime.match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return null
+
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+
+  return (hours * 60) + minutes
+}
+
+const getTimestampValue = (meeting, field = 'date-time-desc') => {
+  const baseValue = field === 'created-asc' || field === 'created-desc'
+    ? meeting?.created_at
+    : meeting?.date
+
+  if (!baseValue) return 0
+
+  const timeValue = field === 'created-asc' || field === 'created-desc'
+    ? ''
+    : (meeting?.time || '00:00')
+
+  const parsed = new Date(`${baseValue}${timeValue ? `T${timeValue}` : ''}`)
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
+
+const compareText = (left, right, direction = 'asc') => {
+  const result = String(left || '').localeCompare(String(right || ''), 'en', { sensitivity: 'base' })
+  return direction === 'desc' ? -result : result
+}
+
+const compareNumber = (left, right, direction = 'desc') => {
+  const safeLeft = Number.isFinite(left) ? left : -Infinity
+  const safeRight = Number.isFinite(right) ? right : -Infinity
+  return direction === 'asc' ? safeLeft - safeRight : safeRight - safeLeft
+}
+
+const matchesTimeRange = (meeting, timeRange) => {
+  if (!timeRange) return true
+
+  const minutes = getMeetingMinutes(meeting)
+  if (minutes == null) return false
+
+  switch (timeRange) {
+    case 'before-06': return minutes < 360
+    case 'morning': return minutes >= 360 && minutes < 720
+    case 'midday': return minutes >= 720 && minutes < 900
+    case 'afternoon': return minutes >= 900 && minutes < 1080
+    case 'evening': return minutes >= 1080 && minutes < 1320
+    case 'night': return minutes >= 1320 || minutes < 360
+    default: return true
+  }
+}
+
+const matchesDateRange = (meeting, dateFrom, dateTo) => {
+  const dateValue = meeting?.date?.slice(0, 10) || ''
+  if (dateFrom && (!dateValue || dateValue < dateFrom)) return false
+  if (dateTo && (!dateValue || dateValue > dateTo)) return false
+  return true
+}
+
+const sortMeetingRecords = (records, sortBy) => {
+  const result = [...records]
+
+  result.sort((left, right) => {
+    switch (sortBy) {
+      case 'date-asc':
+      case 'oldest':
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'asc')
+      case 'newest':
+      case 'date-desc':
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'time-asc':
+        return compareNumber(getMeetingMinutes(left), getMeetingMinutes(right), 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'asc')
+      case 'time-desc':
+        return compareNumber(getMeetingMinutes(left), getMeetingMinutes(right), 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'topic-asc':
+      case 'az':
+        return compareText(left?.topic, right?.topic, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'topic-desc':
+      case 'za':
+        return compareText(left?.topic, right?.topic, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'trade-asc':
+      case 'trade':
+        return compareText(left?.trade, right?.trade, 'asc') || compareText(left?.topic, right?.topic, 'asc')
+      case 'trade-desc':
+        return compareText(left?.trade, right?.trade, 'desc') || compareText(left?.topic, right?.topic, 'asc')
+      case 'leader-asc':
+        return compareText(left?.leader_name, right?.leader_name, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'leader-desc':
+        return compareText(left?.leader_name, right?.leader_name, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'project-asc':
+        return compareText(getProjectName(left), getProjectName(right), 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'project-desc':
+        return compareText(getProjectName(left), getProjectName(right), 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'location-asc':
+        return compareText(getLocationName(left), getLocationName(right), 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'location-desc':
+        return compareText(getLocationName(left), getLocationName(right), 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'attendees-asc':
+      case 'least-attendees':
+        return compareNumber(left?.attendees?.length || 0, right?.attendees?.length || 0, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'attendees-desc':
+      case 'attendees':
+      case 'most-attendees':
+        return compareNumber(left?.attendees?.length || 0, right?.attendees?.length || 0, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'created-asc':
+        return compareNumber(getTimestampValue(left, 'created-asc'), getTimestampValue(right, 'created-asc'), 'asc')
+      case 'created-desc':
+        return compareNumber(getTimestampValue(left, 'created-desc'), getTimestampValue(right, 'created-desc'), 'desc')
+      default:
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+    }
+  })
+
+  return result
+}
+
+const getPageRangeLabel = (page, pageSize, total) => {
+  if (!total) return '0 results'
+  const start = ((page - 1) * pageSize) + 1
+  const end = Math.min(page * pageSize, total)
+  return `${start}-${end} of ${total}`
+}
+
+const FilterField = ({ label, span = '', children }) => (
+  <div className={[
+    'filter-field',
+    span ? `filter-field--${span}` : '',
+  ].filter(Boolean).join(' ')}>
+    <span className="filter-field-label">{label}</span>
+    {children}
+  </div>
+)
+
 export default function Meetings() {
   const navigate = useNavigate()
   const [meetings, setMeetings] = useState([])
@@ -22,7 +165,15 @@ export default function Meetings() {
   const [searchText, setSearchText] = useState('')
   const [filterTrade, setFilterTrade] = useState('')
   const [filterPerson, setFilterPerson] = useState('')
+  const [filterLeader, setFilterLeader] = useState('')
+  const [filterProject, setFilterProject] = useState('')
+  const [filterLocation, setFilterLocation] = useState('')
+  const [filterTimeRange, setFilterTimeRange] = useState('')
+  const [filterSelfTraining, setFilterSelfTraining] = useState('all')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [sortBy, setSortBy] = useState('newest')
+  const [meetingPageSize, setMeetingPageSize] = useState(50)
 
   // Derived filter options
   const tradesInMeetings = useMemo(() => {
@@ -36,6 +187,16 @@ export default function Meetings() {
     return [...p].sort()
   }, [meetings])
 
+  const leadersInMeetings = useMemo(() => {
+    const leaders = new Set(meetings.map(m => m.leader_name).filter(Boolean))
+    return [...leaders].sort((left, right) => compareText(left, right, 'asc'))
+  }, [meetings])
+
+  const projectsInMeetings = useMemo(() => {
+    const projects = new Set(meetings.map(m => getProjectName(m)).filter(Boolean))
+    return [...projects].sort((left, right) => compareText(left, right, 'asc'))
+  }, [meetings])
+
   const filteredMeetings = useMemo(() => {
     let result = [...meetings]
     if (searchText.trim()) {
@@ -44,23 +205,30 @@ export default function Meetings() {
         m.topic?.toLowerCase().includes(q) ||
         m.leader_name?.toLowerCase().includes(q) ||
         m.project?.name?.toLowerCase().includes(q) ||
+        m.location?.toLowerCase().includes(q) ||
+        m.trade?.toLowerCase().includes(q) ||
         m.attendees?.some(a => a.name?.toLowerCase().includes(q))
       )
     }
     if (filterTrade) result = result.filter(m => m.trade === filterTrade)
     if (filterPerson) result = result.filter(m => m.attendees?.some(a => a.name === filterPerson))
-    switch (sortBy) {
-      case 'oldest': result.sort((a, b) => a.date.localeCompare(b.date)); break
-      case 'az': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
-      case 'za': result.sort((a, b) => (b.topic || '').localeCompare(a.topic || '')); break
-      case 'most-attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
-      case 'least-attendees': result.sort((a, b) => (a.attendees?.length || 0) - (b.attendees?.length || 0)); break
-      default: result.sort((a, b) => { const d = b.date.localeCompare(a.date); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
+    if (filterLeader) result = result.filter(m => m.leader_name === filterLeader)
+    if (filterProject) result = result.filter(m => getProjectName(m) === filterProject)
+    if (filterLocation.trim()) {
+      const locationQuery = normalizeText(filterLocation)
+      result = result.filter(m => normalizeText(m.location).includes(locationQuery))
     }
-    return result
-  }, [meetings, searchText, filterTrade, filterPerson, sortBy])
+    if (filterSelfTraining !== 'all') {
+      result = result.filter(m => String(Boolean(m.is_self_training)) === filterSelfTraining)
+    }
+    result = result.filter(m => matchesDateRange(m, filterDateFrom, filterDateTo))
+    result = result.filter(m => matchesTimeRange(m, filterTimeRange))
+    return sortMeetingRecords(result, sortBy)
+  }, [meetings, searchText, filterTrade, filterPerson, filterLeader, filterProject, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy])
 
-  const filtersActive = searchText || filterTrade || filterPerson || sortBy !== 'newest'
+  const filtersActive = Boolean(
+    searchText || filterTrade || filterPerson || filterLeader || filterProject || filterLocation || filterTimeRange || filterDateFrom || filterDateTo || filterSelfTraining !== 'all' || sortBy !== 'newest'
+  )
 
   // Drafts (admin only)
   const [draftMeetings, setDraftMeetings] = useState([])
@@ -70,7 +238,16 @@ export default function Meetings() {
   // Draft filters
   const [draftFilterLeader, setDraftFilterLeader] = useState('')
   const [draftFilterAttendee, setDraftFilterAttendee] = useState('')
+  const [draftSearchText, setDraftSearchText] = useState('')
+  const [draftFilterTrade, setDraftFilterTrade] = useState('')
+  const [draftFilterProject, setDraftFilterProject] = useState('')
+  const [draftFilterLocation, setDraftFilterLocation] = useState('')
+  const [draftFilterTimeRange, setDraftFilterTimeRange] = useState('')
+  const [draftFilterSelfTraining, setDraftFilterSelfTraining] = useState('all')
+  const [draftDateFrom, setDraftDateFrom] = useState('')
+  const [draftDateTo, setDraftDateTo] = useState('')
   const [draftSortBy, setDraftSortBy] = useState('date-desc')
+  const [draftPageSize, setDraftPageSize] = useState(50)
 
   // Draft editing
   const [showDraftEditModal, setShowDraftEditModal] = useState(false)
@@ -92,35 +269,55 @@ export default function Meetings() {
     return [...s].sort()
   }, [draftMeetings])
 
+  const draftTradeOptions = useMemo(() => {
+    const trades = new Set(draftMeetings.map(d => d.trade).filter(Boolean))
+    return [...trades].sort((left, right) => compareText(left, right, 'asc'))
+  }, [draftMeetings])
+
+  const draftProjectOptions = useMemo(() => {
+    const projects = new Set(draftMeetings.map(d => getProjectName(d)).filter(Boolean))
+    return [...projects].sort((left, right) => compareText(left, right, 'asc'))
+  }, [draftMeetings])
+
   const filteredDrafts = useMemo(() => {
-    let result = draftMeetings
+    let result = [...draftMeetings]
+    if (draftSearchText.trim()) {
+      const q = normalizeText(draftSearchText)
+      result = result.filter(d =>
+        normalizeText(d.topic).includes(q) ||
+        normalizeText(d.leader_name).includes(q) ||
+        normalizeText(d.trade).includes(q) ||
+        normalizeText(getProjectName(d)).includes(q) ||
+        normalizeText(d.location).includes(q) ||
+        d.attendees?.some(a => normalizeText(a.name).includes(q))
+      )
+    }
     if (draftFilterLeader) result = result.filter(d => d.leader_name === draftFilterLeader)
     if (draftFilterAttendee) result = result.filter(d => d.attendees?.some(a => a.name === draftFilterAttendee))
-    result = [...result]
-    switch (draftSortBy) {
-      case 'date-asc': result.sort((a, b) => a.date.localeCompare(b.date)); break
-      case 'trade': result.sort((a, b) => (a.trade || '').localeCompare(b.trade || '')); break
-      case 'topic': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
-      case 'time': result.sort((a, b) => (a.time || '').localeCompare(b.time || '')); break
-      case 'attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
-      case 'attendees-asc': result.sort((a, b) => (a.attendees?.length || 0) - (b.attendees?.length || 0)); break
-      default: result.sort((a, b) => { const d = b.date.slice(0, 10).localeCompare(a.date.slice(0, 10)); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
+    if (draftFilterTrade) result = result.filter(d => d.trade === draftFilterTrade)
+    if (draftFilterProject) result = result.filter(d => getProjectName(d) === draftFilterProject)
+    if (draftFilterLocation.trim()) {
+      const locationQuery = normalizeText(draftFilterLocation)
+      result = result.filter(d => normalizeText(d.location).includes(locationQuery))
     }
-    return result
-  }, [draftMeetings, draftFilterLeader, draftFilterAttendee, draftSortBy])
+    if (draftFilterSelfTraining !== 'all') {
+      result = result.filter(d => String(Boolean(d.is_self_training)) === draftFilterSelfTraining)
+    }
+    result = result.filter(d => matchesDateRange(d, draftDateFrom, draftDateTo))
+    result = result.filter(d => matchesTimeRange(d, draftFilterTimeRange))
+    return sortMeetingRecords(result, draftSortBy)
+  }, [draftMeetings, draftSearchText, draftFilterLeader, draftFilterAttendee, draftFilterTrade, draftFilterProject, draftFilterLocation, draftFilterTimeRange, draftFilterSelfTraining, draftDateFrom, draftDateTo, draftSortBy])
 
   // Pagination
-  const DRAFT_PAGE_SIZE = 50
-  const MEETING_PAGE_SIZE = 50
   const [draftPage, setDraftPage] = useState(1)
   const [meetingPage, setMeetingPage] = useState(1)
   const [syncRunning, setSyncRunning] = useState(false)
   const [syncResult, setSyncResult] = useState(null)
 
-  const draftTotalPages = Math.max(1, Math.ceil(filteredDrafts.length / DRAFT_PAGE_SIZE))
-  const pagedDrafts = filteredDrafts.slice((draftPage - 1) * DRAFT_PAGE_SIZE, draftPage * DRAFT_PAGE_SIZE)
-  const meetingTotalPages = Math.max(1, Math.ceil(filteredMeetings.length / MEETING_PAGE_SIZE))
-  const pagedMeetings = filteredMeetings.slice((meetingPage - 1) * MEETING_PAGE_SIZE, meetingPage * MEETING_PAGE_SIZE)
+  const draftTotalPages = Math.max(1, Math.ceil(filteredDrafts.length / draftPageSize))
+  const pagedDrafts = filteredDrafts.slice((draftPage - 1) * draftPageSize, draftPage * draftPageSize)
+  const meetingTotalPages = Math.max(1, Math.ceil(filteredMeetings.length / meetingPageSize))
+  const pagedMeetings = filteredMeetings.slice((meetingPage - 1) * meetingPageSize, meetingPage * meetingPageSize)
 
   useEffect(() => {
     checkAdmin()
@@ -136,9 +333,15 @@ export default function Meetings() {
   }, [isAdmin])
 
   // Reset meeting page when filters change
-  useEffect(() => { setMeetingPage(1) }, [searchText, filterTrade, filterPerson, sortBy])
+  useEffect(() => { setMeetingPage(1) }, [searchText, filterTrade, filterPerson, filterLeader, filterProject, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
   // Reset draft page when draft filters/sort change
-  useEffect(() => { setDraftPage(1) }, [draftFilterLeader, draftFilterAttendee, draftSortBy])
+  useEffect(() => { setDraftPage(1) }, [draftSearchText, draftFilterLeader, draftFilterAttendee, draftFilterTrade, draftFilterProject, draftFilterLocation, draftFilterTimeRange, draftFilterSelfTraining, draftDateFrom, draftDateTo, draftSortBy, draftPageSize])
+  useEffect(() => {
+    if (meetingPage > meetingTotalPages) setMeetingPage(meetingTotalPages)
+  }, [meetingPage, meetingTotalPages])
+  useEffect(() => {
+    if (draftPage > draftTotalPages) setDraftPage(draftTotalPages)
+  }, [draftPage, draftTotalPages])
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -581,6 +784,38 @@ export default function Meetings() {
     finally { setZipProgress({ visible: false, done: 0, total: 0 }) }
   }
 
+  const draftFiltersActive = Boolean(
+    draftSearchText || draftFilterLeader || draftFilterAttendee || draftFilterTrade || draftFilterProject || draftFilterLocation || draftFilterTimeRange || draftDateFrom || draftDateTo || draftFilterSelfTraining !== 'all' || draftSortBy !== 'date-desc'
+  )
+
+  const resetMeetingFilters = () => {
+    setSearchText('')
+    setFilterTrade('')
+    setFilterPerson('')
+    setFilterLeader('')
+    setFilterProject('')
+    setFilterLocation('')
+    setFilterTimeRange('')
+    setFilterSelfTraining('all')
+    setFilterDateFrom('')
+    setFilterDateTo('')
+    setSortBy('newest')
+  }
+
+  const resetDraftFilters = () => {
+    setDraftSearchText('')
+    setDraftFilterLeader('')
+    setDraftFilterAttendee('')
+    setDraftFilterTrade('')
+    setDraftFilterProject('')
+    setDraftFilterLocation('')
+    setDraftFilterTimeRange('')
+    setDraftFilterSelfTraining('all')
+    setDraftDateFrom('')
+    setDraftDateTo('')
+    setDraftSortBy('date-desc')
+  }
+
   return (
     <div>
       {/* ── ZIP Progress ── */}
@@ -739,49 +974,124 @@ export default function Meetings() {
           </div>
 
           {/* Draft filter bar */}
-          <div className="draft-filter-bar">
-            <select
-              className="filter-select"
-              value={draftFilterLeader}
-              onChange={e => setDraftFilterLeader(e.target.value)}
-            >
-              <option value="">All workers performing the meetings</option>
-              {draftLeaderOptions.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
-            <select
-              className="filter-select"
-              value={draftFilterAttendee}
-              onChange={e => setDraftFilterAttendee(e.target.value)}
-            >
-              <option value="">All attendees</option>
-              {draftAttendeeOptions.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-            <select
-              className="filter-select"
-              value={draftSortBy}
-              onChange={e => setDraftSortBy(e.target.value)}
-            >
-              <option value="date-desc">Date ↓</option>
-              <option value="date-asc">Date ↑</option>
-              <option value="trade">Trade A→Z</option>
-              <option value="topic">Topic A→Z</option>
-              <option value="time">Time ↑</option>
-              <option value="attendees">Most attendees</option>
-              <option value="attendees-asc">Least attendees</option>
-            </select>
-            {(draftFilterLeader || draftFilterAttendee) && (
-              <button className="filter-clear-btn" onClick={() => { setDraftFilterLeader(''); setDraftFilterAttendee('') }}>Clear</button>
-            )}
-            {selectedDraftIds.size > 0 && (
-              <button className="btn btn-secondary btn-sm" onClick={() => handleOpenDraftEdit(Array.from(selectedDraftIds))}>
-                ✎ Edit ({selectedDraftIds.size})
-              </button>
-            )}
-            <span className="pagination-info" style={{ marginLeft: 'auto' }}>
-              {filteredDrafts.length !== draftMeetings.length
-                ? `${filteredDrafts.length} of ${draftMeetings.length}`
-                : `${draftMeetings.length} total`}
-            </span>
+          <div className="draft-filter-bar draft-filter-bar--stacked">
+            <div className="filter-grid filter-grid--top filter-grid--draft-top">
+              <FilterField label="Search">
+                <input
+                  className="filter-search-input"
+                  type="text"
+                  placeholder="Search topic, address, attendee, project..."
+                  value={draftSearchText}
+                  onChange={e => setDraftSearchText(e.target.value)}
+                />
+              </FilterField>
+              <FilterField label="Worker performing the meeting">
+                <select className="filter-select" value={draftFilterLeader} onChange={e => setDraftFilterLeader(e.target.value)}>
+                  <option value="">All workers performing the meetings</option>
+                  {draftLeaderOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                </select>
+              </FilterField>
+              <FilterField label="Attendee">
+                <select className="filter-select" value={draftFilterAttendee} onChange={e => setDraftFilterAttendee(e.target.value)}>
+                  <option value="">All attendees</option>
+                  {draftAttendeeOptions.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </FilterField>
+              <FilterField label="Trade">
+                <select className="filter-select" value={draftFilterTrade} onChange={e => setDraftFilterTrade(e.target.value)}>
+                  <option value="">All trades</option>
+                  {draftTradeOptions.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </FilterField>
+              <FilterField label="Project">
+                <select className="filter-select" value={draftFilterProject} onChange={e => setDraftFilterProject(e.target.value)}>
+                  <option value="">All projects</option>
+                  {draftProjectOptions.map(project => <option key={project} value={project}>{project}</option>)}
+                </select>
+              </FilterField>
+            </div>
+
+            <div className="filter-grid filter-grid--bottom filter-grid--draft-bottom">
+              <FilterField label="Address">
+                <input
+                  className="meetings-filter-input"
+                  type="text"
+                  placeholder="Address contains..."
+                  value={draftFilterLocation}
+                  onChange={e => setDraftFilterLocation(e.target.value)}
+                />
+              </FilterField>
+              <FilterField label="Date from">
+                <input className="meetings-filter-input meetings-filter-input--date" type="date" value={draftDateFrom} onChange={e => setDraftDateFrom(e.target.value)} />
+              </FilterField>
+              <FilterField label="Date to">
+                <input className="meetings-filter-input meetings-filter-input--date" type="date" value={draftDateTo} onChange={e => setDraftDateTo(e.target.value)} />
+              </FilterField>
+              <FilterField label="Time range">
+                <select className="filter-select" value={draftFilterTimeRange} onChange={e => setDraftFilterTimeRange(e.target.value)}>
+                  <option value="">Any time</option>
+                  <option value="before-06">Before 06:00</option>
+                  <option value="morning">06:00-11:59</option>
+                  <option value="midday">12:00-14:59</option>
+                  <option value="afternoon">15:00-17:59</option>
+                  <option value="evening">18:00-21:59</option>
+                  <option value="night">22:00-05:59</option>
+                </select>
+              </FilterField>
+              <FilterField label="Meeting type">
+                <select className="filter-select" value={draftFilterSelfTraining} onChange={e => setDraftFilterSelfTraining(e.target.value)}>
+                  <option value="all">All meeting types</option>
+                  <option value="true">Self-training only</option>
+                  <option value="false">Led meetings only</option>
+                </select>
+              </FilterField>
+              <FilterField label="Sort by">
+                <select className="filter-select" value={draftSortBy} onChange={e => setDraftSortBy(e.target.value)}>
+                  <option value="date-desc">Newest date</option>
+                  <option value="date-asc">Oldest date</option>
+                  <option value="time-asc">Time earliest</option>
+                  <option value="time-desc">Time latest</option>
+                  <option value="topic-asc">Topic A-Z</option>
+                  <option value="topic-desc">Topic Z-A</option>
+                  <option value="trade-asc">Trade A-Z</option>
+                  <option value="trade-desc">Trade Z-A</option>
+                  <option value="leader-asc">Leader A-Z</option>
+                  <option value="leader-desc">Leader Z-A</option>
+                  <option value="project-asc">Project A-Z</option>
+                  <option value="project-desc">Project Z-A</option>
+                  <option value="location-asc">Address A-Z</option>
+                  <option value="location-desc">Address Z-A</option>
+                  <option value="attendees-desc">Most attendees</option>
+                  <option value="attendees-asc">Least attendees</option>
+                  <option value="created-desc">Newest created</option>
+                  <option value="created-asc">Oldest created</option>
+                </select>
+              </FilterField>
+            </div>
+
+            <div className="filter-toolbar">
+              <div className="pagination-page-size">
+                <span className="pagination-page-size-label">Rows per page</span>
+                <select className="filter-select filter-select--compact" value={draftPageSize} onChange={e => setDraftPageSize(Number(e.target.value))}>
+                  {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </div>
+              <div className="filter-toolbar-actions">
+                {draftFiltersActive && (
+                  <button className="filter-clear-btn" onClick={resetDraftFilters}>Clear filters</button>
+                )}
+                {selectedDraftIds.size > 0 && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleOpenDraftEdit(Array.from(selectedDraftIds))}>
+                    ✎ Edit ({selectedDraftIds.size})
+                  </button>
+                )}
+              </div>
+              <span className="pagination-info draft-filter-summary filter-summary-pill">
+                {filteredDrafts.length !== draftMeetings.length
+                  ? `${getPageRangeLabel(draftPage, draftPageSize, filteredDrafts.length)} filtered from ${draftMeetings.length}`
+                  : `${getPageRangeLabel(draftPage, draftPageSize, draftMeetings.length)} total`}
+              </span>
+            </div>
           </div>
 
           <div className="drafts-table-wrap">
@@ -857,44 +1167,134 @@ export default function Meetings() {
 
           {draftTotalPages > 1 && (
             <div className="pagination-bar">
-              <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.max(1, p - 1))} disabled={draftPage === 1}>← Prev</button>
-              <span className="pagination-info">Page {draftPage} of {draftTotalPages} ({filteredDrafts.length} total)</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.min(draftTotalPages, p + 1))} disabled={draftPage === draftTotalPages}>Next →</button>
+              <span className="pagination-info">Page {draftPage} of {draftTotalPages}</span>
+              <div className="pagination-controls">
+                <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(1)} disabled={draftPage === 1}>« First</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.max(1, p - 1))} disabled={draftPage === 1}>← Prev</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(p => Math.min(draftTotalPages, p + 1))} disabled={draftPage === draftTotalPages}>Next →</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(draftTotalPages)} disabled={draftPage === draftTotalPages}>Last »</button>
+              </div>
             </div>
           )}
         </div>
       )}
 
       {/* ── Filter bar ── */}
-      <div className="filter-bar">
-        <input
-          className="filter-search-input"
-          type="text"
-          placeholder="Search topic, worker performing the meeting, attendee..."
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-        />
-        <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} className="filter-select">
-          <option value="">All trades</option>
-          {tradesInMeetings.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
-          <option value="">All attendees</option>
-          {personsInMeetings.map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="az">Topic A → Z</option>
-          <option value="za">Topic Z → A</option>
-          <option value="most-attendees">Most attendees</option>
-          <option value="least-attendees">Least attendees</option>
-        </select>
-        {filtersActive && (
-          <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterTrade(''); setFilterPerson(''); setSortBy('newest') }}>
-            Clear
-          </button>
-        )}
+      <div className="filter-bar meetings-filter-bar">
+        <div className="filter-grid filter-grid--top">
+          <FilterField label="Search">
+            <input
+              className="filter-search-input"
+              type="text"
+              placeholder="Search topic, worker performing the meeting, address, attendee..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+            />
+          </FilterField>
+          <FilterField label="Trade">
+            <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} className="filter-select">
+              <option value="">All trades</option>
+              {tradesInMeetings.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Attendee">
+            <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
+              <option value="">All attendees</option>
+              {personsInMeetings.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Leader">
+            <select value={filterLeader} onChange={e => setFilterLeader(e.target.value)} className="filter-select">
+              <option value="">All leaders</option>
+              {leadersInMeetings.map(leader => <option key={leader} value={leader}>{leader}</option>)}
+            </select>
+          </FilterField>
+          <FilterField label="Project">
+            <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="filter-select">
+              <option value="">All projects</option>
+              {projectsInMeetings.map(project => <option key={project} value={project}>{project}</option>)}
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="filter-grid filter-grid--bottom">
+          <FilterField label="Address">
+            <input
+              className="meetings-filter-input"
+              type="text"
+              placeholder="Address contains..."
+              value={filterLocation}
+              onChange={e => setFilterLocation(e.target.value)}
+            />
+          </FilterField>
+          <FilterField label="Date from">
+            <input className="meetings-filter-input meetings-filter-input--date" type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
+          </FilterField>
+          <FilterField label="Date to">
+            <input className="meetings-filter-input meetings-filter-input--date" type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
+          </FilterField>
+          <FilterField label="Time range">
+            <select value={filterTimeRange} onChange={e => setFilterTimeRange(e.target.value)} className="filter-select">
+              <option value="">Any time</option>
+              <option value="before-06">Before 06:00</option>
+              <option value="morning">06:00-11:59</option>
+              <option value="midday">12:00-14:59</option>
+              <option value="afternoon">15:00-17:59</option>
+              <option value="evening">18:00-21:59</option>
+              <option value="night">22:00-05:59</option>
+            </select>
+          </FilterField>
+          <FilterField label="Meeting type">
+            <select value={filterSelfTraining} onChange={e => setFilterSelfTraining(e.target.value)} className="filter-select">
+              <option value="all">All meeting types</option>
+              <option value="true">Self-training only</option>
+              <option value="false">Led meetings only</option>
+            </select>
+          </FilterField>
+          <FilterField label="Sort by">
+            <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
+              <option value="newest">Newest date</option>
+              <option value="oldest">Oldest date</option>
+              <option value="time-asc">Time earliest</option>
+              <option value="time-desc">Time latest</option>
+              <option value="az">Topic A-Z</option>
+              <option value="za">Topic Z-A</option>
+              <option value="trade-asc">Trade A-Z</option>
+              <option value="trade-desc">Trade Z-A</option>
+              <option value="leader-asc">Leader A-Z</option>
+              <option value="leader-desc">Leader Z-A</option>
+              <option value="project-asc">Project A-Z</option>
+              <option value="project-desc">Project Z-A</option>
+              <option value="location-asc">Address A-Z</option>
+              <option value="location-desc">Address Z-A</option>
+              <option value="most-attendees">Most attendees</option>
+              <option value="least-attendees">Least attendees</option>
+              <option value="created-desc">Newest created</option>
+              <option value="created-asc">Oldest created</option>
+            </select>
+          </FilterField>
+        </div>
+
+        <div className="filter-toolbar filter-toolbar--meetings">
+          <div className="pagination-page-size">
+            <span className="pagination-page-size-label">Rows per page</span>
+            <select className="filter-select filter-select--compact" value={meetingPageSize} onChange={e => setMeetingPageSize(Number(e.target.value))}>
+              {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </div>
+          <div className="filter-toolbar-actions">
+            {filtersActive && (
+              <button className="filter-clear-btn" onClick={resetMeetingFilters}>
+                Clear filters
+              </button>
+            )}
+          </div>
+          <span className="pagination-info meetings-filter-summary filter-summary-pill">
+            {filteredMeetings.length !== meetings.length
+              ? `${getPageRangeLabel(meetingPage, meetingPageSize, filteredMeetings.length)} filtered from ${meetings.length}`
+              : `${getPageRangeLabel(meetingPage, meetingPageSize, meetings.length)} total`}
+          </span>
+        </div>
       </div>
 
       <div className="meetings-list">
@@ -988,9 +1388,13 @@ export default function Meetings() {
 
         {meetingTotalPages > 1 && (
           <div className="pagination-bar">
-            <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.max(1, p - 1))} disabled={meetingPage === 1}>← Prev</button>
-            <span className="pagination-info">Page {meetingPage} of {meetingTotalPages} ({filteredMeetings.length} total)</span>
-            <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.min(meetingTotalPages, p + 1))} disabled={meetingPage === meetingTotalPages}>Next →</button>
+            <span className="pagination-info">Page {meetingPage} of {meetingTotalPages}</span>
+            <div className="pagination-controls">
+              <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(1)} disabled={meetingPage === 1}>« First</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.max(1, p - 1))} disabled={meetingPage === 1}>← Prev</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(p => Math.min(meetingTotalPages, p + 1))} disabled={meetingPage === meetingTotalPages}>Next →</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setMeetingPage(meetingTotalPages)} disabled={meetingPage === meetingTotalPages}>Last »</button>
+            </div>
           </div>
         )}
       </div>

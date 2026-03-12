@@ -1382,14 +1382,21 @@ export default function MeetingForm() {
                 value={showCustomTopic ? 'custom' : formData.topic}
                 onChange={(value) => {
                   clearValidationError('topic')
-                  if (value === 'custom') {
-                    setShowCustomTopic(true)
-                    setFormData({ ...formData, topic: '' })
+                  if (!value) {
+                    setShowCustomTopic(false)
+                    setFormData(prev => ({ ...prev, topic: '' }))
                     setSelectedTopicDetails(null)
                     setSuggestedChecklists([])
+                    setShowTopicContent(false)
+                  } else if (value === 'custom') {
+                    setShowCustomTopic(true)
+                    setFormData(prev => ({ ...prev, topic: '' }))
+                    setSelectedTopicDetails(null)
+                    setSuggestedChecklists([])
+                    setShowTopicContent(false)
                   } else {
                     setShowCustomTopic(false)
-                    setFormData({ ...formData, topic: value })
+                    setFormData(prev => ({ ...prev, topic: value }))
                     handleTopicChange(value)
                   }
                 }}
