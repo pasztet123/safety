@@ -481,7 +481,7 @@ export default function ChecklistCompletion() {
               className={`sig-type-btn ${signerType === 'leader' ? 'active' : ''}`}
               onClick={() => handleSignerTypeChange('leader')}
             >
-              Leader
+              Performs the meetings
             </button>
             <button
               type="button"
@@ -495,7 +495,7 @@ export default function ChecklistCompletion() {
           {/* Person picker */}
           <div className="form-group" style={{ marginTop: 12 }}>
             <label className="form-label">
-              {signerType === 'leader' ? 'Select Leader' : 'Select Worker'}
+              {signerType === 'leader' ? 'Select worker performing the meeting' : 'Select Worker'}
             </label>
             <select
               className="form-select"

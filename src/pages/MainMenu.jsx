@@ -275,7 +275,7 @@ export default function MainMenu() {
     { title: 'Disciplinary Actions', subtitle: 'Violations & consequences', path: '/disciplinary-actions', icon: <ShieldCheckIcon />,
       badge: extraStats.disciplinaryActions > 0 ? `${extraStats.disciplinaryActions} recorded` : null, badgeVariant: 'danger' },
     { title: 'Checklists',         subtitle: 'Inspection & compliance',    path: '/checklists',         icon: <ChecklistIcon /> },
-    { title: 'People',             subtitle: 'Worker & leader profiles',   path: '/people',             icon: <PeopleIcon /> },
+    { title: 'People',             subtitle: 'Worker & meeting performer profiles',   path: '/people',             icon: <PeopleIcon /> },
     { title: 'User Manual',        subtitle: 'Complete operating guide',   path: '/user-manual',        icon: <ManualIcon /> },
     { title: 'Admin Panel',        subtitle: 'Users & settings',           path: '/admin',              icon: <SettingsIcon /> },
     { title: 'Export',             subtitle: 'PDF reports & CSV files',    path: '/export',             icon: <ExportIcon /> },

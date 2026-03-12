@@ -409,7 +409,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
 
   const leaderSigHTML = meeting.signature_url
     ? `${pdfLegalClause()}<div style="margin-top:8px"><img src="${meeting.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
-    : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Leader signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+    : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Worker performing the meeting signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
   const td = meeting.topicDetails
   const topicSectionHTML = td ? section('Topic Guidelines', `
@@ -473,7 +473,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
     <div class="pdf-body">
       ${section('Meeting Info', `
         <div class="pdf-fields">
-          ${field('Leader', meeting.leader_name)}
+          ${field('Worker performing the meeting', meeting.leader_name)}
           ${field('Location', meeting.location || '—')}
           ${field('Project', meeting.project ? meeting.project.name : '')}
           ${field('Date', dateStr + (timeStr ? ' at ' + timeStr : ''))}
@@ -484,7 +484,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
       ${checklistsHTML}
       ${section('Attendees (' + (meeting.attendees ? meeting.attendees.length : 0) + ')', attendeesHTML)}
       ${meeting.photos && meeting.photos.length > 0 ? section('Photos', photosHTML) : ''}
-      ${section('Leader Signature', leaderSigHTML)}
+      ${section('Worker Performing the Meeting Signature', leaderSigHTML)}
     </div>
     ${footer(exportMeta)}
   `)

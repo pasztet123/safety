@@ -39,7 +39,7 @@ const guideSections = [
       'Admins can edit existing meetings, manage drafts, bulk-approve imports, and run broader export workflows.',
     ],
     capabilities: [
-      'Search by topic, leader, project, or attendee name.',
+      'Search by topic, worker performing the meeting, project, or attendee name.',
       'Filter by trade and attendee, then sort by newest, oldest, topic name, or attendee count.',
       'Open a detailed record showing signatures, photos, location, and linked checklists.',
       'Generate a single meeting PDF or export filtered meeting reports and ZIP bundles.',
@@ -50,11 +50,11 @@ const guideSections = [
         steps: [
           'Open Toolbox Meetings and choose the action to create a new meeting.',
           'Select the project, date, time, and location. The form can prefill location using device GPS, and you can adjust it manually.',
-          'Choose the leader, trade, and safety topic. If needed, use the topic content panel to guide the discussion live during the meeting.',
+          'Choose the worker performing the meeting, trade, and safety topic. If needed, use the topic content panel to guide the discussion live during the meeting.',
           'Add attendees from the worker list or type names manually when a person is not yet in the directory.',
           'Optionally attach checklists that match the trade or topic and complete them before saving the meeting.',
           'Add discussion notes and upload photos if visual evidence is required.',
-          'Capture the leader signature using either a stored default signature or a handwritten signature.',
+          'Capture the worker performing the meeting signature using either a stored default signature or a handwritten signature.',
           'For each attendee, use either the attendance checkbox or an individual signature when a stronger proof of attendance is required.',
           'Save the meeting. For new manual meetings, the application also tags the source as manual and preserves all linked evidence in the final record.',
         ],
@@ -67,7 +67,7 @@ const guideSections = [
           'Review the generated draft list before saving. At this stage you can spot duplicate dates, skip selected dates, refresh suggested topics, change trade values, and fine-tune draft fields.',
           'Confirm the import. The system saves each draft with an import batch id, marks the source as BusyBusy CSV, and can create missing people in the worker directory when needed.',
           'Go back to Toolbox Meetings and open the draft area. Use filters, pagination, batch selection, and batch editing to prepare the drafts for approval.',
-          'Launch the draft approval flow. In the approval modal, confirm or correct the leader, verify the meeting contents, and provide the leader signature or signature mode required for finalization.',
+          'Launch the draft approval flow. In the approval modal, confirm or correct the worker performing the meeting, verify the meeting contents, and provide the signature or signature mode required for finalization.',
           'Approve the draft. The meeting is converted from draft to finalized record and becomes part of the normal meeting history, exports, and project view.',
         ],
       },
@@ -153,7 +153,7 @@ const guideSections = [
     capabilities: [
       'Filter checklist templates by category and trade.',
       'Complete checklist items with notes, item photos, and overall completion photos.',
-      'Assign the completion to a project and capture signer identity as leader or worker.',
+      'Assign the completion to a project and capture signer identity as worker performing the meeting or worker.',
       'Store signature evidence using a saved default signature or a new handwritten signature.',
     ],
     procedures: [],
@@ -266,11 +266,11 @@ const guideSections = [
   {
     id: 'disciplinary-actions',
     title: 'Disciplinary Actions',
-    shortDescription: 'Document violation-linked actions, recipients, responsible leaders, and timing of formal response.',
+    shortDescription: 'Document violation-linked actions, recipients, responsible workers performing the meetings, and timing of formal response.',
     route: '/disciplinary-actions',
     access: 'mixed',
     purpose:
-      'Use Disciplinary Actions to document formal responses connected to safety violations, the worker involved, and the responsible leader overseeing the response.',
+      'Use Disciplinary Actions to document formal responses connected to safety violations, the worker involved, and the responsible worker performing the meeting overseeing the response.',
     outcomes: [
       'Keep disciplinary follow-up tied to the underlying incident.',
       'Record the type of action taken, who received it, who managed it, and when it happened.',
@@ -281,7 +281,7 @@ const guideSections = [
       'Creation and maintenance of records are intended for authorized supervisory or admin users.',
     ],
     capabilities: [
-      'Search and filter by action type, violation type, and leader.',
+      'Search and filter by action type, violation type, and worker performing the meeting.',
       'Launch the form directly from a safety-violation incident or from the main disciplinary log.',
       'Export filtered disciplinary records as a PDF report.',
     ],
@@ -289,11 +289,11 @@ const guideSections = [
     imageSlots: [
       {
         title: 'Disciplinary action log',
-        caption: 'Recommended screenshot: list view with filters for action type and leader.',
+        caption: 'Recommended screenshot: list view with filters for action type and worker performing the meeting.',
       },
       {
         title: 'Violation-linked action form',
-        caption: 'Recommended screenshot: the form showing incident, recipient, leader, notes, and action timing.',
+        caption: 'Recommended screenshot: the form showing incident, recipient, worker performing the meeting, notes, and action timing.',
       },
     ],
     disclaimers: [
@@ -344,11 +344,11 @@ const guideSections = [
   {
     id: 'people',
     title: 'People',
-    shortDescription: 'Use the people directory to find workers, leaders, contact data, and their related activity.',
+    shortDescription: 'Use the people directory to find workers, workers performing the meetings, contact data, and their related activity.',
     route: '/people',
     access: 'all',
     purpose:
-      'Use People as the central directory for workers, subcontractors, and leaders when assigning attendance, responsibility, witnesses, or reviewing historical involvement.',
+      'Use People as the central directory for workers, subcontractors, and workers performing the meetings when assigning attendance, responsibility, witnesses, or reviewing historical involvement.',
     outcomes: [
       'Find the correct person before assigning actions or witnesses.',
       'Review a person\'s meetings, incidents, projects, and actions in one place.',
@@ -360,7 +360,7 @@ const guideSections = [
     ],
     capabilities: [
       'Search by name.',
-      'See role badges for worker, leader, or both.',
+      'See role badges for worker, performs the meetings, or both.',
       'Open profile tabs for meetings, projects, incidents, corrective actions, and disciplinary actions.',
     ],
     procedures: [],
@@ -424,13 +424,13 @@ const guideSections = [
   {
     id: 'admin-panel',
     title: 'Admin Panel',
-    shortDescription: 'Manage users, leaders, workers, companies, settings, featured content, and analytics.',
+    shortDescription: 'Manage users, workers performing the meetings, workers, companies, settings, featured content, and analytics.',
     route: '/admin',
     access: 'admin',
     purpose:
       'Use the Admin Panel to maintain the people and settings backbone of the application and to run maintenance actions that ordinary field users should not handle directly.',
     outcomes: [
-      'Create and maintain users, leaders, workers, and companies.',
+      'Create and maintain users, workers performing the meetings, workers, and companies.',
       'Store default signatures used elsewhere in meetings, incidents, and checklists.',
       'Control featured content and topic-checklist relationships.',
     ],
@@ -440,19 +440,19 @@ const guideSections = [
     ],
     capabilities: [
       'Create users, reset passwords, edit admin rights, and delete accounts.',
-      'Maintain leaders and workers, including default signatures.',
+      'Maintain workers performing the meetings and workers, including default signatures.',
       'Manage companies and topic-to-checklist suggestions.',
       'Adjust featured categories, topics, and trades that affect user-facing screens.',
-      'Run the draft-leader repair utility and view analytics.',
+      'Run the draft meeting-performer repair utility and view analytics.',
     ],
     procedures: [],
     imageSlots: [
       {
         title: 'Admin tabs overview',
-        caption: 'Recommended screenshot: tab bar showing users, leaders, workers, settings, and analytics.',
+        caption: 'Recommended screenshot: tab bar showing users, workers performing the meetings, workers, settings, and analytics.',
       },
       {
-        title: 'User or leader form',
+        title: 'User or meeting performer form',
         caption: 'Recommended screenshot: one admin form showing default signature management.',
       },
     ],

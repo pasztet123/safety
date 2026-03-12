@@ -377,7 +377,7 @@ export default function ProjectDetail() {
 
                   <div className="meeting-details">
                     <div className="meeting-detail-item">
-                      <strong>Leader:</strong> {meeting.leader_name}
+                      <strong>Worker performing the meeting:</strong> {meeting.leader_name}
                     </div>
                     {meeting.location && (
                       <div className="meeting-detail-item">

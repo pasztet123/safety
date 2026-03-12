@@ -824,7 +824,7 @@ export default function IncidentForm() {
                 onChange={e => handleReporterSelect(e.target.value)}>
                 <option value="">Select reporter</option>
                 {leaders.length > 0 && (
-                  <optgroup label="Leaders">
+                  <optgroup label="Workers performing the meetings">
                     {leaders.map(l => <option key={l.id} value={l.name}>{l.name}</option>)}
                   </optgroup>
                 )}
@@ -999,9 +999,9 @@ export default function IncidentForm() {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Responsible leader *</label>
+                      <label className="form-label">Responsible worker performing the meeting *</label>
                       <select className="form-select" value={newDisciplinaryAction.responsible_leader_id} onChange={e => setNewDisciplinaryAction(prev => ({ ...prev, responsible_leader_id: e.target.value }))}>
-                        <option value="">Select leader</option>
+                        <option value="">Select worker performing the meeting</option>
                         {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
                       </select>
                     </div>
@@ -1038,7 +1038,7 @@ export default function IncidentForm() {
                         <p className="if-action-desc">{action.action_type}</p>
                         <div className="if-action-meta">
                           <span>Recipient: {involvedPersons.find(person => person.id === action.recipient_person_id)?.name || 'Unknown'}</span>
-                          <span>Leader: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
+                          <span>Worker performing the meeting: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
                           <span>Date: {new Date(action.action_date).toLocaleDateString()}</span>
                           <span>Time: {(action.action_time || '').slice(0, 5)}</span>
                         </div>
@@ -1051,9 +1051,9 @@ export default function IncidentForm() {
                             </select>
                           </div>
                           <div className="form-group">
-                            <label className="form-label">Responsible leader *</label>
+                            <label className="form-label">Responsible worker performing the meeting *</label>
                             <select className="form-select" value={action.responsible_leader_id} onChange={e => updateDisciplinaryAction(index, 'responsible_leader_id', e.target.value)}>
-                              <option value="">Select leader</option>
+                              <option value="">Select worker performing the meeting</option>
                               {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
                             </select>
                           </div>

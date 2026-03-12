@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchTrades } from '../lib/trades'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
+import { resolveMeetingLeader } from '../lib/meetingLeader'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
 import ExportProgress from '../components/ExportProgress'
@@ -346,22 +347,13 @@ export default function Meetings() {
   }
 
   const handleSyncDrafts = async () => {
-    if (!confirm(`Sync all ${draftMeetings.length} drafts? This will auto-assign leaders and signatures based on attendees.`)) return
+    if (!confirm(`Sync all ${draftMeetings.length} drafts? This will auto-assign workers performing the meetings and signatures based on attendees.`)) return
     setSyncRunning(true)
     setSyncResult(null)
     try {
       // Load leaders and involved_persons once
       const { data: leaders } = await supabase.from('leaders').select('id, name, default_signature_url').order('name')
       const { data: involvedPersons } = await supabase.from('involved_persons').select('id, name, leader_id').order('name')
-
-      const leaderMap = {}
-      ;(leaders || []).forEach(l => { leaderMap[l.name.toLowerCase().trim()] = l })
-
-      const personToLeader = {}
-      ;(involvedPersons || []).forEach(p => {
-        const leader = (leaders || []).find(l => l.id === p.leader_id)
-        if (leader) personToLeader[p.name.toLowerCase().trim()] = leader
-      })
 
       let fixed = 0
       let skipped = 0
@@ -391,23 +383,34 @@ export default function Meetings() {
         }
         seen.set(key, draft.id)
 
-        // Detect leader from attendees
-        let detectedLeader = null
-        for (const name of names) {
-          if (leaderMap[name]) { detectedLeader = leaderMap[name]; break }
-          if (personToLeader[name]) { detectedLeader = personToLeader[name]; break }
+        const resolution = resolveMeetingLeader({
+          attendees: (attendeesByMeeting[draft.id] || []).map(name => ({ name })),
+          leaders: leaders || [],
+          involvedPersons: involvedPersons || [],
+          isSelfTraining: (attendeesByMeeting[draft.id] || []).length === 1,
+        })
+
+        const nextLeaderId = resolution.leaderId || null
+        const nextLeaderName = resolution.leaderName || null
+        const nextSignatureUrl = resolution.leaderDefaultSignature || null
+        const hasChanges =
+          (draft.leader_id || null) !== nextLeaderId ||
+          (draft.leader_name || null) !== nextLeaderName ||
+          (draft.signature_url || null) !== nextSignatureUrl ||
+          !!draft.is_self_training !== resolution.isSelfTraining
+
+        if (!hasChanges) {
+          skipped++
+          continue
         }
 
-        if (detectedLeader) {
-          await supabase.from('meetings').update({
-            leader_id: detectedLeader.id,
-            leader_name: detectedLeader.name,
-            signature_url: detectedLeader.default_signature_url || null,
-          }).eq('id', draft.id)
-          fixed++
-        } else {
-          skipped++
-        }
+        await supabase.from('meetings').update({
+          leader_id: nextLeaderId,
+          leader_name: nextLeaderName,
+          signature_url: nextSignatureUrl,
+          is_self_training: resolution.isSelfTraining,
+        }).eq('id', draft.id)
+        fixed++
       }
 
       setSyncResult(`Done: ${fixed} leaders assigned, ${skipped} skipped/deleted as duplicates.`)
@@ -582,7 +585,7 @@ export default function Meetings() {
               </p>
             )}
             <div className="form-group">
-              <label className="form-label">Leader</label>
+              <label className="form-label">Worker performing the meeting</label>
               <select
                 className="form-select"
                 value={draftEditFields.leader_id}
@@ -591,7 +594,7 @@ export default function Meetings() {
                   setDraftEditFields(prev => ({ ...prev, leader_id: e.target.value, leader_name: leader?.name || '' }))
                 }}
               >
-                <option value="">{draftEditIds.length > 1 ? '— no change —' : '— select leader —'}</option>
+                <option value="">{draftEditIds.length > 1 ? '— no change —' : '— select worker performing the meeting —'}</option>
                 {editLeaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
@@ -686,7 +689,7 @@ export default function Meetings() {
                 className="btn btn-secondary btn-sm"
                 onClick={handleSyncDrafts}
                 disabled={syncRunning}
-                title="Auto-assign leaders and remove duplicate drafts"
+                title="Auto-assign workers performing the meetings and remove duplicate drafts"
               >
                 {syncRunning ? '⟳ Syncing…' : '⟳ Sync'}
               </button>
@@ -711,7 +714,7 @@ export default function Meetings() {
               value={draftFilterLeader}
               onChange={e => setDraftFilterLeader(e.target.value)}
             >
-              <option value="">All leaders</option>
+              <option value="">All workers performing the meetings</option>
               {draftLeaderOptions.map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <select
@@ -802,7 +805,7 @@ export default function Meetings() {
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => handleOpenDraftEdit([d.id], d)}
-                          title="Quick edit leader, trade, topic or add attendees"
+                          title="Quick edit worker performing the meeting, trade, topic or add attendees"
                         >
                           ✎
                         </button>
@@ -835,7 +838,7 @@ export default function Meetings() {
         <input
           className="filter-search-input"
           type="text"
-          placeholder="Search topic, leader, attendee..."
+          placeholder="Search topic, worker performing the meeting, attendee..."
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
         />
@@ -900,7 +903,7 @@ export default function Meetings() {
 
               <div className="meeting-details">
                 <div className="meeting-detail-item">
-                  <strong>Leader:</strong> {meeting.leader_name}
+                  <strong>Worker performing the meeting:</strong> {meeting.leader_name}
                 </div>
                 {meeting.location && (
                   <div className="meeting-detail-item">

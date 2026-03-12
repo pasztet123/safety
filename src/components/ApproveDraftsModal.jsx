@@ -18,7 +18,7 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
 
   const [leaders, setLeaders] = useState([])
   const [leaderId, setLeaderId] = useState('')
-  const [leaderName, setLeaderName] = useState('Bo Mikuta')
+  const [leaderName, setLeaderName] = useState('')
   const [leaderDefaultSig, setLeaderDefaultSig] = useState(null)
 
   // Signature mode: 'default' | 'draw'
@@ -47,18 +47,20 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
       .order('name')
     if (data) {
       setLeaders(data)
-      // Pre-select the first leader alphabetically — admin must confirm/change
-      const first = data[0]
-      if (first) {
-        setLeaderId(first.id)
-        setLeaderName(first.name)
-        setLeaderDefaultSig(first.default_signature_url || null)
-        setSigMode(first.default_signature_url ? 'default' : 'draw')
-      }
     }
   }
 
   const handleLeaderSelect = (id) => {
+    if (!id) {
+      setLeaderId('')
+      setLeaderName('')
+      setLeaderDefaultSig(null)
+      setSigMode('draw')
+      setManualSigDataUrl(null)
+      if (sigRef.current) sigRef.current.clear()
+      return
+    }
+
     const l = leaders.find(x => x.id === id)
     if (!l) return
     setLeaderId(l.id)
@@ -120,8 +122,11 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   // Resolve the effective sig data URL for a given meeting
   const resolveSignatureInput = (override) => {
     const mode = override?.sigMode ?? sigMode
+    const effectiveLeaderId = override?.leaderId || leaderId
+    const fallbackLeader = effectiveLeaderId ? leaders.find(l => l.id === effectiveLeaderId) : null
+    const fallbackDefaultSig = fallbackLeader?.default_signature_url || null
     if (mode === 'default') {
-      return override?.leaderDefaultSig ?? leaderDefaultSig
+      return override?.leaderDefaultSig ?? leaderDefaultSig ?? fallbackDefaultSig
     }
     return override?.manualSigDataUrl ?? manualSigDataUrl
   }
@@ -140,19 +145,28 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
       const { data: { user } } = await supabase.auth.getUser()
 
       // Upload global signature once (if not per-meeting)
-      const globalSigInput = resolveSignatureInput(null)
-      const globalSigUrl = await uploadSignature(globalSigInput)
+      const globalSigInput = leaderId ? resolveSignatureInput(null) : undefined
+      const globalSigUrl = leaderId ? await uploadSignature(globalSigInput) : undefined
 
       for (const draft of drafts) {
         const ovr = overrides[draft.id]
-        const effectiveLeaderId   = ovr?.leaderId   ?? leaderId
-        const effectiveLeaderName = ovr?.leaderName ?? leaderName
-        const effectiveSigInput   = resolveSignatureInput(ovr)
+        const effectiveLeaderId = ovr?.leaderId || leaderId || draft.leader_id || ''
+        const effectiveLeaderName = ovr?.leaderName || leaderName || draft.leader_name || ''
+        const effectiveSigInput = ovr
+          ? resolveSignatureInput(ovr)
+          : (leaderId ? resolveSignatureInput(null) : (() => {
+              const draftLeader = effectiveLeaderId ? leaders.find(l => l.id === effectiveLeaderId) : null
+              return draftLeader?.default_signature_url || null
+            })())
+
+        if (!effectiveLeaderName) {
+          throw new Error(`Meeting ${draft.date} ${draft.topic ? `(${draft.topic})` : ''} has no resolved worker performing the meeting.`)
+        }
 
         // Only re-upload if this meeting has its own override
         const sigUrl = ovr
           ? await uploadSignature(effectiveSigInput)
-          : globalSigUrl
+          : (globalSigUrl !== undefined ? globalSigUrl : await uploadSignature(effectiveSigInput))
 
         const updateData = {
           is_draft: false,
@@ -219,14 +233,14 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
                   {isExpanded && (
                     <div className="adm-ovr-panel">
                       <div className="form-group">
-                        <label className="form-label" style={{ fontSize: 13 }}>Leader for this meeting</label>
+                        <label className="form-label" style={{ fontSize: 13 }}>Worker performing the meeting for this meeting</label>
                         <select
                           className="form-select"
                           style={{ fontSize: 13 }}
                           value={ovr?.leaderId ?? ''}
                           onChange={e => e.target.value ? setOverrideLeader(d.id, e.target.value) : clearOverride(d.id)}
                         >
-                          <option value="">— Use global leader —</option>
+                          <option value="">— Use global worker performing the meeting —</option>
                           {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
                       </div>
@@ -290,7 +304,7 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
 
           {/* ── Global leader ── */}
           <div className="adm-global-section">
-            <h4 className="adm-section-label">Global Leader (applies to all meetings without override)</h4>
+            <h4 className="adm-section-label">Global worker performing the meeting (applies to all meetings without override)</h4>
 
             {draftsWithDateTimeMismatch.length > 0 && (
               <JurisdictionWarningNotice className="adm-legal-note">
@@ -301,8 +315,9 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
             <LegalClauseNotice className="adm-legal-note" />
 
             <div className="form-group">
-              <label className="form-label">Leader</label>
+              <label className="form-label">Worker performing the meeting</label>
               <select className="form-select" value={leaderId} onChange={e => handleLeaderSelect(e.target.value)}>
+                <option value="">Use each draft's current worker performing the meeting</option>
                 {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>

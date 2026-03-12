@@ -115,6 +115,13 @@
 .person-badge--leader {
   background: var(--color-success-bg);
   color: var(--color-success);
+  text-transform: none;
+  letter-spacing: 0.1px;
+  line-height: 1.2;
+  white-space: normal;
+  text-align: right;
+  justify-content: flex-end;
+  max-width: 170px;
 }
 .person-badge--both {
   background: #f3e8ff;

@@ -345,7 +345,7 @@ export default function AdminAnalyticsDashboard() {
               onClick={() => togglePerson(person.id)}
             >
               <span>{person.label}</span>
-              <small>{person.kind === 'leader' ? 'Leader' : 'Person'}</small>
+              <small>{person.kind === 'leader' ? 'Performs the meetings' : 'Person'}</small>
             </button>
           ))}
         </div>
@@ -546,7 +546,7 @@ export default function AdminAnalyticsDashboard() {
                             {event.resource.meetingStatus === 'draft' ? ' · Draft' : ' · Approved'}
                           </span>
                           <div className="analytics-day-meeting-meta">
-                            <span><strong>Leader:</strong> {leaderName}</span>
+                            <span><strong>Worker performing the meeting:</strong> {leaderName}</span>
                             <span><strong>Attendees:</strong> {attendeeNames.length > 0 ? attendeeNames.join(', ') : '—'}</span>
                           </div>
                         </div>

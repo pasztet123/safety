@@ -118,7 +118,7 @@ export default function MeetingDetails() {
         </div>
 
         <div className="form-group">
-          <label className="form-label">Leader</label>
+          <label className="form-label">Worker performing the meeting</label>
           <p className="detail-value">
             {meeting.leader_name}
             {meeting.is_self_training && (

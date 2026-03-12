@@ -7,6 +7,7 @@ import MapPicker from '../components/MapPicker'
 import TopicPicker from '../components/TopicPicker'
 import { JurisdictionWarningNotice, LegalClauseNotice } from '../components/LegalNotice'
 import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
+import { resolveMeetingLeader } from '../lib/meetingLeader'
 import { fetchTrades } from '../lib/trades'
 import './MeetingForm.css'
 
@@ -16,6 +17,7 @@ export default function MeetingForm() {
   const location = useLocation()
   const signatureRef = useRef()
   const attendeeSignatureRefs = useRef([])
+  const fieldRefs = useRef({})
   
   const [loading, setLoading] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
@@ -44,7 +46,7 @@ export default function MeetingForm() {
     latitude: null,
     longitude: null,
     leader_id: '',
-    leader_name: 'Bo Mikuta',
+    leader_name: '',
     trade: '',
     topic: '',
     notes: '',
@@ -80,6 +82,8 @@ export default function MeetingForm() {
   const [featuredCategories, setFeaturedCategories] = useState([])
   const [featuredTopics, setFeaturedTopics] = useState([])
   const [featuredTrades, setFeaturedTrades] = useState([])
+  const [validationErrors, setValidationErrors] = useState({})
+  const [validationMessage, setValidationMessage] = useState('')
 
   // Draft mode — set when editing an is_draft=true meeting
   const [isDraft, setIsDraft] = useState(false)
@@ -98,6 +102,102 @@ export default function MeetingForm() {
     time: formData.time,
   })
   const showJurisdictionWarning = meetingDateTimeMismatchDetails.length > 0
+
+  const setFieldRef = (fieldName) => (node) => {
+    if (node) fieldRefs.current[fieldName] = node
+  }
+
+  const setSharedFieldRef = (fieldNames) => (node) => {
+    if (!node) return
+    fieldNames.forEach(fieldName => {
+      fieldRefs.current[fieldName] = node
+    })
+  }
+
+  const clearValidationError = (fieldName) => {
+    setValidationErrors(prev => {
+      if (!prev[fieldName]) return prev
+      const next = { ...prev }
+      delete next[fieldName]
+      return next
+    })
+  }
+
+  const hasAttendeeSignature = (attendee) => Boolean(attendee?.signature_url || attendee?.drawn_sig_data_url)
+  const isAttendeeConfirmationMissing = (attendee) => !attendee?.signed_with_checkbox && !hasAttendeeSignature(attendee)
+  const isAttendeeSignatureMissing = (attendee) => attendee?.show_signature_field && !hasAttendeeSignature(attendee)
+
+  const focusFirstInvalidField = (errors) => {
+    const fieldOrder = [
+      'leader',
+      'date',
+      'time',
+      'topic',
+      'attendees',
+      'attendeeConfirmations',
+      'attendeeSignatures',
+      'completed',
+      'leaderSignature',
+    ]
+    const firstInvalidField = fieldOrder.find(field => errors[field])
+    const fieldNode = firstInvalidField ? fieldRefs.current[firstInvalidField] : null
+
+    if (fieldNode) {
+      window.setTimeout(() => {
+        fieldNode.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 0)
+    }
+  }
+
+  const buildValidationErrors = ({ requiresFinalApproval }) => {
+    const errors = {}
+
+    if (!formData.leader_name) {
+      errors.leader = 'Select the worker performing the meeting.'
+    }
+    if (!formData.date) {
+      errors.date = 'Select the meeting date.'
+    }
+    if (!formData.time) {
+      errors.time = 'Select the meeting time.'
+    }
+    if (!formData.topic?.trim()) {
+      errors.topic = 'Select or enter a meeting topic.'
+    }
+
+    if (attendees.length === 0) {
+      errors.attendees = 'Add at least one attendee.'
+    } else {
+      if (attendees.some(isAttendeeConfirmationMissing)) {
+        errors.attendeeConfirmations = 'Each attendee must be confirmed or signed.'
+      }
+      if (attendees.some(isAttendeeSignatureMissing)) {
+        errors.attendeeSignatures = 'Complete every attendee signature that was enabled.'
+      }
+    }
+
+    if (requiresFinalApproval && !formData.completed) {
+      errors.completed = 'Confirm that the meeting is complete.'
+    }
+
+    const hasLeaderSignature = Boolean(
+      chosenDefaultSigUrl ||
+      manualSigDataUrl ||
+      (id && existingSignatureUrl && !removeExistingSig)
+    )
+
+    if (showSignaturePanel && !hasLeaderSignature) {
+      errors.leaderSignature = 'Add the meeting leader signature or turn off digital signature.'
+    }
+
+    return errors
+  }
+
+  const showValidationFeedback = (errors) => {
+    setValidationErrors(errors)
+    setValidationMessage(`Complete the highlighted required fields: ${Object.values(errors).join(' ')}`)
+    focusFirstInvalidField(errors)
+  }
 
   useEffect(() => {
     // Reset the one-shot guard whenever we navigate to a different meeting
@@ -270,25 +370,6 @@ export default function MeetingForm() {
       .order('name')
     if (data) {
       setLeaders(data)
-      // Auto-select by name match (covers new meetings where leader_name defaults to 'Bo Mikuta')
-      // Fall back to sole leader if no name match.
-      // For edit/draft mode fetchMeeting() runs concurrently and will override with the
-      // correct leader from DB, so any Bo Mikuta pre-fill here is harmless.
-      if (!formData.leader_id) {
-        const match =
-          (formData.leader_name ? data.find(l => l.name === formData.leader_name) : null) ||
-          (data.length === 1 ? data[0] : null)
-        if (match) {
-          setFormData(prev => ({
-            ...prev,
-            leader_id: match.id,
-            leader_name: match.name,
-          }))
-          if (match.default_signature_url) {
-            setLeaderDefaultSignature(match.default_signature_url)
-          }
-        }
-      }
     }
   }
 
@@ -354,6 +435,7 @@ export default function MeetingForm() {
     setSelectedTopicDetails(null)
     setSuggestedChecklists([])
     setShowTopicContent(false)
+    clearValidationError('topic')
   }
 
   const handleTopicChange = (topicName) => {
@@ -362,6 +444,7 @@ export default function MeetingForm() {
       setSuggestedChecklists([])
       return
     }
+    clearValidationError('topic')
     const topic = safetyTopics.find(t => t.name === topicName)
     if (topic) {
       setSelectedTopicDetails(topic)
@@ -407,73 +490,22 @@ export default function MeetingForm() {
     }
   }
 
-  // Auto-detect leader based on attendees list.
-  // Rules:
-  //  - 0 attendees → reset is_self_training to false
-  //  - 1 attendee  → self-training; set leader to that person's linked leader (or their name if no link)
-  //  - 2+ attendees → if any attendee has an involved_persons.leader_id, promote that leader
-  const autoDetectLeader = (newAttendees) => {
-    if (newAttendees.length === 0) {
-      setFormData(prev => ({ ...prev, is_self_training: false }))
-      return
-    }
+  const autoDetectLeader = (newAttendees, options = {}) => {
+    const resolution = resolveMeetingLeader({
+      attendees: newAttendees,
+      leaders,
+      involvedPersons,
+      isSelfTraining: options.isSelfTraining ?? (newAttendees.length === 1),
+    })
 
-    // Helper: given a leader object, apply it as the current leader
-    const applyLeader = (leader, extraFormFields = {}) => {
-      const sig = leader.default_signature_url || null
-      setLeaderDefaultSignature(sig)
-      setChosenDefaultSigUrl(sig)
-      setFormData(prev => ({
-        ...prev,
-        leader_id: leader.id,
-        leader_name: leader.name,
-        ...extraFormFields,
-      }))
-    }
-
-    if (newAttendees.length === 1) {
-      const attendee = newAttendees[0]
-      // 1) Check via involved_persons.leader_id link
-      const person = involvedPersons.find(p => p.name === attendee.name)
-      if (person?.leader_id) {
-        const leader = leaders.find(l => l.id === person.leader_id)
-        if (leader) {
-          applyLeader(leader, { is_self_training: true })
-          return
-        }
-      }
-      // 2) Fallback: attendee IS a leader (name matches directly in leaders table)
-      const directLeader = leaders.find(l => l.name === attendee.name)
-      if (directLeader) {
-        applyLeader(directLeader, { is_self_training: true })
-        return
-      }
-      // Attendee not linked to a leader — flag as self-training but keep existing leader
-      setFormData(prev => ({ ...prev, is_self_training: true }))
-    } else {
-      // Multiple attendees — find the first one linked to a leader
-      let foundLeader = null
-      // Pass 1: via involved_persons.leader_id
-      for (const attendee of newAttendees) {
-        const person = involvedPersons.find(p => p.name === attendee.name)
-        if (person?.leader_id) {
-          const leader = leaders.find(l => l.id === person.leader_id)
-          if (leader) { foundLeader = leader; break }
-        }
-      }
-      // Pass 2: fallback — attendee IS a leader directly
-      if (!foundLeader) {
-        for (const attendee of newAttendees) {
-          const leader = leaders.find(l => l.name === attendee.name)
-          if (leader) { foundLeader = leader; break }
-        }
-      }
-      if (foundLeader) {
-        applyLeader(foundLeader, { is_self_training: false })
-      } else {
-        setFormData(prev => ({ ...prev, is_self_training: false }))
-      }
-    }
+    setLeaderDefaultSignature(resolution.leaderDefaultSignature)
+    setChosenDefaultSigUrl((resolution.leaderDefaultSignature && !manualSigDataUrl) ? resolution.leaderDefaultSignature : null)
+    setFormData(prev => ({
+      ...prev,
+      leader_id: resolution.leaderId,
+      leader_name: resolution.leaderName,
+      is_self_training: resolution.isSelfTraining,
+    }))
   }
 
   const addAttendeeFromPerson = (person) => {
@@ -482,6 +514,9 @@ export default function MeetingForm() {
       setAttendees(newAttendees)
       autoDetectLeader(newAttendees)
     }
+    clearValidationError('attendees')
+    clearValidationError('attendeeConfirmations')
+    clearValidationError('attendeeSignatures')
     setAttendeeSearch('')
     setAttendeeDropdownOpen(false)
   }
@@ -494,6 +529,9 @@ export default function MeetingForm() {
       setAttendees(newAttendees)
       autoDetectLeader(newAttendees)
     }
+    clearValidationError('attendees')
+    clearValidationError('attendeeConfirmations')
+    clearValidationError('attendeeSignatures')
     setAttendeeSearch('')
     setAttendeeDropdownOpen(false)
   }
@@ -721,7 +759,7 @@ export default function MeetingForm() {
         latitude: data.latitude ?? null,
         longitude: data.longitude ?? null,
         leader_id: resolvedLeaderId,
-        leader_name: data.leader_name,
+        leader_name: data.leader_name || '',
         trade: data.trade || '',
         topic: data.topic,
         notes: data.notes || '',
@@ -786,7 +824,8 @@ export default function MeetingForm() {
 
     if (!error && data) {
       setLeaders([...leaders, data])
-      setFormData({ ...formData, leader_id: data.id, leader_name: data.name })
+      setFormData({ ...formData, leader_id: data.id, leader_name: data.name, is_self_training: false })
+      clearValidationError('leader')
       setNewLeader('')
       setShowNewLeader(false)
     }
@@ -797,6 +836,9 @@ export default function MeetingForm() {
     const newAttendees = [...attendees, { name: newAttendee, signature_url: null }]
     setAttendees(newAttendees)
     autoDetectLeader(newAttendees)
+    clearValidationError('attendees')
+    clearValidationError('attendeeConfirmations')
+    clearValidationError('attendeeSignatures')
     setNewAttendee('')
   }
 
@@ -804,6 +846,9 @@ export default function MeetingForm() {
     const newAttendees = attendees.filter((_, i) => i !== index)
     setAttendees(newAttendees)
     autoDetectLeader(newAttendees)
+    clearValidationError('attendees')
+    clearValidationError('attendeeConfirmations')
+    clearValidationError('attendeeSignatures')
   }
 
   const handlePhotoUpload = async (e) => {
@@ -893,14 +938,17 @@ export default function MeetingForm() {
         return
       }
 
-      // Validate required fields
-      if (!formData.leader_name) {
-        alert('Please select a leader')
+      const requiresFinalApproval = !isDraft || approveModeRef.current
+      const errors = buildValidationErrors({ requiresFinalApproval })
+      if (Object.keys(errors).length > 0) {
+        showValidationFeedback(errors)
         setLoading(false)
         return
       }
 
-      const requiresFinalApproval = !isDraft || approveModeRef.current
+      setValidationErrors({})
+      setValidationMessage('')
+
       if (requiresFinalApproval && showJurisdictionWarning) {
         const confirmed = confirm(`The selected meeting ${describeSystemDateTimeMismatch(meetingDateTimeMismatchDetails)} from the current system values. ${JURISDICTION_WARNING_MESSAGE}`)
         if (!confirmed) {
@@ -1147,17 +1195,21 @@ export default function MeetingForm() {
       setShowNewLeader(true)
       return
     }
+    clearValidationError('leader')
     const leader = leaders.find(l => l.id === leaderId)
     setFormData({
       ...formData,
       leader_id: leaderId,
-      leader_name: leader?.name || ''
+      leader_name: leader?.name || '',
+      is_self_training: false,
     })
     // Set leader's default signature
     if (leader?.default_signature_url) {
       setLeaderDefaultSignature(leader.default_signature_url)
+      if (!manualSigDataUrl) setChosenDefaultSigUrl(leader.default_signature_url)
     } else {
       setLeaderDefaultSignature(null)
+      if (!manualSigDataUrl) setChosenDefaultSigUrl(null)
     }
   }
 
@@ -1205,6 +1257,15 @@ export default function MeetingForm() {
         </div>
       )}
 
+      {validationMessage && (
+        <div className="mf-validation-banner" role="alert" aria-live="assertive">
+          <span>{validationMessage}</span>
+          <button type="button" className="mf-validation-banner-close" onClick={() => setValidationMessage('')}>
+            ×
+          </button>
+        </div>
+      )}
+
       <form id="meeting-form-el" onSubmit={handleSubmit}>
 
         {/* ════════════════════════════════════
@@ -1222,19 +1283,20 @@ export default function MeetingForm() {
                 {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Leader *</label>
-              <select className="form-select" value={formData.leader_id} onChange={handleLeaderChange} required>
-                <option value="">Select Leader</option>
+            <div className={`form-group${validationErrors.leader ? ' mf-field--invalid' : ''}`} ref={setFieldRef('leader')}>
+              <label className="form-label">Worker performing the meeting *</label>
+              <select className="form-select" value={formData.leader_id} onChange={handleLeaderChange} required={!formData.is_self_training}>
+                <option value="">{formData.is_self_training && formData.leader_name ? `Self-training: ${formData.leader_name}` : 'Select worker performing the meeting'}</option>
                 {leaders.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                <option value="new">+ Add New Leader</option>
+                <option value="new">+ Add worker performing the meeting</option>
               </select>
+              {validationErrors.leader && <p className="mf-field-error">{validationErrors.leader}</p>}
             </div>
           </div>
 
           {showNewLeader && (
             <div className="mf-inline-form">
-              <input type="text" className="form-input" placeholder="Leader name"
+              <input type="text" className="form-input" placeholder="Worker performing the meeting name"
                 value={newLeader} onChange={(e) => setNewLeader(e.target.value)} />
               <button type="button" className="btn btn-primary" onClick={handleAddLeader}>Add</button>
               <button type="button" className="btn btn-secondary"
@@ -1243,15 +1305,23 @@ export default function MeetingForm() {
           )}
 
           <div className="mf-row-3">
-            <div className="form-group">
+            <div className={`form-group${validationErrors.date ? ' mf-field--invalid' : ''}`} ref={setFieldRef('date')}>
               <label className="form-label">Date *</label>
               <input type="date" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.date}
-                onChange={(e) => setFormData({ ...formData, date: e.target.value })} required readOnly={!isAdmin && !id} />
+                onChange={(e) => {
+                  clearValidationError('date')
+                  setFormData({ ...formData, date: e.target.value })
+                }} required readOnly={!isAdmin && !id} />
+              {validationErrors.date && <p className="mf-field-error">{validationErrors.date}</p>}
             </div>
-            <div className="form-group">
+            <div className={`form-group${validationErrors.time ? ' mf-field--invalid' : ''}`} ref={setFieldRef('time')}>
               <label className="form-label">Time *</label>
               <input type="time" className={`form-input${!isAdmin && !id ? ' form-input--locked' : ''}`} value={formData.time}
-                onChange={(e) => setFormData({ ...formData, time: e.target.value })} step="60" required readOnly={!isAdmin && !id} />
+                onChange={(e) => {
+                  clearValidationError('time')
+                  setFormData({ ...formData, time: e.target.value })
+                }} step="60" required readOnly={!isAdmin && !id} />
+              {validationErrors.time && <p className="mf-field-error">{validationErrors.time}</p>}
             </div>
             <div className="form-group">
               <label className="form-label">Location</label>
@@ -1302,7 +1372,7 @@ export default function MeetingForm() {
                 ))}
               </select>
             </div>
-            <div className="form-group">
+            <div className={`form-group${validationErrors.topic ? ' mf-field--invalid' : ''}`} ref={setFieldRef('topic')}>
               <label className="form-label">Topic *</label>
               <TopicPicker
                 topics={safetyTopics}
@@ -1311,6 +1381,7 @@ export default function MeetingForm() {
                 featuredTopics={featuredTopics}
                 value={showCustomTopic ? 'custom' : formData.topic}
                 onChange={(value) => {
+                  clearValidationError('topic')
                   if (value === 'custom') {
                     setShowCustomTopic(true)
                     setFormData({ ...formData, topic: '' })
@@ -1323,15 +1394,20 @@ export default function MeetingForm() {
                   }
                 }}
               />
+              {validationErrors.topic && !showCustomTopic && <p className="mf-field-error">{validationErrors.topic}</p>}
             </div>
           </div>
 
           {showCustomTopic && (
-            <div className="form-group">
+            <div className={`form-group${validationErrors.topic ? ' mf-field--invalid' : ''}`}>
               <label className="form-label">Custom Topic *</label>
               <input type="text" className="form-input" value={formData.topic}
-                onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
+                onChange={(e) => {
+                  clearValidationError('topic')
+                  setFormData({ ...formData, topic: e.target.value })
+                }}
                 placeholder="Describe the meeting topic" required />
+              {validationErrors.topic && <p className="mf-field-error">{validationErrors.topic}</p>}
               <button type="button" className="mf-link-btn"
                 style={{ marginTop: '6px' }}
                 onClick={() => { setShowCustomTopic(false); setFormData({ ...formData, topic: '' }) }}>
@@ -1529,7 +1605,7 @@ export default function MeetingForm() {
           <div className="mf-section-label"><span className="mf-section-num">3</span> Attendance & Confirmation</div>
 
           {/* Attendees tag-input */}
-          <div className="form-group">
+          <div className={`form-group${validationErrors.attendees || validationErrors.attendeeConfirmations || validationErrors.attendeeSignatures ? ' mf-field--invalid' : ''}`} ref={setSharedFieldRef(['attendees', 'attendeeConfirmations', 'attendeeSignatures'])}>
             <label className="form-label">
               Attendees
               {formData.is_self_training && (
@@ -1553,7 +1629,13 @@ export default function MeetingForm() {
               <input type="text" className="form-input"
                 placeholder="Type name to search or add..."
                 value={attendeeSearch}
-                onChange={(e) => { setAttendeeSearch(e.target.value); setAttendeeDropdownOpen(true) }}
+                onChange={(e) => {
+                  clearValidationError('attendees')
+                  clearValidationError('attendeeConfirmations')
+                  clearValidationError('attendeeSignatures')
+                  setAttendeeSearch(e.target.value)
+                  setAttendeeDropdownOpen(true)
+                }}
                 onFocus={() => setAttendeeDropdownOpen(true)}
                 onBlur={() => setTimeout(() => setAttendeeDropdownOpen(false), 150)}
                 onKeyDown={(e) => {
@@ -1590,19 +1672,38 @@ export default function MeetingForm() {
                 Load last meeting
               </button>
             </div>
+
+            {attendees.length === 1 && (
+              <label className="mf-inline-check" style={{ marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={formData.is_self_training}
+                  onChange={(e) => autoDetectLeader(attendees, { isSelfTraining: e.target.checked })}
+                />
+                <span>Is self training</span>
+              </label>
+            )}
+
+            {validationErrors.attendees && <p className="mf-field-error">{validationErrors.attendees}</p>}
+            {validationErrors.attendeeConfirmations && <p className="mf-field-error">{validationErrors.attendeeConfirmations}</p>}
+            {validationErrors.attendeeSignatures && <p className="mf-field-error">{validationErrors.attendeeSignatures}</p>}
           </div>
 
           {/* Per-attendee signature rows */}
           {attendees.length > 0 && (
             <div className="mf-attendee-list">
               {attendees.map((attendee, index) => (
-                <div key={index} className="mf-attendee-row">
+                <div
+                  key={index}
+                  className={`mf-attendee-row${((validationErrors.attendeeConfirmations && isAttendeeConfirmationMissing(attendee)) || (validationErrors.attendeeSignatures && isAttendeeSignatureMissing(attendee))) ? ' mf-attendee-row--invalid' : ''}`}
+                >
                   <div className="mf-attendee-row-head">
                     <span className="mf-attendee-row-name">{attendee.name}</span>
                     <div className="mf-attendee-row-controls">
                       <label className="mf-inline-check">
                         <input type="checkbox" checked={attendee.signed_with_checkbox || false}
                           onChange={(e) => {
+                            clearValidationError('attendeeConfirmations')
                             const n = [...attendees]
                             n[index] = { ...n[index], signed_with_checkbox: e.target.checked }
                             setAttendees(n)
@@ -1612,6 +1713,8 @@ export default function MeetingForm() {
                       <label className="mf-inline-check">
                         <input type="checkbox" checked={attendee.show_signature_field || false}
                           onChange={(e) => {
+                            clearValidationError('attendeeSignatures')
+                            clearValidationError('attendeeConfirmations')
                             const n = [...attendees]
                             n[index] = { ...n[index], show_signature_field: e.target.checked }
                             setAttendees(n)
@@ -1627,7 +1730,13 @@ export default function MeetingForm() {
                         <>
                           <img src={attendee.signature_url} alt={`Signature of ${attendee.name}`} className="mf-sig-img" />
                           <button type="button" className="btn btn-secondary btn-sm"
-                            onClick={() => { const n = [...attendees]; n[index] = { ...n[index], signature_url: null }; setAttendees(n) }}>
+                            onClick={() => {
+                              clearValidationError('attendeeSignatures')
+                              clearValidationError('attendeeConfirmations')
+                              const n = [...attendees]
+                              n[index] = { ...n[index], signature_url: null }
+                              setAttendees(n)
+                            }}>
                             Remove
                           </button>
                         </>
@@ -1639,6 +1748,8 @@ export default function MeetingForm() {
                             onEnd={() => {
                               const ref = attendeeSignatureRefs.current[index]
                               if (ref) {
+                                clearValidationError('attendeeSignatures')
+                                clearValidationError('attendeeConfirmations')
                                 const dataUrl = ref.toDataURL()
                                 setAttendees(prev => {
                                   const n = [...prev]
@@ -1650,6 +1761,7 @@ export default function MeetingForm() {
                           />
                           <button type="button" className="btn btn-secondary btn-sm"
                             onClick={() => {
+                              clearValidationError('attendeeSignatures')
                               attendeeSignatureRefs.current[index]?.clear()
                               setAttendees(prev => {
                                 const n = [...prev]
@@ -1661,6 +1773,12 @@ export default function MeetingForm() {
                           </button>
                         </>
                       )}
+                      {validationErrors.attendeeConfirmations && isAttendeeConfirmationMissing(attendee) && (
+                        <p className="mf-field-error">Confirm or sign this attendee.</p>
+                      )}
+                      {validationErrors.attendeeSignatures && isAttendeeSignatureMissing(attendee) && (
+                        <p className="mf-field-error">Signature is enabled for this attendee but not completed.</p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1669,7 +1787,7 @@ export default function MeetingForm() {
           )}
 
           {/* Verification */}
-          <div className="mf-verification">
+          <div className={`mf-verification${validationErrors.completed || validationErrors.leaderSignature ? ' mf-field--invalid' : ''}`} ref={setSharedFieldRef(['completed', 'leaderSignature'])}>
             <h4 className="mf-verify-title">Verification</h4>
             {showJurisdictionWarning && (
               <JurisdictionWarningNotice className="mf-legal-note">
@@ -1679,12 +1797,17 @@ export default function MeetingForm() {
             <LegalClauseNotice className="mf-legal-note" />
             <label className="mf-verify-item">
               <input type="checkbox" checked={formData.completed}
-                onChange={(e) => setFormData({ ...formData, completed: e.target.checked })} />
-              <span>Leader confirms this meeting is complete</span>
+                onChange={(e) => {
+                  clearValidationError('completed')
+                  setFormData({ ...formData, completed: e.target.checked })
+                }} />
+              <span>Worker performing the meeting confirms this meeting is complete</span>
             </label>
+            {validationErrors.completed && <p className="mf-field-error">{validationErrors.completed}</p>}
             <label className="mf-verify-item">
               <input type="checkbox" checked={showSignaturePanel}
                 onChange={(e) => {
+                  clearValidationError('leaderSignature')
                   setShowSignaturePanel(e.target.checked)
                   if (!e.target.checked) {
                     signatureRef.current?.clear()
@@ -1720,6 +1843,7 @@ export default function MeetingForm() {
                     <input type="checkbox"
                       checked={!!chosenDefaultSigUrl}
                       onChange={(e) => {
+                        clearValidationError('leaderSignature')
                         if (e.target.checked) {
                           setChosenDefaultSigUrl(leaderDefaultSignature)
                           signatureRef.current?.clear()
@@ -1739,16 +1863,22 @@ export default function MeetingForm() {
                       className="signature-canvas" height={180}
                       onEnd={() => {
                         if (signatureRef.current) {
+                          clearValidationError('leaderSignature')
                           setManualSigDataUrl(signatureRef.current.toDataURL())
                         }
                       }} />
                 }
                 {!chosenDefaultSigUrl && (
                   <button type="button" className="btn btn-secondary btn-sm"
-                    onClick={() => { signatureRef.current?.clear(); setManualSigDataUrl(null) }}>
+                    onClick={() => {
+                      clearValidationError('leaderSignature')
+                      signatureRef.current?.clear()
+                      setManualSigDataUrl(null)
+                    }}>
                     Clear Signature
                   </button>
                 )}
+                {validationErrors.leaderSignature && <p className="mf-field-error">{validationErrors.leaderSignature}</p>}
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
+import { resolveMeetingLeader } from '../lib/meetingLeader'
 import SignaturePad from '../components/SignaturePad'
 import AdminAnalyticsDashboard from '../components/AdminAnalyticsDashboard'
 import './AdminPanel.css'
@@ -10,13 +11,40 @@ const ADMIN_TABS = [
   { key: 'meetings', label: 'Meetings' },
   { key: 'incidents', label: 'Incidents' },
   { key: 'users', label: 'Users' },
-  { key: 'leaders', label: 'Leaders' },
+  { key: 'leaders', label: 'Workers Performing the Meetings' },
   { key: 'involved-persons', label: 'Workers & Subs' },
   { key: 'companies', label: 'Companies' },
   { key: 'topic-checklists', label: 'Topic Checklists' },
   { key: 'settings', label: 'Settings' },
   { key: 'analytics', label: 'Analytics' },
 ]
+
+const EMPTY_PROFILE_FILTERS = {
+  missingEmail: false,
+  missingPhone: false,
+  missingCompany: false,
+  missingSignature: false,
+}
+
+const hasProfileValue = (value) => {
+  if (typeof value === 'string') return value.trim().length > 0
+  return value !== null && value !== undefined
+}
+
+const profileMatchesMissingFilters = (profile, filters, options = {}) => {
+  const {
+    includePhone = false,
+    includeCompany = false,
+    includeSignature = false,
+  } = options
+
+  if (filters.missingEmail && hasProfileValue(profile.email)) return false
+  if (includePhone && filters.missingPhone && hasProfileValue(profile.phone)) return false
+  if (includeCompany && filters.missingCompany && hasProfileValue(profile.company?.name || profile.company_id)) return false
+  if (includeSignature && filters.missingSignature && hasProfileValue(profile.default_signature_url)) return false
+
+  return true
+}
 
 export default function AdminPanel() {
   const navigate = useNavigate()
@@ -64,6 +92,9 @@ export default function AdminPanel() {
   const [involvedPersons, setInvolvedPersons] = useState([])
   const [companies, setCompanies] = useState([])
   const [loading, setLoading] = useState(true)
+  const [userFilters, setUserFilters] = useState({ ...EMPTY_PROFILE_FILTERS })
+  const [leaderFilters, setLeaderFilters] = useState({ ...EMPTY_PROFILE_FILTERS })
+  const [involvedPersonFilters, setInvolvedPersonFilters] = useState({ ...EMPTY_PROFILE_FILTERS })
   
   // Form states
   const [showUserForm, setShowUserForm] = useState(false)
@@ -93,7 +124,7 @@ export default function AdminPanel() {
   // name matches a leader directly.
   const handleFixDraftLeaders = async () => {
     if (!window.confirm(
-      'This will update leader_name and leader_id on ALL draft meetings based on their attendees. Approved (non-draft) meetings will NOT be touched. Continue?'
+      'This will update worker-performing-the-meeting assignments on ALL draft meetings based on their attendees. Approved (non-draft) meetings will NOT be touched. Continue?'
     )) return
 
     setDraftMigrationRunning(true)
@@ -103,7 +134,7 @@ export default function AdminPanel() {
       const [draftsRes, leadersRes, involvedRes] = await Promise.all([
         supabase
           .from('meetings')
-          .select('id, leader_id, leader_name, attendees:meeting_attendees(name)')
+          .select('id, leader_id, leader_name, is_self_training, attendees:meeting_attendees(name)')
           .eq('is_draft', true),
         supabase
           .from('leaders')
@@ -118,46 +149,34 @@ export default function AdminPanel() {
       const allLeaders   = leadersRes.data   || []
       const allPersons   = involvedRes.data  || []
 
-      // Build lookup maps
-      const personByName  = {}  // lowercase name → { leader_id }
-      allPersons.forEach(p => { personByName[(p.name || '').toLowerCase().trim()] = p })
-      const leaderById   = {}  // id → leader
-      const leaderByName = {}  // lowercase name → leader
-      allLeaders.forEach(l => {
-        leaderById[l.id]  = l
-        leaderByName[(l.name || '').toLowerCase().trim()] = l
-      })
-
       // 2. For each draft decide the correct leader
-      const updates = []  // { id, leader_id, leader_name }
+      const updates = []
       let skipped   = 0
 
       for (const draft of allDrafts) {
-        const attendees = draft.attendees || []
-        let found = null
+        const resolution = resolveMeetingLeader({
+          attendees: draft.attendees || [],
+          leaders: allLeaders,
+          involvedPersons: allPersons,
+          isSelfTraining: (draft.attendees || []).length === 1,
+        })
 
-        // Pass 1: via involved_persons.leader_id
-        for (const a of attendees) {
-          const key = (a.name || '').toLowerCase().trim()
-          const person = personByName[key]
-          if (person?.leader_id && leaderById[person.leader_id]) {
-            found = leaderById[person.leader_id]
-            break
-          }
-        }
-        // Pass 2: attendee IS a leader (direct name match)
-        if (!found) {
-          for (const a of attendees) {
-            const key = (a.name || '').toLowerCase().trim()
-            if (leaderByName[key]) { found = leaderByName[key]; break }
-          }
-        }
-
-        if (!found) { skipped++; continue }
+        const nextLeaderId = resolution.leaderId || null
+        const nextLeaderName = resolution.leaderName || null
+        const nextIsSelfTraining = resolution.isSelfTraining
 
         // Only queue update if something actually changes
-        if (found.id !== draft.leader_id || found.name !== draft.leader_name) {
-          updates.push({ id: draft.id, leader_id: found.id, leader_name: found.name })
+        if (
+          (draft.leader_id || null) !== nextLeaderId ||
+          (draft.leader_name || null) !== nextLeaderName ||
+          !!draft.is_self_training !== nextIsSelfTraining
+        ) {
+          updates.push({
+            id: draft.id,
+            leader_id: nextLeaderId,
+            leader_name: nextLeaderName,
+            is_self_training: nextIsSelfTraining,
+          })
         } else {
           skipped++
         }
@@ -173,7 +192,11 @@ export default function AdminPanel() {
           batch.map(u =>
             supabase
               .from('meetings')
-              .update({ leader_id: u.leader_id, leader_name: u.leader_name })
+              .update({
+                leader_id: u.leader_id,
+                leader_name: u.leader_name,
+                is_self_training: u.is_self_training,
+              })
               .eq('id', u.id)
           )
         )
@@ -746,7 +769,7 @@ export default function AdminPanel() {
 
       if (uploadError) {
         console.error('Error uploading signature:', uploadError)
-        alert('Error uploading signature. Leader will be added without default signature.')
+        alert('Error uploading signature. The worker performing the meeting will be added without a default signature.')
       } else {
         const { data: { publicUrl } } = supabase.storage
           .from('signatures')
@@ -765,7 +788,7 @@ export default function AdminPanel() {
       .insert([dataToInsert])
 
     if (error) {
-      alert(`Error adding leader: ${error.message}`)
+      alert(`Error adding worker performing the meeting: ${error.message}`)
     } else {
       setNewLeader({ name: '', email: '', phone: '' })
       setNewLeaderShowSignature(false)
@@ -821,7 +844,7 @@ export default function AdminPanel() {
       .eq('id', editingLeader.id)
 
     if (error) {
-      alert(`Error updating leader: ${error.message}`)
+      alert(`Error updating worker performing the meeting: ${error.message}`)
     } else {
       // If a new default signature was uploaded, offer to propagate it to associated draft meetings
       if (defaultSignatureUrl) {
@@ -834,7 +857,7 @@ export default function AdminPanel() {
         if (allDraftMeetings && allDraftMeetings.length > 0) {
           const count = allDraftMeetings.length
           const apply = window.confirm(
-            `There ${count === 1 ? 'is' : 'are'} ${count} draft meeting${count !== 1 ? 's' : ''} associated with ${editingLeader.name}. Would you like to update their leader signature with the new default?`
+            `There ${count === 1 ? 'is' : 'are'} ${count} draft meeting${count !== 1 ? 's' : ''} associated with ${editingLeader.name}. Would you like to update their worker performing the meeting signature with the new default?`
           )
           if (apply) {
             await supabase
@@ -857,7 +880,7 @@ export default function AdminPanel() {
   }
 
   const handleDeleteLeader = async (id) => {
-    if (!confirm('Are you sure you want to delete this leader?')) return
+    if (!confirm('Are you sure you want to delete this worker performing the meeting?')) return
     
     const { error } = await supabase
       .from('leaders')
@@ -1027,6 +1050,69 @@ export default function AdminPanel() {
     }
   }
 
+  const toggleProfileFilter = (setFilters, key) => {
+    setFilters((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const resetProfileFilters = (setFilters) => {
+    setFilters({ ...EMPTY_PROFILE_FILTERS })
+  }
+
+  const renderProfileFilters = (filters, setFilters, options) => {
+    const filterButtons = [
+      { key: 'missingEmail', label: 'Without email' },
+      options.includePhone ? { key: 'missingPhone', label: 'Without phone' } : null,
+      options.includeCompany ? { key: 'missingCompany', label: 'Without company' } : null,
+      options.includeSignature ? { key: 'missingSignature', label: 'Without signature' } : null,
+    ].filter(Boolean)
+
+    const hasActiveFilters = Object.values(filters).some(Boolean)
+
+    return (
+      <div className="admin-profile-filters">
+        <span className="admin-profile-filters-label">Show only:</span>
+        {filterButtons.map((filter) => (
+          <button
+            key={filter.key}
+            type="button"
+            className={`admin-filter-chip ${filters[filter.key] ? 'is-active' : ''}`}
+            onClick={() => toggleProfileFilter(setFilters, filter.key)}
+          >
+            {filter.label}
+          </button>
+        ))}
+        {hasActiveFilters && (
+          <button
+            type="button"
+            className="admin-filter-reset"
+            onClick={() => resetProfileFilters(setFilters)}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  const filteredUsers = users.filter((user) => profileMatchesMissingFilters(user, userFilters, {
+    includeSignature: true,
+  }))
+
+  const filteredLeaders = leaders.filter((leader) => profileMatchesMissingFilters(leader, leaderFilters, {
+    includePhone: true,
+    includeSignature: true,
+  }))
+
+  const filteredInvolvedPersons = involvedPersons.filter((person) => profileMatchesMissingFilters(person, involvedPersonFilters, {
+    includePhone: true,
+    includeCompany: true,
+    includeSignature: true,
+  }))
+
+  const formatFilteredCount = (filteredCount, totalCount) => (
+    filteredCount === totalCount ? `${totalCount}` : `${filteredCount} of ${totalCount}`
+  )
+
   if (!adminChecked) {
     return <div className="spinner"></div>
   }
@@ -1085,7 +1171,7 @@ export default function AdminPanel() {
                       <tr>
                         <th>Date</th>
                         <th>Topic</th>
-                        <th>Leader</th>
+                        <th>Worker performing the meeting</th>
                         <th>Project</th>
                         <th>Location</th>
                         <th>Actions</th>
@@ -1168,11 +1254,15 @@ export default function AdminPanel() {
           {activeTab === 'users' && (
             <div className="data-table">
               <div className="section-header">
-                <h3 className="section-title">Users ({users.length})</h3>
+                <h3 className="section-title">Users ({formatFilteredCount(filteredUsers.length, users.length)})</h3>
                 <button className="btn btn-primary" onClick={() => setShowUserForm(!showUserForm)}>
                   {showUserForm ? 'Cancel' : '+ Add User'}
                 </button>
               </div>
+
+              {renderProfileFilters(userFilters, setUserFilters, {
+                includeSignature: true,
+              })}
 
               {editingUser && (
                 <form className="form-card" onSubmit={handleUpdateUser}>
@@ -1305,6 +1395,8 @@ export default function AdminPanel() {
 
               {users.length === 0 ? (
                 <p>No users found.</p>
+              ) : filteredUsers.length === 0 ? (
+                <p>No users match the current filters.</p>
               ) : (
                 <div className="table-container">
                   <table>
@@ -1313,15 +1405,17 @@ export default function AdminPanel() {
                         <th>Name</th>
                         <th>Email</th>
                         <th>Admin</th>
+                        <th>Signature</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((user) => (
+                      {filteredUsers.map((user) => (
                         <tr key={user.id}>
                           <td>{user.name}</td>
                           <td>{user.email}</td>
                           <td>{user.is_admin ? '✓' : '-'}</td>
+                          <td>{user.default_signature_url ? 'Added' : 'Missing'}</td>
                           <td>
                             <div className="table-actions">
                               <button
@@ -1356,15 +1450,20 @@ export default function AdminPanel() {
           {activeTab === 'leaders' && (
             <div className="data-table">
               <div className="section-header">
-                <h3 className="section-title">Leaders ({leaders.length})</h3>
+                <h3 className="section-title">Workers Performing the Meetings ({formatFilteredCount(filteredLeaders.length, leaders.length)})</h3>
                 <button className="btn btn-primary" onClick={() => setShowLeaderForm(!showLeaderForm)}>
-                  {showLeaderForm ? 'Cancel' : '+ Add Leader'}
+                  {showLeaderForm ? 'Cancel' : '+ Add Worker Performing the Meeting'}
                 </button>
               </div>
 
+              {renderProfileFilters(leaderFilters, setLeaderFilters, {
+                includePhone: true,
+                includeSignature: true,
+              })}
+
               {showLeaderForm && (
                 <form className="form-card" onSubmit={handleAddLeader}>
-                  <h4>Add New Leader</h4>
+                  <h4>Add New Worker Performing the Meeting</h4>
                   <div className="form-group">
                     <label>Name *</label>
                     <input
@@ -1429,13 +1528,15 @@ export default function AdminPanel() {
                   )}
                   
                   <button type="submit" className="btn btn-primary" disabled={loading}>
-                    {loading ? 'Adding...' : 'Add Leader'}
+                    {loading ? 'Adding...' : 'Add Worker Performing the Meeting'}
                   </button>
                 </form>
               )}
 
               {leaders.length === 0 ? (
-                <p>No leaders found.</p>
+                <p>No workers performing the meetings found.</p>
+              ) : filteredLeaders.length === 0 ? (
+                <p>No workers performing the meetings match the current filters.</p>
               ) : (
                 <div className="table-container">
                   <table>
@@ -1444,15 +1545,17 @@ export default function AdminPanel() {
                         <th>Name</th>
                         <th>Email</th>
                         <th>Phone</th>
+                        <th>Signature</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {leaders.map((leader) => (
+                      {filteredLeaders.map((leader) => (
                         <tr key={leader.id}>
                           <td>{leader.name}</td>
                           <td>{leader.email || '-'}</td>
                           <td>{leader.phone || '-'}</td>
+                          <td>{leader.default_signature_url ? 'Added' : 'Missing'}</td>
                           <td>
                             <div className="table-actions">
                               <button
@@ -1488,7 +1591,7 @@ export default function AdminPanel() {
           {activeTab === 'involved-persons' && (
             <div className="data-table">
               <div className="section-header">
-                <h3 className="section-title">Workers & Subs ({involvedPersons.length})</h3>
+                <h3 className="section-title">Workers & Subs ({formatFilteredCount(filteredInvolvedPersons.length, involvedPersons.length)})</h3>
                 <button className="btn btn-primary" onClick={() => {
                   setShowInvolvedPersonForm(!showInvolvedPersonForm)
                   setEditingInvolvedPerson(null)
@@ -1496,6 +1599,12 @@ export default function AdminPanel() {
                   {showInvolvedPersonForm ? 'Cancel' : '+ Add Worker/Sub'}
                 </button>
               </div>
+
+              {renderProfileFilters(involvedPersonFilters, setInvolvedPersonFilters, {
+                includePhone: true,
+                includeCompany: true,
+                includeSignature: true,
+              })}
 
               {showInvolvedPersonForm && (
                 <form className="form-card" onSubmit={handleAddInvolvedPerson}>
@@ -1585,6 +1694,8 @@ export default function AdminPanel() {
 
               {involvedPersons.length === 0 ? (
                 <p>No workers or subs found.</p>
+              ) : filteredInvolvedPersons.length === 0 ? (
+                <p>No workers or subs match the current filters.</p>
               ) : (
                 <div className="table-container">
                   <table>
@@ -1594,16 +1705,18 @@ export default function AdminPanel() {
                         <th>Email</th>
                         <th>Phone</th>
                         <th>Company</th>
+                        <th>Signature</th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {involvedPersons.map((person) => (
+                      {filteredInvolvedPersons.map((person) => (
                         <tr key={person.id}>
                           <td>{person.name}</td>
                           <td>{person.email || '-'}</td>
                           <td>{person.phone || '-'}</td>
                           <td>{person.company?.name || '-'}</td>
+                          <td>{person.default_signature_url ? 'Added' : 'Missing'}</td>
                           <td>
                             <div className="table-actions">
                               <button
@@ -1638,7 +1751,7 @@ export default function AdminPanel() {
               <div className="admin-edit-modal" onClick={(event) => event.stopPropagation()}>
                 <form className="form-card admin-edit-form-card" onSubmit={handleUpdateLeader}>
                   <div className="admin-edit-modal-header">
-                    <h4>Edit Leader</h4>
+                    <h4>Edit Worker Performing the Meeting</h4>
                     <button type="button" className="admin-edit-modal-close" onClick={closeLeaderEditModal}>×</button>
                   </div>
                   <div className="form-group">
@@ -1724,7 +1837,7 @@ export default function AdminPanel() {
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button type="submit" className="btn btn-primary" disabled={loading}>
-                      {loading ? 'Updating...' : 'Update Leader'}
+                      {loading ? 'Updating...' : 'Update Worker Performing the Meeting'}
                     </button>
                     <button 
                       type="button" 

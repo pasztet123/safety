@@ -256,11 +256,11 @@ export default function PersonDetail() {
           {person.leader_id ? (
             <div className="person-badge-group">
               <span className="person-badge person-badge--worker">Worker</span>
-              <span className="person-badge person-badge--leader">Leader</span>
+              <span className="person-badge person-badge--leader">Performs the meetings</span>
             </div>
           ) : (
             <span className={`person-badge person-badge--${type}`}>
-              {type === 'worker' ? 'Worker' : 'Leader'}
+              {type === 'worker' ? 'Worker' : 'Performs the meetings'}
             </span>
           )}
           {type === 'worker' && person.company?.name && (
@@ -455,7 +455,7 @@ export default function PersonDetail() {
         {activeTab === 'disciplinary' && (
           disciplinaryActions.length === 0 ? (
             <div className="person-empty-section">
-              {type === 'worker' ? 'No disciplinary actions assigned.' : 'No disciplinary actions recorded under this leader.'}
+              {type === 'worker' ? 'No disciplinary actions assigned.' : 'No disciplinary actions recorded under this worker performing the meeting.'}
             </div>
           ) : (
             <div className="person-activity-list">

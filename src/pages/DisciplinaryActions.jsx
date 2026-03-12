@@ -146,7 +146,7 @@ export default function DisciplinaryActions() {
     if (!getIncident(action.incident_id)) return 'Selected safety violation incident is no longer available'
     if (!action.violation_type) return 'Select a violation type'
     if (!action.recipient_person_id) return 'Select a recipient'
-    if (!action.responsible_leader_id) return 'Select a responsible leader'
+    if (!action.responsible_leader_id) return 'Select a responsible worker performing the meeting'
     if (!action.action_type) return 'Select an action taken'
     if (!action.action_date) return 'Select an action date'
     if (!action.action_time) return 'Select an action time'
@@ -364,9 +364,9 @@ export default function DisciplinaryActions() {
               </select>
             </div>
             <div className="form-group">
-              <label className="form-label">Responsible leader *</label>
+              <label className="form-label">Responsible worker performing the meeting *</label>
               <select className="form-select" value={newAction.responsible_leader_id} onChange={e => setNewAction(prev => ({ ...prev, responsible_leader_id: e.target.value }))}>
-                <option value="">Select leader</option>
+                <option value="">Select worker performing the meeting</option>
                 {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
               </select>
             </div>
@@ -402,7 +402,7 @@ export default function DisciplinaryActions() {
         <input
           className="search-input"
           type="text"
-          placeholder="Search by violation, person, leader, notes..."
+          placeholder="Search by violation, person, worker performing the meeting, notes..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
@@ -415,7 +415,7 @@ export default function DisciplinaryActions() {
           {[...new Set(incidents.map(incident => incident.safety_violation_type).filter(Boolean))].map(option => <option key={option} value={option}>{option}</option>)}
         </select>
         <select className="filter-select" value={leaderFilter} onChange={e => setLeaderFilter(e.target.value)}>
-          <option value="all">All leaders</option>
+          <option value="all">All workers performing the meetings</option>
           {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
         </select>
       </div>
@@ -486,9 +486,9 @@ export default function DisciplinaryActions() {
                           </select>
                         </div>
                         <div className="form-group">
-                          <label className="form-label">Responsible leader *</label>
+                          <label className="form-label">Responsible worker performing the meeting *</label>
                           <select className="form-select" value={editForm.responsible_leader_id} onChange={e => setEditForm(prev => ({ ...prev, responsible_leader_id: e.target.value }))}>
-                            <option value="">Select leader</option>
+                            <option value="">Select worker performing the meeting</option>
                             {leaders.map(leader => <option key={leader.id} value={leader.id}>{leader.name}</option>)}
                           </select>
                         </div>
@@ -527,7 +527,7 @@ export default function DisciplinaryActions() {
                     <>
                       <div className="action-meta-grid disciplinary-meta-grid">
                         <div><strong>Recipient:</strong> {getPersonName(action.recipient_person_id)}</div>
-                        <div><strong>Leader:</strong> {getLeaderName(action.responsible_leader_id)}</div>
+                        <div><strong>Worker performing the meeting:</strong> {getLeaderName(action.responsible_leader_id)}</div>
                         <div><strong>Incident:</strong> {incident ? `${incident.employee_name} on ${new Date(incident.date).toLocaleDateString()}` : 'Unknown'}</div>
                         <div><strong>Violation:</strong> {incident?.safety_violation_type || 'Unknown'}</div>
                       </div>

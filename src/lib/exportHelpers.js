@@ -201,7 +201,7 @@ const csvHeader = (...cols) => csvRow(cols)
 const fmtCSVDate = (d) => d ? String(d).substring(0, 10) : ''
 
 const buildMeetingsCSV = (meetings) => {
-  const lines = [csvHeader('Date','Time','Project','Topic','Leader','Trade','Attendees','Attendee Count','Checklists')]
+  const lines = [csvHeader('Date','Time','Project','Topic','Worker performing the meeting','Trade','Attendees','Attendee Count','Checklists')]
   for (const m of meetings) {
     const attendees = (m.attendees || []).map(a => a.name).filter(Boolean).join('; ')
     const checklists = (m.checklists || []).map(c => c.name).filter(Boolean).join('; ')

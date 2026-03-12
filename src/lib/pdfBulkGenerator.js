@@ -175,7 +175,7 @@ export const generateMeetingListPDF = async (meetings, title = 'Toolbox Meetings
             ${m.trade ? `<span class="ml-pill ml-pill--accent">${esc(m.trade)}</span>` : ''}
             ${m.time ? `<span class="ml-pill">${m.time.substring(0,5)}</span>` : ''}
           </div>
-          <div class="ml-meta-line">Leader: <strong>${esc(m.leader_name) || '—'}</strong>
+          <div class="ml-meta-line">Worker performing the meeting: <strong>${esc(m.leader_name) || '—'}</strong>
             &nbsp;·&nbsp; ${attendeeNames.length} attendee${attendeeNames.length !== 1 ? 's' : ''}</div>
           ${attendeeNames.length > 0 ? `<div class="ml-attendees-line">${attendeeNames.join(', ')}</div>` : ''}
           ${checklistNames.length > 0 ? `<div class="ml-meta-line" style="margin-top:3px">Checklists: ${checklistNames.join(', ')}</div>` : ''}
@@ -584,7 +584,7 @@ export const downloadDisciplinaryActionsListPDF = async (
         </div>
         <div class="act-meta">
           ${recipient ? `Recipient: <strong>${esc(recipient)}</strong>` : 'Recipient: —'}
-          ${leader ? ` · Leader: <strong>${esc(leader)}</strong>` : ''}
+          ${leader ? ` · Worker performing the meeting: <strong>${esc(leader)}</strong>` : ''}
           ${incident?.employee_name ? ` · Employee: ${esc(incident.employee_name)}` : ''}
         </div>
         ${action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}

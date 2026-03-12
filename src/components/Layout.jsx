@@ -284,7 +284,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v8.4.1</span>
+          <span className="app-footer-version">v8.5.0</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.

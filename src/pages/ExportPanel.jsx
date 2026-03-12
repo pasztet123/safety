@@ -186,7 +186,7 @@ export default function ExportPanel() {
     if (!meetings.length) { alert('No meetings found for the selected filters.'); return }
     setProgress(p => ({ ...p, label: `Building PDF for ${meetings.length} meetings…` }))
     const projectName = mProject ? projects.find(p => p.id === mProject)?.name : ''
-    const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mLeader ? `Leader: ${mLeader}` : '', mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
+    const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mLeader ? `Worker performing the meeting: ${mLeader}` : '', mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
     await downloadMeetingListPDF(meetings, 'Toolbox Meetings Report', filterDesc(parts))
   })
 
@@ -302,7 +302,7 @@ export default function ExportPanel() {
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Toolbox Meetings">
         <p className="ep-desc">
-          Export a list PDF of all toolbox meetings, optionally filtered by date, project, leader, worker, trade, or topic.
+          Export a list PDF of all toolbox meetings, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
           Or download all filtered meetings as individual PDFs packed into a ZIP file.
         </p>
 
@@ -319,11 +319,11 @@ export default function ExportPanel() {
           </div>
 
           <div className="ep-filter-group">
-            <label className="ep-label">Leader</label>
+            <label className="ep-label">Worker performing the meeting</label>
             <input
               list="ep-leaders"
               className="ep-input"
-              placeholder="Leader name…"
+              placeholder="Worker performing the meeting name…"
               value={mLeader}
               onChange={e => setMLeader(e.target.value)}
             />
@@ -505,7 +505,7 @@ export default function ExportPanel() {
           <label className="ep-csv-label">Include in export:</label>
           <div className="ep-checkboxes">
             {[
-              { key: 'meetings',            label: 'meetings.csv',            desc: 'Date, project, topic, leader, trade, attendees' },
+              { key: 'meetings',            label: 'meetings.csv',            desc: 'Date, project, topic, worker performing the meeting, trade, attendees' },
               { key: 'incidents',           label: 'incidents.csv',           desc: 'Date, type, severity, employee, reporter, details' },
               { key: 'corrective_actions',  label: 'corrective_actions.csv',  desc: 'Description, status, assignee, due date, incident' },
               { key: 'statistics',          label: 'statistics.csv',          desc: 'Monthly counts per project: meetings, incidents, actions' },

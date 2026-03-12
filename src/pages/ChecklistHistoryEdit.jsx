@@ -388,7 +388,7 @@ export default function ChecklistHistoryEdit() {
             >
               <option value="::">-- Select person --</option>
               {leaders.length > 0 && (
-                <optgroup label="Leaders">
+                <optgroup label="Workers performing the meetings">
                   {leaders.map(p => (
                     <option key={p.id} value={`leader::${p.name}`}>{p.name}</option>
                   ))}
@@ -562,7 +562,7 @@ export default function ChecklistHistoryEdit() {
               type="button"
               className={`sig-type-btn${signerType === 'leader' ? ' active' : ''}`}
               onClick={() => handleSignerTypeChange('leader')}
-            >Leader</button>
+            >Performs the meetings</button>
             <button
               type="button"
               className={`sig-type-btn${signerType === 'worker' ? ' active' : ''}`}

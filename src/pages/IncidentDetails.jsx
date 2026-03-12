@@ -442,7 +442,7 @@ export default function IncidentDetails() {
                     <p className="if-action-desc">{action.action_type}</p>
                     <div className="if-action-meta">
                       <span>Recipient: {involvedPersons.find(person => person.id === action.recipient_person_id)?.name || 'Unknown'}</span>
-                      <span>Leader: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
+                      <span>Worker performing the meeting: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
                       <span>Date: {new Date(action.action_date).toLocaleDateString()}</span>
                       <span>Time: {(action.action_time || '').slice(0, 5)}</span>
                     </div>

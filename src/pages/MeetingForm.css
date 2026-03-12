@@ -61,6 +61,56 @@
   margin-bottom: 0;
 }
 
+.mf-validation-banner {
+  position: fixed;
+  right: 20px;
+  bottom: 96px;
+  z-index: 1300;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 14px 16px;
+  background: #7f1d1d;
+  color: white;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(127, 29, 29, 0.28);
+}
+
+.mf-validation-banner-close {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: white;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.mf-field--invalid .form-input,
+.mf-field--invalid .form-select,
+.mf-field--invalid .form-textarea,
+.mf-field--invalid .tp-trigger,
+.mf-field--invalid .mf-attendee-list,
+.mf-field--invalid .mf-verification,
+.mf-verification.mf-field--invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
+
+.mf-field-error {
+  margin: 8px 0 0;
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.mf-attendee-row--invalid {
+  background: rgba(220, 38, 38, 0.04);
+}
+
 .mf-section-num {
   display: inline-flex;
   align-items: center;
@@ -689,6 +739,14 @@
   .mf-row-3 { grid-template-columns: 1fr 1fr; }
 }
 
+@media (max-width: 1024px) {
+  .mf-validation-banner {
+    top: 16px;
+    right: 16px;
+    bottom: auto;
+  }
+}
+
 @media (max-width: 640px) {
   .mf-section--setup,
   .mf-section--confirm { padding: 18px 16px; }
@@ -702,6 +760,11 @@
   .checklist-modal-header, .checklist-modal-body { padding: 16px; }
   .checklist-modal-footer { flex-direction: column; }
   .checklist-modal-footer button { width: 100%; }
+  .mf-validation-banner {
+    left: 16px;
+    right: 16px;
+    max-width: none;
+  }
 }
 
 
