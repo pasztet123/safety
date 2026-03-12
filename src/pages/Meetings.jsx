@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchTrades } from '../lib/trades'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
-import { resolveMeetingLeader } from '../lib/meetingLeader'
+import { applyResolvedMeetingLeader, resolveMeetingLeader } from '../lib/meetingLeader'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
 import ExportProgress from '../components/ExportProgress'
@@ -153,18 +153,28 @@ export default function Meetings() {
 
   const fetchDraftMeetings = async () => {
     try {
-      const data = await fetchAllPages(() => supabase
-        .from('meetings')
-        .select(`
-          *,
-          project:projects(name),
-          attendees:meeting_attendees(name)
-        `)
-        .is('deleted_at', null)
-        .eq('is_draft', true)
-        .order('date', { ascending: false }))
+      const [data, leadersRes, involvedRes] = await Promise.all([
+        fetchAllPages(() => supabase
+          .from('meetings')
+          .select(`
+            *,
+            project:projects(name),
+            attendees:meeting_attendees(name)
+          `)
+          .is('deleted_at', null)
+          .eq('is_draft', true)
+          .order('date', { ascending: false })),
+        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+      ])
 
-      setDraftMeetings(data)
+      const resolvedDrafts = (data || []).map((meeting) => applyResolvedMeetingLeader({
+        meeting,
+        leaders: leadersRes.data || [],
+        involvedPersons: involvedRes.data || [],
+      }))
+
+      setDraftMeetings(resolvedDrafts)
     } catch (error) {
       setDraftMeetings([])
     }
@@ -184,18 +194,22 @@ export default function Meetings() {
   const fetchMeetings = async () => {
     setLoading(true)
     try {
-      const data = await fetchAllPages(() => supabase
-        .from('meetings')
-        .select(`
-          *,
-          project:projects(name),
-          attendees:meeting_attendees(name),
-          photos:meeting_photos(photo_url)
-        `)
-        .is('deleted_at', null)
-        .eq('is_draft', false)
-        .order('date', { ascending: false })
-        .order('time', { ascending: false }))
+      const [data, leadersRes, involvedRes] = await Promise.all([
+        fetchAllPages(() => supabase
+          .from('meetings')
+          .select(`
+            *,
+            project:projects(name),
+            attendees:meeting_attendees(name),
+            photos:meeting_photos(photo_url)
+          `)
+          .is('deleted_at', null)
+          .eq('is_draft', false)
+          .order('date', { ascending: false })
+          .order('time', { ascending: false })),
+        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+      ])
 
       const meetingIds = data.map(m => m.id)
       const checklistsData = await fetchByIdsInBatches({
@@ -216,9 +230,13 @@ export default function Meetings() {
         checklistsByMeeting[mc.meeting_id].push(mc.checklist)
       })
 
-      const meetingsWithChecklists = data.map(meeting => ({
-        ...meeting,
-        checklists: checklistsByMeeting[meeting.id] || []
+      const meetingsWithChecklists = data.map(meeting => applyResolvedMeetingLeader({
+        meeting: {
+          ...meeting,
+          checklists: checklistsByMeeting[meeting.id] || []
+        },
+        leaders: leadersRes.data || [],
+        involvedPersons: involvedRes.data || [],
       }))
 
       setMeetings(meetingsWithChecklists)
@@ -460,6 +478,11 @@ export default function Meetings() {
         return
       }
 
+      const [{ data: leaders }, { data: involvedPersons }] = await Promise.all([
+        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+      ])
+
       // Fetch checklists for this meeting (separate queries to avoid PostgREST deep-join 400)
       const { data: mcRows } = await supabase
         .from('meeting_checklists')
@@ -518,7 +541,13 @@ export default function Meetings() {
         }))
       }
 
-      await generateMeetingPDF({ ...data, topicDetails, checklistCompletions })
+      const resolvedMeeting = applyResolvedMeetingLeader({
+        meeting: { ...data, topicDetails, checklistCompletions },
+        leaders: leaders || [],
+        involvedPersons: involvedPersons || [],
+      })
+
+      await generateMeetingPDF(resolvedMeeting)
     } catch (e) {
       console.error('Error generating PDF:', e)
       alert('Error generating PDF')

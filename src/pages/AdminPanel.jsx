@@ -46,6 +46,36 @@ const profileMatchesMissingFilters = (profile, filters, options = {}) => {
   return true
 }
 
+const canvasHasSignaturePixels = (canvas) => {
+  const context = canvas?.getContext('2d', { willReadFrequently: true })
+  if (!context || !canvas.width || !canvas.height) return false
+
+  const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
+  for (let index = 3; index < data.length; index += 4) {
+    if (data[index] !== 0) return true
+  }
+
+  return false
+}
+
+const captureSignatureDataUrl = ({ signatureRef, enabled, emptyMessage, dataUrl }) => {
+  if (!enabled) return { blocked: false, dataUrl: null }
+
+  if (dataUrl) {
+    return { blocked: false, dataUrl }
+  }
+
+  const signaturePad = signatureRef.current
+  const canvas = signaturePad?.getCanvas?.()
+
+  if (!canvas || !canvasHasSignaturePixels(canvas)) {
+    alert(emptyMessage)
+    return { blocked: true, dataUrl: null }
+  }
+
+  return { blocked: false, dataUrl: canvas.toDataURL('image/png') }
+}
+
 export default function AdminPanel() {
   const navigate = useNavigate()
   const tabsRef = useRef(null)
@@ -106,12 +136,17 @@ export default function AdminPanel() {
   const [editingInvolvedPerson, setEditingInvolvedPerson] = useState(null)
   const [newUser, setNewUser] = useState({ email: '', password: '', name: '', is_admin: false })
   const [newUserShowSignature, setNewUserShowSignature] = useState(false)
+  const [newUserSignatureDataUrl, setNewUserSignatureDataUrl] = useState(null)
   const [newLeader, setNewLeader] = useState({ name: '', email: '', phone: '' })
   const [newLeaderShowSignature, setNewLeaderShowSignature] = useState(false)
+  const [newLeaderSignatureDataUrl, setNewLeaderSignatureDataUrl] = useState(null)
   const [editLeaderShowSignature, setEditLeaderShowSignature] = useState(false)
+  const [editLeaderSignatureDataUrl, setEditLeaderSignatureDataUrl] = useState(null)
   const [newInvolvedPerson, setNewInvolvedPerson] = useState({ name: '', email: '', phone: '', company_id: '' })
   const [newInvolvedPersonShowSignature, setNewInvolvedPersonShowSignature] = useState(false)
+  const [newInvolvedPersonSignatureDataUrl, setNewInvolvedPersonSignatureDataUrl] = useState(null)
   const [editInvolvedPersonShowSignature, setEditInvolvedPersonShowSignature] = useState(false)
+  const [editInvolvedPersonSignatureDataUrl, setEditInvolvedPersonSignatureDataUrl] = useState(null)
   const [newCompany, setNewCompany] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
 
   // ── Draft leader migration ──
@@ -267,6 +302,7 @@ export default function AdminPanel() {
   const closeLeaderEditModal = () => {
     setEditingLeader(null)
     setEditLeaderShowSignature(false)
+    setEditLeaderSignatureDataUrl(null)
     if (editLeaderSignatureRef.current) {
       editLeaderSignatureRef.current.clear()
     }
@@ -275,6 +311,7 @@ export default function AdminPanel() {
   const closeInvolvedPersonEditModal = () => {
     setEditingInvolvedPerson(null)
     setEditInvolvedPersonShowSignature(false)
+    setEditInvolvedPersonSignatureDataUrl(null)
     if (editInvolvedPersonSignatureRef.current) {
       editInvolvedPersonSignatureRef.current.clear()
     }
@@ -592,10 +629,21 @@ export default function AdminPanel() {
     setLoading(true)
 
     try {
+      const signatureCapture = captureSignatureDataUrl({
+        signatureRef: newUserSignatureRef,
+        enabled: newUserShowSignature,
+        emptyMessage: 'Default signature is enabled, but no signature was detected. Please redraw it before saving.',
+        dataUrl: newUserSignatureDataUrl,
+      })
+      if (signatureCapture.blocked) {
+        setLoading(false)
+        return
+      }
+
       // Upload default signature if present
       let defaultSignatureUrl = null
-      if (newUserSignatureRef.current && !newUserSignatureRef.current.isEmpty()) {
-        const signatureBlob = await fetch(newUserSignatureRef.current.toDataURL()).then(r => r.blob())
+      if (signatureCapture.dataUrl) {
+        const signatureBlob = await fetch(signatureCapture.dataUrl).then(r => r.blob())
         const signatureFile = `default-signature-${Date.now()}.png`
         
         const { data: uploadData, error: uploadError } = await supabase.storage
@@ -642,6 +690,7 @@ export default function AdminPanel() {
         alert('User created successfully!')
         setNewUser({ email: '', password: '', name: '', is_admin: false })
         setNewUserShowSignature(false)
+        setNewUserSignatureDataUrl(null)
         if (newUserSignatureRef.current) {
           newUserSignatureRef.current.clear()
         }
@@ -757,10 +806,21 @@ export default function AdminPanel() {
     e.preventDefault()
     setLoading(true)
 
+    const signatureCapture = captureSignatureDataUrl({
+      signatureRef: newLeaderSignatureRef,
+      enabled: newLeaderShowSignature,
+      emptyMessage: 'Default signature is enabled, but no signature was detected. Please redraw it before saving.',
+      dataUrl: newLeaderSignatureDataUrl,
+    })
+    if (signatureCapture.blocked) {
+      setLoading(false)
+      return
+    }
+
     // Upload default signature if present
     let defaultSignatureUrl = null
-    if (newLeaderSignatureRef.current && !newLeaderSignatureRef.current.isEmpty()) {
-      const signatureBlob = await fetch(newLeaderSignatureRef.current.toDataURL()).then(r => r.blob())
+    if (signatureCapture.dataUrl) {
+      const signatureBlob = await fetch(signatureCapture.dataUrl).then(r => r.blob())
       const signatureFile = `leader-signature-${Date.now()}.png`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -792,6 +852,7 @@ export default function AdminPanel() {
     } else {
       setNewLeader({ name: '', email: '', phone: '' })
       setNewLeaderShowSignature(false)
+      setNewLeaderSignatureDataUrl(null)
       if (newLeaderSignatureRef.current) {
         newLeaderSignatureRef.current.clear()
       }
@@ -806,10 +867,21 @@ export default function AdminPanel() {
     e.preventDefault()
     setLoading(true)
 
+    const signatureCapture = captureSignatureDataUrl({
+      signatureRef: editLeaderSignatureRef,
+      enabled: editLeaderShowSignature,
+      emptyMessage: 'Default signature update is enabled, but no signature was detected. Please redraw it before saving.',
+      dataUrl: editLeaderSignatureDataUrl,
+    })
+    if (signatureCapture.blocked) {
+      setLoading(false)
+      return
+    }
+
     // Upload default signature if present
     let defaultSignatureUrl = null
-    if (editLeaderSignatureRef.current && !editLeaderSignatureRef.current.isEmpty()) {
-      const signatureBlob = await fetch(editLeaderSignatureRef.current.toDataURL()).then(r => r.blob())
+    if (signatureCapture.dataUrl) {
+      const signatureBlob = await fetch(signatureCapture.dataUrl).then(r => r.blob())
       const signatureFile = `leader-signature-${Date.now()}.png`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -870,6 +942,7 @@ export default function AdminPanel() {
 
       setEditingLeader(null)
       setEditLeaderShowSignature(false)
+      setEditLeaderSignatureDataUrl(null)
       if (editLeaderSignatureRef.current) {
         editLeaderSignatureRef.current.clear()
       }
@@ -897,10 +970,21 @@ export default function AdminPanel() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
+    const signatureCapture = captureSignatureDataUrl({
+      signatureRef: newInvolvedPersonSignatureRef,
+      enabled: newInvolvedPersonShowSignature,
+      emptyMessage: 'Default signature is enabled, but no signature was detected. Please redraw it before saving.',
+      dataUrl: newInvolvedPersonSignatureDataUrl,
+    })
+    if (signatureCapture.blocked) {
+      setLoading(false)
+      return
+    }
+
     // Upload default signature if present
     let defaultSignatureUrl = null
-    if (newInvolvedPersonSignatureRef.current && !newInvolvedPersonSignatureRef.current.isEmpty()) {
-      const signatureBlob = await fetch(newInvolvedPersonSignatureRef.current.toDataURL()).then(r => r.blob())
+    if (signatureCapture.dataUrl) {
+      const signatureBlob = await fetch(signatureCapture.dataUrl).then(r => r.blob())
       const signatureFile = `involved-person-signature-${Date.now()}.png`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -937,6 +1021,7 @@ export default function AdminPanel() {
     } else {
       setNewInvolvedPerson({ name: '', email: '', phone: '', company_id: '' })
       setNewInvolvedPersonShowSignature(false)
+      setNewInvolvedPersonSignatureDataUrl(null)
       if (newInvolvedPersonSignatureRef.current) {
         newInvolvedPersonSignatureRef.current.clear()
       }
@@ -952,10 +1037,21 @@ export default function AdminPanel() {
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
 
+    const signatureCapture = captureSignatureDataUrl({
+      signatureRef: editInvolvedPersonSignatureRef,
+      enabled: editInvolvedPersonShowSignature,
+      emptyMessage: 'Default signature update is enabled, but no signature was detected. Please redraw it before saving.',
+      dataUrl: editInvolvedPersonSignatureDataUrl,
+    })
+    if (signatureCapture.blocked) {
+      setLoading(false)
+      return
+    }
+
     // Upload new signature if present
     let defaultSignatureUrl = editingInvolvedPerson.default_signature_url
-    if (editInvolvedPersonSignatureRef.current && !editInvolvedPersonSignatureRef.current.isEmpty()) {
-      const signatureBlob = await fetch(editInvolvedPersonSignatureRef.current.toDataURL()).then(r => r.blob())
+    if (signatureCapture.dataUrl) {
+      const signatureBlob = await fetch(signatureCapture.dataUrl).then(r => r.blob())
       const signatureFile = `involved-person-signature-${Date.now()}.png`
       
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -996,6 +1092,7 @@ export default function AdminPanel() {
     } else {
       setEditingInvolvedPerson(null)
       setEditInvolvedPersonShowSignature(false)
+      setEditInvolvedPersonSignatureDataUrl(null)
       if (editInvolvedPersonSignatureRef.current) {
         editInvolvedPersonSignatureRef.current.clear()
       }
@@ -1353,7 +1450,13 @@ export default function AdminPanel() {
                       <input
                         type="checkbox"
                         checked={newUserShowSignature}
-                        onChange={(e) => setNewUserShowSignature(e.target.checked)}
+                        onChange={(e) => {
+                          setNewUserShowSignature(e.target.checked)
+                          if (!e.target.checked) {
+                            setNewUserSignatureDataUrl(null)
+                            newUserSignatureRef.current?.clear()
+                          }
+                        }}
                       />
                       Add default signature (optional)
                     </label>
@@ -1371,13 +1474,17 @@ export default function AdminPanel() {
                           ref={newUserSignatureRef}
                           height={150}
                           style={{ borderRadius: '8px' }}
+                          onEnd={() => setNewUserSignatureDataUrl(newUserSignatureRef.current?.toDataURL() || null)}
                         />
                       </div>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         style={{ marginTop: '8px' }}
-                        onClick={() => newUserSignatureRef.current?.clear()}
+                        onClick={() => {
+                          setNewUserSignatureDataUrl(null)
+                          newUserSignatureRef.current?.clear()
+                        }}
                       >
                         Clear Signature
                       </button>
@@ -1495,7 +1602,13 @@ export default function AdminPanel() {
                       <input
                         type="checkbox"
                         checked={newLeaderShowSignature}
-                        onChange={(e) => setNewLeaderShowSignature(e.target.checked)}
+                        onChange={(e) => {
+                          setNewLeaderShowSignature(e.target.checked)
+                          if (!e.target.checked) {
+                            setNewLeaderSignatureDataUrl(null)
+                            newLeaderSignatureRef.current?.clear()
+                          }
+                        }}
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span>Add Default Signature</span>
@@ -1514,12 +1627,16 @@ export default function AdminPanel() {
                           ref={newLeaderSignatureRef}
                           height={150}
                           style={{ borderRadius: '8px' }}
+                          onEnd={() => setNewLeaderSignatureDataUrl(newLeaderSignatureRef.current?.toDataURL() || null)}
                         />
                       </div>
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => newLeaderSignatureRef.current?.clear()}
+                        onClick={() => {
+                          setNewLeaderSignatureDataUrl(null)
+                          newLeaderSignatureRef.current?.clear()
+                        }}
                         style={{ marginTop: '8px' }}
                       >
                         Clear Signature
@@ -1564,6 +1681,7 @@ export default function AdminPanel() {
                                   setEditingLeader(leader)
                                   setShowLeaderForm(false)
                                   setEditLeaderShowSignature(false)
+                                  setEditLeaderSignatureDataUrl(null)
                                   if (editLeaderSignatureRef.current) {
                                     editLeaderSignatureRef.current.clear()
                                   }
@@ -1652,7 +1770,13 @@ export default function AdminPanel() {
                       <input
                         type="checkbox"
                         checked={newInvolvedPersonShowSignature}
-                        onChange={(e) => setNewInvolvedPersonShowSignature(e.target.checked)}
+                        onChange={(e) => {
+                          setNewInvolvedPersonShowSignature(e.target.checked)
+                          if (!e.target.checked) {
+                            setNewInvolvedPersonSignatureDataUrl(null)
+                            newInvolvedPersonSignatureRef.current?.clear()
+                          }
+                        }}
                       />
                       Add default signature (optional)
                     </label>
@@ -1670,13 +1794,17 @@ export default function AdminPanel() {
                           ref={newInvolvedPersonSignatureRef}
                           height={150}
                           style={{ borderRadius: '8px' }}
+                          onEnd={() => setNewInvolvedPersonSignatureDataUrl(newInvolvedPersonSignatureRef.current?.toDataURL() || null)}
                         />
                       </div>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         style={{ marginTop: '8px' }}
-                        onClick={() => newInvolvedPersonSignatureRef.current?.clear()}
+                        onClick={() => {
+                          setNewInvolvedPersonSignatureDataUrl(null)
+                          newInvolvedPersonSignatureRef.current?.clear()
+                        }}
                       >
                         Clear Signature
                       </button>
@@ -1724,6 +1852,7 @@ export default function AdminPanel() {
                                 onClick={() => {
                                   setEditingInvolvedPerson(person)
                                   setEditInvolvedPersonShowSignature(false)
+                                  setEditInvolvedPersonSignatureDataUrl(null)
                                   setShowInvolvedPersonForm(false)
                                 }}
                               >
@@ -1803,7 +1932,13 @@ export default function AdminPanel() {
                       <input
                         type="checkbox"
                         checked={editLeaderShowSignature}
-                        onChange={(e) => setEditLeaderShowSignature(e.target.checked)}
+                        onChange={(e) => {
+                          setEditLeaderShowSignature(e.target.checked)
+                          if (!e.target.checked) {
+                            setEditLeaderSignatureDataUrl(null)
+                            editLeaderSignatureRef.current?.clear()
+                          }
+                        }}
                         style={{ width: '18px', height: '18px', cursor: 'pointer' }}
                       />
                       <span>Update Default Signature</span>
@@ -1822,12 +1957,16 @@ export default function AdminPanel() {
                           ref={editLeaderSignatureRef}
                           height={150}
                           style={{ borderRadius: '8px' }}
+                          onEnd={() => setEditLeaderSignatureDataUrl(editLeaderSignatureRef.current?.toDataURL() || null)}
                         />
                       </div>
                       <button
                         type="button"
                         className="btn btn-secondary"
-                        onClick={() => editLeaderSignatureRef.current?.clear()}
+                        onClick={() => {
+                          setEditLeaderSignatureDataUrl(null)
+                          editLeaderSignatureRef.current?.clear()
+                        }}
                         style={{ marginTop: '8px' }}
                       >
                         Clear Signature
@@ -1921,7 +2060,13 @@ export default function AdminPanel() {
                       <input
                         type="checkbox"
                         checked={editInvolvedPersonShowSignature}
-                        onChange={(e) => setEditInvolvedPersonShowSignature(e.target.checked)}
+                        onChange={(e) => {
+                          setEditInvolvedPersonShowSignature(e.target.checked)
+                          if (!e.target.checked) {
+                            setEditInvolvedPersonSignatureDataUrl(null)
+                            editInvolvedPersonSignatureRef.current?.clear()
+                          }
+                        }}
                       />
                       {editingInvolvedPerson.default_signature_url ? 'Update default signature' : 'Add default signature (optional)'}
                     </label>
@@ -1939,13 +2084,17 @@ export default function AdminPanel() {
                           ref={editInvolvedPersonSignatureRef}
                           height={150}
                           style={{ borderRadius: '8px' }}
+                          onEnd={() => setEditInvolvedPersonSignatureDataUrl(editInvolvedPersonSignatureRef.current?.toDataURL() || null)}
                         />
                       </div>
                       <button
                         type="button"
                         className="btn btn-secondary"
                         style={{ marginTop: '8px' }}
-                        onClick={() => editInvolvedPersonSignatureRef.current?.clear()}
+                        onClick={() => {
+                          setEditInvolvedPersonSignatureDataUrl(null)
+                          editInvolvedPersonSignatureRef.current?.clear()
+                        }}
                       >
                         Clear Signature
                       </button>

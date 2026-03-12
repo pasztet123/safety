@@ -89,3 +89,31 @@ export const resolveMeetingLeader = ({
     resolution: 'none',
   }
 }
+
+export const applyResolvedMeetingLeader = ({
+  meeting,
+  leaders = [],
+  involvedPersons = [],
+}) => {
+  if (!meeting) return meeting
+
+  const attendees = meeting.attendees || []
+  const resolution = resolveMeetingLeader({
+    attendees,
+    leaders,
+    involvedPersons,
+    isSelfTraining: meeting.is_self_training || attendees.length === 1,
+  })
+
+  if (resolution.resolution === 'none') {
+    return meeting
+  }
+
+  return {
+    ...meeting,
+    leader_id: resolution.leaderId || meeting.leader_id || '',
+    leader_name: resolution.leaderName || meeting.leader_name || '',
+    is_self_training: resolution.isSelfTraining,
+    signature_url: resolution.leaderDefaultSignature || meeting.signature_url || null,
+  }
+}

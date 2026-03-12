@@ -1,6 +1,20 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 
+const restoreSignatureImage = (canvas, dataUrl) => {
+  if (!canvas || !dataUrl) return
+
+  const image = new Image()
+  image.onload = () => {
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    context.clearRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  }
+  image.src = dataUrl
+}
+
 /**
  * SignaturePad – wrapper around react-signature-canvas that fixes the
  * coordinate offset caused by a mismatch between the canvas HTML attribute
@@ -14,31 +28,93 @@ const SignaturePad = forwardRef(function SignaturePad(
   ref
 ) {
   const innerRef = useRef(null)
+  const snapshotRef = useRef(null)
+  const lastEmittedDataUrlRef = useRef(null)
+
+  const updateSnapshot = () => {
+    const signaturePad = innerRef.current
+    if (!signaturePad) return null
+
+    if (signaturePad.isEmpty()) {
+      snapshotRef.current = null
+      return null
+    }
+
+    const dataUrl = signaturePad.toDataURL('image/png')
+    snapshotRef.current = dataUrl
+    return dataUrl
+  }
+
+  const restoreSnapshot = (dataUrl) => {
+    const signaturePad = innerRef.current
+    if (!signaturePad || !dataUrl) return
+
+    const canvas = signaturePad.getCanvas()
+    if (!canvas) return
+
+    restoreSignatureImage(canvas, dataUrl)
+    snapshotRef.current = dataUrl
+  }
+
+  const emitSignatureChange = (...args) => {
+    const latestDataUrl = updateSnapshot()
+    if (latestDataUrl === lastEmittedDataUrlRef.current) return
+
+    lastEmittedDataUrlRef.current = latestDataUrl
+    onEnd?.(...args)
+  }
 
   // Expose the same API as react-signature-canvas
   useImperativeHandle(ref, () => ({
-    clear: () => innerRef.current?.clear(),
-    isEmpty: () => innerRef.current?.isEmpty(),
-    toDataURL: (...args) => innerRef.current?.toDataURL(...args),
-    fromDataURL: (...args) => innerRef.current?.fromDataURL(...args),
+    clear: () => {
+      snapshotRef.current = null
+      lastEmittedDataUrlRef.current = null
+      innerRef.current?.clear()
+    },
+    isEmpty: () => !snapshotRef.current,
+    toDataURL: (...args) => {
+      const signaturePad = innerRef.current
+      if (signaturePad && !signaturePad.isEmpty()) {
+        const dataUrl = signaturePad.toDataURL(...args)
+        snapshotRef.current = dataUrl
+        return dataUrl
+      }
+
+      return snapshotRef.current
+    },
+    fromDataURL: (dataUrl, ...args) => {
+      snapshotRef.current = dataUrl || null
+      lastEmittedDataUrlRef.current = dataUrl || null
+      return innerRef.current?.fromDataURL(dataUrl, ...args)
+    },
     getCanvas: () => innerRef.current?.getCanvas(),
   }))
 
   const syncSize = () => {
-    const canvas = innerRef.current?.getCanvas()
+    const signaturePad = innerRef.current
+    const canvas = signaturePad?.getCanvas()
     if (!canvas) return
+
     const rect = canvas.getBoundingClientRect()
-    if (rect.width > 0 && rect.height > 0) {
-      // Only resize if dimensions actually changed (avoids clearing on every call)
-      if (canvas.width !== Math.round(rect.width) || canvas.height !== Math.round(rect.height)) {
-        canvas.width = Math.round(rect.width)
-        canvas.height = Math.round(rect.height)
-        // react-signature-canvas stores points internally; after resize we must
-        // clear so it redraws at the new resolution.
-        innerRef.current?.clear()
-      }
+    if (rect.width <= 0 || rect.height <= 0) return
+
+    const nextWidth = Math.round(rect.width)
+    const nextHeight = Math.round(rect.height)
+
+    // Only resize if dimensions actually changed.
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return
+
+    const savedSignature = snapshotRef.current || updateSnapshot()
+
+    canvas.width = nextWidth
+    canvas.height = nextHeight
+
+    if (savedSignature) {
+      restoreSnapshot(savedSignature)
     }
   }
+
+  const handleEnd = (...args) => emitSignatureChange(...args)
 
   useEffect(() => {
     // Small delay to let layout settle (especially inside modals/transitions)
@@ -46,7 +122,27 @@ const SignaturePad = forwardRef(function SignaturePad(
 
     const observer = new ResizeObserver(syncSize)
     const canvas = innerRef.current?.getCanvas()
-    if (canvas) observer.observe(canvas)
+    if (canvas) {
+      observer.observe(canvas)
+
+      const emitAfterFrame = () => {
+        requestAnimationFrame(() => emitSignatureChange())
+      }
+
+      canvas.addEventListener('pointerup', emitAfterFrame)
+      canvas.addEventListener('mouseup', emitAfterFrame)
+      canvas.addEventListener('touchend', emitAfterFrame)
+      canvas.addEventListener('mouseleave', emitAfterFrame)
+
+      return () => {
+        clearTimeout(id)
+        observer.disconnect()
+        canvas.removeEventListener('pointerup', emitAfterFrame)
+        canvas.removeEventListener('mouseup', emitAfterFrame)
+        canvas.removeEventListener('touchend', emitAfterFrame)
+        canvas.removeEventListener('mouseleave', emitAfterFrame)
+      }
+    }
 
     return () => {
       clearTimeout(id)
@@ -61,7 +157,7 @@ const SignaturePad = forwardRef(function SignaturePad(
         className,
         style: { display: 'block', width: '100%', height: `${height}px`, ...style },
       }}
-      onEnd={onEnd}
+      onEnd={handleEnd}
       {...rest}
     />
   )

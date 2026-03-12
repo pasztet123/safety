@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { applyResolvedMeetingLeader } from '../lib/meetingLeader'
 import LocationMap from '../components/LocationMap'
 import './MeetingForm.css'
 
@@ -35,17 +36,21 @@ export default function MeetingDetails() {
 
   const fetchMeeting = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('meetings')
-      .select(`
-        *,
-        project:projects(name),
-        attendees:meeting_attendees(*),
-        photos:meeting_photos(*)
-      `)
-      .is('deleted_at', null)
-      .eq('id', id)
-      .single()
+    const [{ data, error }, leadersRes, involvedRes] = await Promise.all([
+      supabase
+        .from('meetings')
+        .select(`
+          *,
+          project:projects(name),
+          attendees:meeting_attendees(*),
+          photos:meeting_photos(*)
+        `)
+        .is('deleted_at', null)
+        .eq('id', id)
+        .single(),
+      supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+      supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+    ])
 
     if (!error && data) {
       // Fetch associated checklists
@@ -56,10 +61,14 @@ export default function MeetingDetails() {
         `)
         .eq('meeting_id', id)
       
-      setMeeting({
-        ...data,
-        checklists: checklistsData?.map(mc => mc.checklist) || []
-      })
+      setMeeting(applyResolvedMeetingLeader({
+        meeting: {
+          ...data,
+          checklists: checklistsData?.map(mc => mc.checklist) || []
+        },
+        leaders: leadersRes.data || [],
+        involvedPersons: involvedRes.data || [],
+      }))
     }
     setLoading(false)
   }
