@@ -54,6 +54,7 @@ export default function Meetings() {
       case 'az': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
       case 'za': result.sort((a, b) => (b.topic || '').localeCompare(a.topic || '')); break
       case 'most-attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
+      case 'least-attendees': result.sort((a, b) => (a.attendees?.length || 0) - (b.attendees?.length || 0)); break
       default: result.sort((a, b) => { const d = b.date.localeCompare(a.date); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
     }
     return result
@@ -102,6 +103,7 @@ export default function Meetings() {
       case 'topic': result.sort((a, b) => (a.topic || '').localeCompare(b.topic || '')); break
       case 'time': result.sort((a, b) => (a.time || '').localeCompare(b.time || '')); break
       case 'attendees': result.sort((a, b) => (b.attendees?.length || 0) - (a.attendees?.length || 0)); break
+      case 'attendees-asc': result.sort((a, b) => (a.attendees?.length || 0) - (b.attendees?.length || 0)); break
       default: result.sort((a, b) => { const d = b.date.slice(0, 10).localeCompare(a.date.slice(0, 10)); return d !== 0 ? d : (b.time || '').localeCompare(a.time || '') })
     }
     return result
@@ -765,6 +767,7 @@ export default function Meetings() {
               <option value="topic">Topic A→Z</option>
               <option value="time">Time ↑</option>
               <option value="attendees">Most attendees</option>
+              <option value="attendees-asc">Least attendees</option>
             </select>
             {(draftFilterLeader || draftFilterAttendee) && (
               <button className="filter-clear-btn" onClick={() => { setDraftFilterLeader(''); setDraftFilterAttendee('') }}>Clear</button>
@@ -885,6 +888,7 @@ export default function Meetings() {
           <option value="az">Topic A → Z</option>
           <option value="za">Topic Z → A</option>
           <option value="most-attendees">Most attendees</option>
+          <option value="least-attendees">Least attendees</option>
         </select>
         {filtersActive && (
           <button className="filter-clear-btn" onClick={() => { setSearchText(''); setFilterTrade(''); setFilterPerson(''); setSortBy('newest') }}>
