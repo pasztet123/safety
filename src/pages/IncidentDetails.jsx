@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import LocationMap from '../components/LocationMap'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import './IncidentForm.css'
 
 export default function IncidentDetails() {
@@ -137,12 +138,12 @@ export default function IncidentDetails() {
         <div style={{ display: 'flex', gap: '8px' }}>
           {isAdmin && (
             <>
-              <button
-                className="btn btn-primary"
-                onClick={() => navigate(`/incidents/${id}/edit`)}
-              >
+              <Link className="btn btn-primary" to={`/incidents/${id}/edit`}>
                 Edit
-              </button>
+              </Link>
+              <Link className="btn btn-secondary" to={`/incidents/${id}/edit`} {...NEW_TAB_LINK_PROPS}>
+                Edit in New Tab
+              </Link>
               <button className="btn btn-danger" onClick={handleDelete}>
                 Delete
               </button>
@@ -428,9 +429,12 @@ export default function IncidentDetails() {
               Disciplinary Actions
               <span className="ica-count" style={{ marginLeft: '8px' }}>{disciplinaryActions.length}</span>
             </h3>
-            <button className="btn btn-primary" onClick={() => navigate(`/disciplinary-actions?incidentId=${id}`)}>
+            <Link className="btn btn-primary" to={`/disciplinary-actions?incidentId=${id}`}>
               Add Disciplinary Action
-            </button>
+            </Link>
+            <Link className="btn btn-secondary" to={`/disciplinary-actions?incidentId=${id}`} {...NEW_TAB_LINK_PROPS}>
+              New Tab
+            </Link>
           </div>
           {disciplinaryActions.length === 0 ? (
             <p className="detail-value">No disciplinary actions linked to this safety violation yet.</p>

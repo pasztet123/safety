@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import LocationMap from '../components/LocationMap'
 import './ProjectDetail.css'
 
@@ -334,12 +335,9 @@ export default function ProjectDetail() {
       {activeTab === 'meetings' && (
         <div>
           <div className="pd-tab-actions">
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate(`/meetings/new?project_id=${id}`)}
-            >
+            <Link className="btn btn-primary" to={`/meetings/new?project_id=${id}`}>
               + New Meeting
-            </button>
+            </Link>
           </div>
 
           <div className="meetings-list">
@@ -359,12 +357,9 @@ export default function ProjectDetail() {
                     </div>
                     {isAdmin && (
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => navigate(`/meetings/${meeting.id}/edit`)}
-                        >
+                        <Link className="btn btn-primary" to={`/meetings/${meeting.id}/edit`}>
                           Edit
-                        </button>
+                        </Link>
                         <button
                           className="btn btn-danger"
                           onClick={() => handleDeleteMeeting(meeting.id, meeting.topic)}
@@ -408,12 +403,12 @@ export default function ProjectDetail() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => navigate(`/meetings/${meeting.id}`)}
-                    >
+                    <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`}>
                       View Details
-                    </button>
+                    </Link>
+                    <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`} {...NEW_TAB_LINK_PROPS}>
+                      New Tab
+                    </Link>
                     <button
                       className="btn btn-secondary"
                       onClick={() => handleMeetingPDF(meeting)}
@@ -434,12 +429,9 @@ export default function ProjectDetail() {
       {activeTab === 'incidents' && (
         <div>
           <div className="pd-tab-actions">
-            <button
-              className="btn btn-accent"
-              onClick={() => navigate(`/incidents/new?project_id=${id}`)}
-            >
+            <Link className="btn btn-accent" to={`/incidents/new?project_id=${id}`}>
               + Report Incident
-            </button>
+            </Link>
           </div>
 
           <div className="incidents-list">
@@ -465,12 +457,9 @@ export default function ProjectDetail() {
                       </p>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => navigate(`/incidents/${incident.id}/edit`)}
-                      >
+                      <Link className="btn btn-secondary" to={`/incidents/${incident.id}/edit`}>
                         Edit
-                      </button>
+                      </Link>
                       {isAdmin && (
                         <button
                           className="btn btn-danger"
@@ -565,12 +554,12 @@ export default function ProjectDetail() {
                   )}
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      className="btn btn-secondary"
-                      onClick={() => navigate(`/incidents/${incident.id}`)}
-                    >
+                    <Link className="btn btn-secondary" to={`/incidents/${incident.id}`}>
                       View Details
-                    </button>
+                    </Link>
+                    <Link className="btn btn-secondary" to={`/incidents/${incident.id}`} {...NEW_TAB_LINK_PROPS}>
+                      New Tab
+                    </Link>
                     <button
                       className="btn btn-secondary"
                       onClick={() => handleIncidentPDF(incident)}

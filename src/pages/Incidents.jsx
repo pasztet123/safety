@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { downloadIncidentListPDF } from '../lib/pdfBulkGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import LocationMap from '../components/LocationMap'
 import './IncidentForm.css'
 
@@ -186,9 +187,9 @@ export default function Incidents() {
               {exportLoading ? '…' : '↓ Export PDF'}
             </button>
           )}
-          <button className="btn btn-accent" onClick={() => navigate('/incidents/new')}>
+          <Link className="btn btn-accent" to="/incidents/new">
             + Report Incident
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -255,12 +256,9 @@ export default function Incidents() {
                 </div>
                 {isAdmin && (
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => navigate(`/incidents/${incident.id}/edit`)}
-                    >
+                    <Link className="btn btn-primary" to={`/incidents/${incident.id}/edit`}>
                       Edit
-                    </button>
+                    </Link>
                     <button
                       className="btn btn-danger"
                       onClick={() => handleDeleteIncident(incident.id, incident.type_name)}
@@ -352,12 +350,12 @@ export default function Incidents() {
               )}
 
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => navigate(`/incidents/${incident.id}`)}
-                >
+                <Link className="btn btn-secondary" to={`/incidents/${incident.id}`}>
                   View Details
-                </button>
+                </Link>
+                <Link className="btn btn-secondary" to={`/incidents/${incident.id}`} {...NEW_TAB_LINK_PROPS}>
+                  New Tab
+                </Link>
                 <button
                   className="btn btn-secondary"
                   onClick={() => handleGeneratePDF(incident)}

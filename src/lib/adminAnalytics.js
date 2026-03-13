@@ -148,6 +148,7 @@ export const fetchAdminAnalyticsDataset = async ({ dateFrom, dateTo }) => {
           is_draft,
           topic,
           trade,
+          location,
           leader_name,
           project:projects(name),
           attendees:meeting_attendees(name)
@@ -286,6 +287,7 @@ const buildMeetingEvents = (meetings, lookups) => {
           meetingStatus: meeting.is_draft ? 'draft' : 'approved',
           trade: meeting.trade || '',
           leaderName: meeting.leader_name || '',
+          location: meeting.location || '',
         },
       })
     })

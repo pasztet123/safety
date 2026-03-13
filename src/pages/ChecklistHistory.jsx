@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { downloadChecklistHistoryPDF } from '../lib/pdfBulkGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import './ChecklistHistory.css'
 
 export default function ChecklistHistory() {
@@ -84,16 +85,6 @@ export default function ChecklistHistory() {
     })
   }
 
-  const handleView = (completionId) => {
-    navigate(`/checklist-history/${completionId}`)
-  }
-
-  const handleEdit = (completionId) => {
-    if (currentUser?.is_admin) {
-      navigate(`/checklist-history/${completionId}/edit`)
-    }
-  }
-
   const handleDelete = async (completionId, checklistName) => {
     if (!currentUser?.is_admin) return
     
@@ -152,20 +143,17 @@ export default function ChecklistHistory() {
               <div className="completion-header">
                 <h3 className="completion-title">{completion.checklist?.name || 'Unknown Checklist'}</h3>
                 <div className="completion-actions">
-                  <button 
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => handleView(completion.id)}
-                  >
+                  <Link className="btn btn-sm btn-secondary" to={`/checklist-history/${completion.id}`}>
                     View
-                  </button>
+                  </Link>
+                  <Link className="btn btn-sm btn-secondary" to={`/checklist-history/${completion.id}`} {...NEW_TAB_LINK_PROPS}>
+                    New Tab
+                  </Link>
                   {currentUser?.is_admin && (
                     <>
-                      <button 
-                        className="btn btn-sm btn-primary"
-                        onClick={() => handleEdit(completion.id)}
-                      >
+                      <Link className="btn btn-sm btn-primary" to={`/checklist-history/${completion.id}/edit`}>
                         Edit
-                      </button>
+                      </Link>
                       <button 
                         className="btn btn-sm btn-danger"
                         onClick={() => handleDelete(completion.id, completion.checklist?.name)}

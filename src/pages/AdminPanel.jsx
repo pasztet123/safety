@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import { resolveMeetingLeader } from '../lib/meetingLeader'
+import { followAppPath } from '../lib/navigation'
 import {
   fetchPersonLinkCandidates,
   formatElapsedSince,
@@ -84,6 +85,7 @@ const captureSignatureDataUrl = ({ signatureRef, enabled, emptyMessage, dataUrl 
 
 export default function AdminPanel() {
   const navigate = useNavigate()
+  const location = useLocation()
   const tabsRef = useRef(null)
   const newUserSignatureRef = useRef()
   const newLeaderSignatureRef = useRef()
@@ -266,6 +268,10 @@ export default function AdminPanel() {
   }, [])
 
   useEffect(() => {
+    setActiveTab(location.pathname === '/admin/analytics' ? 'analytics' : 'meetings')
+  }, [location.pathname])
+
+  useEffect(() => {
     if (!adminChecked || !isAdmin) return
 
     fetchData()
@@ -312,6 +318,19 @@ export default function AdminPanel() {
 
     const amount = Math.max(180, Math.round(tabsNode.clientWidth * 0.45))
     tabsNode.scrollBy({ left: direction * amount, behavior: 'smooth' })
+  }
+
+  const handleTabChange = (tabKey) => {
+    if (tabKey === 'analytics') {
+      navigate('/admin/analytics')
+      return
+    }
+
+    setActiveTab(tabKey)
+
+    if (location.pathname === '/admin/analytics') {
+      navigate('/admin')
+    }
   }
 
   const closeLeaderEditModal = () => {
@@ -1631,7 +1650,7 @@ export default function AdminPanel() {
             <button
               key={tab.key}
               className={`admin-tab ${activeTab === tab.key ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => handleTabChange(tab.key)}
             >
               {tab.label}
             </button>
@@ -1682,6 +1701,9 @@ export default function AdminPanel() {
                           <td>{meeting.location || '-'}</td>
                           <td>
                             <div className="table-actions">
+                              <Link className="btn-icon btn-secondary" to={`/meetings/${meeting.id}`} target="_blank" rel="noreferrer">
+                                Open
+                              </Link>
                               <button
                                 className="btn-icon btn-delete"
                                 onClick={() => handleDeleteMeeting(meeting.id)}
@@ -1729,6 +1751,9 @@ export default function AdminPanel() {
                           <td>{incident.project?.name || '-'}</td>
                           <td>
                             <div className="table-actions">
+                              <Link className="btn-icon btn-secondary" to={`/incidents/${incident.id}`} target="_blank" rel="noreferrer">
+                                Open
+                              </Link>
                               <button
                                 className="btn-icon btn-delete"
                                 onClick={() => handleDeleteIncident(incident.id)}

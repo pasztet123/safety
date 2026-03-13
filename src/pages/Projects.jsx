@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchTrades, ensureTrade } from '../lib/trades'
+import { NEW_TAB_LINK_PROPS, followAppPath } from '../lib/navigation'
 import './Projects.css'
 
 const EMPTY_FORM = {
@@ -196,11 +197,24 @@ export default function Projects() {
           const sortedMeetings = [...meetings].sort((a, b) => new Date(b.date) - new Date(a.date))
 
           return (
-            <div key={project.id} className="card project-card" style={{ cursor: 'pointer' }} onClick={() => navigate(`/projects/${project.id}`)}>  
+            <div
+              key={project.id}
+              className="card project-card"
+              style={{ cursor: 'pointer' }}
+              onClick={(event) => followAppPath(navigate, `/projects/${project.id}`, { event })}
+            >  
               {/* Header */}
               <div className="project-card-header">
                 <h3 className="project-name">{project.name}</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Link
+                    className="btn btn-secondary btn-sm"
+                    to={`/projects/${project.id}`}
+                    {...NEW_TAB_LINK_PROPS}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Open
+                  </Link>
                   <span className={`project-status status-${project.status}`}>
                     {project.status}
                   </span>
@@ -278,23 +292,23 @@ export default function Projects() {
                           <span className={`pmeet-status ${m.completed ? 'pmeet-done' : 'pmeet-pending'}`}>
                             {m.completed ? 'Done' : 'In progress'}
                           </span>
-                          <button
-                            type="button"
+                          <Link
                             className="pmeet-view-btn"
-                            onClick={(e) => { e.stopPropagation(); navigate(`/meetings/${m.id}`) }}
+                            to={`/meetings/${m.id}`}
+                            onClick={(e) => e.stopPropagation()}
                           >
                             View
-                          </button>
+                          </Link>
                         </div>
                       ))
                     )}
-                    <button
-                      type="button"
+                    <Link
                       className="btn btn-secondary project-add-meeting-btn"
-                      onClick={(e) => { e.stopPropagation(); navigate(`/meetings/new?project_id=${project.id}`) }}
+                      to={`/meetings/new?project_id=${project.id}`}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       + Add Meeting
-                    </button>
+                    </Link>
                   </div>
                 )}
               </div>

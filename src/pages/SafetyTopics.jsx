@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchTrades, ensureTrade } from '../lib/trades'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import { getSuggestedChecklists } from '../lib/suggestChecklists'
 import { generateSafetyTopicPDF } from '../lib/pdfGenerator'
 import { downloadSafetyTopicsBrochurePDF } from '../lib/pdfBulkGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import './SafetyTopics.css'
 
 export default function SafetyTopics() {
@@ -669,11 +670,8 @@ export default function SafetyTopics() {
                               </div>
                               <span className="topic-suggestion-score-label">{score}%</span>
                             </div>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-primary"
-                              onClick={() => navigate(`/checklists/${checklist.id}/complete`)}
-                            >Fill</button>
+                            <Link className="btn btn-sm btn-primary" to={`/checklists/${checklist.id}/complete`}>Fill</Link>
+                            <Link className="btn btn-sm btn-secondary" to={`/checklists/${checklist.id}/complete`} {...NEW_TAB_LINK_PROPS}>New Tab</Link>
                           </div>
                         </div>
                       ))}

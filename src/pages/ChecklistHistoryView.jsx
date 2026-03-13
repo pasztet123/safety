@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateChecklistCompletionPDF } from '../lib/pdfGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import './ChecklistCompletion.css'
 
 export default function ChecklistHistoryView() {
@@ -153,12 +154,12 @@ export default function ChecklistHistoryView() {
           </button>
           {currentUser?.is_admin && (
             <>
-              <button 
-                className="btn btn-primary" 
-                onClick={() => navigate(`/checklist-history/${id}/edit`)}
-              >
+              <Link className="btn btn-primary" to={`/checklist-history/${id}/edit`}>
                 Edit
-              </button>
+              </Link>
+              <Link className="btn btn-secondary" to={`/checklist-history/${id}/edit`} {...NEW_TAB_LINK_PROPS}>
+                Edit in New Tab
+              </Link>
               <button 
                 className="btn btn-danger" 
                 onClick={handleDelete}

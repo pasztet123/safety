@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { generateChecklistPDF } from '../lib/pdfGenerator'
+import { NEW_TAB_LINK_PROPS, followAppPath } from '../lib/navigation'
 
 export default function Checklists() {
   const checklistsPerPage = 18
@@ -156,8 +157,8 @@ export default function Checklists() {
     }
   }
 
-  const openChecklistCompletion = (checklistId) => {
-    navigate(`/checklists/${checklistId}/complete`)
+  const openChecklistCompletion = (checklistId, event) => {
+    followAppPath(navigate, `/checklists/${checklistId}/complete`, { event })
   }
 
   if (loading) return <div className="spinner"></div>
@@ -201,12 +202,12 @@ export default function Checklists() {
       <div className="page-header">
         <h2 className="page-title">Checklists</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="btn btn-secondary" onClick={() => navigate('/checklist-history')}>
+          <Link className="btn btn-secondary" to="/checklist-history">
             View History
-          </button>
-          <button className="btn btn-primary" onClick={() => navigate('/checklists/new')}>
+          </Link>
+          <Link className="btn btn-primary" to="/checklists/new">
             + New Checklist
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -282,7 +283,7 @@ export default function Checklists() {
             <div
               key={checklist.id}
               className="card card-clickable"
-              onClick={() => openChecklistCompletion(checklist.id)}
+              onClick={(event) => openChecklistCompletion(checklist.id, event)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
@@ -343,24 +344,28 @@ export default function Checklists() {
               </div>
 
               <div className="checklist-actions">
-                <button 
+                <Link
                   className="btn btn-primary"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openChecklistCompletion(checklist.id)
-                  }}
+                  to={`/checklists/${checklist.id}/complete`}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   Complete Checklist
-                </button>
-                <button 
+                </Link>
+                <Link
                   className="btn btn-secondary"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    navigate(`/checklists/${checklist.id}`)
-                  }}
+                  to={`/checklists/${checklist.id}`}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   View/Edit
-                </button>
+                </Link>
+                <Link
+                  className="btn btn-secondary"
+                  to={`/checklists/${checklist.id}/complete`}
+                  onClick={(e) => e.stopPropagation()}
+                  {...NEW_TAB_LINK_PROPS}
+                >
+                  New Tab
+                </Link>
                 <button
                   className="btn btn-secondary"
                   onClick={(e) => {

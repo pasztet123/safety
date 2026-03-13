@@ -1,11 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar'
 import {
+  addDays,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
   format,
   getDay,
+  isAfter,
+  isBefore,
   isSameDay,
   parse,
+  startOfDay,
+  startOfMonth,
   startOfWeek,
 } from 'date-fns'
 import { enUS } from 'date-fns/locale'
@@ -29,6 +37,7 @@ import {
   fetchAdminAnalyticsDataset,
   getDefaultAnalyticsDateRange,
 } from '../lib/adminAnalytics'
+import { NEW_TAB_LINK_PROPS, followAppPath } from '../lib/navigation'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
 
 const locales = {
@@ -45,11 +54,7 @@ const localizer = dateFnsLocalizer({
 
 const formatDate = (value) => {
   if (!value) return '—'
-  return new Date(`${value}T00:00:00`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+  return format(new Date(`${value}T00:00:00`), 'd.M.yyyy')
 }
 
 const metricCards = (metrics) => [
@@ -61,6 +66,132 @@ const metricCards = (metrics) => [
   { key: 'gap', label: 'Longest gap', value: `${metrics.longestGapDays}d`, tone: 'warning' },
 ]
 
+function AnalyticsCalendarToolbar({ currentDate, currentView, onNavigate, onChangeView }) {
+  const getTitle = () => {
+    if (currentView === 'month') {
+      return format(currentDate, 'M.yyyy')
+    }
+
+    if (currentView === 'week') {
+      const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 })
+      const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 })
+      return `${format(weekStart, 'd.M.yyyy')} - ${format(weekEnd, 'd.M.yyyy')}`
+    }
+
+    const agendaEnd = addDays(currentDate, 29)
+    return `${format(currentDate, 'd.M.yyyy')} - ${format(agendaEnd, 'd.M.yyyy')}`
+  }
+
+  return (
+    <div className="analytics-calendar-toolbar">
+      <div className="analytics-calendar-toolbar-nav">
+        <button type="button" className="analytics-toolbar-btn" onClick={() => onNavigate('TODAY')}>
+          Today
+        </button>
+        <button type="button" className="analytics-toolbar-btn" onClick={() => onNavigate('PREV')}>
+          Back
+        </button>
+        <button type="button" className="analytics-toolbar-btn" onClick={() => onNavigate('NEXT')}>
+          Next
+        </button>
+      </div>
+
+      <h5 className="analytics-calendar-toolbar-title">{getTitle()}</h5>
+
+      <div className="analytics-calendar-toolbar-views">
+        {['month', 'week', 'agenda'].map((view) => (
+          <button
+            key={view}
+            type="button"
+            className={`analytics-toolbar-btn ${currentView === view ? 'is-active' : ''}`}
+            onClick={() => onChangeView(view)}
+          >
+            {view.charAt(0).toUpperCase() + view.slice(1)}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const formatAgendaDate = (date) => format(date, 'd.M.yyyy')
+const formatAgendaTime = (date) => format(date, 'HH:mm')
+
+function AnalyticsCalendarEvent({ event }) {
+  const showLocation = event.resource.type === ANALYTICS_TYPE_META.meetings.key && event.resource.location
+
+  return (
+    <div className="analytics-calendar-event">
+      <strong>{event.title}</strong>
+      {showLocation && <span>{event.resource.location}</span>}
+    </div>
+  )
+}
+
+function AnalyticsAgendaTable({ events }) {
+  if (events.length === 0) {
+    return <p className="analytics-empty">No events in the current filter set.</p>
+  }
+
+  return (
+    <div className="analytics-agenda-shell">
+      <table className="analytics-agenda-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Project</th>
+            <th>Leader</th>
+            <th>Address</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {events.map((event) => {
+            const meta = ANALYTICS_TYPE_META[event.resource.type]
+            const leaderName = event.resource.leaderName || '—'
+            const location = event.resource.location || '—'
+            const path = event.resource.sourcePath
+
+            return (
+              <tr key={event.id}>
+                <td>{formatAgendaDate(event.start)}</td>
+                <td>{formatAgendaTime(event.start)}</td>
+                <td>
+                  <span className="analytics-agenda-type" style={{ '--agenda-accent': meta.color, '--agenda-accent-soft': meta.lightColor }}>
+                    {meta.shortLabel}
+                  </span>
+                </td>
+                <td>
+                  <div className="analytics-agenda-title-cell">
+                    <strong>{event.title}</strong>
+                    <span>{event.resource.subtitle || '—'}</span>
+                  </div>
+                </td>
+                <td>{event.resource.projectName || '—'}</td>
+                <td>{event.resource.type === ANALYTICS_TYPE_META.meetings.key ? leaderName : '—'}</td>
+                <td>{event.resource.type === ANALYTICS_TYPE_META.meetings.key ? location : '—'}</td>
+                <td>
+                  {path ? (
+                    <div className="analytics-agenda-actions">
+                      <Link className="btn btn-secondary btn-sm" to={path}>Open</Link>
+                      <Link className="btn btn-secondary btn-sm" to={path} {...NEW_TAB_LINK_PROPS}>New Tab</Link>
+                    </div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function AdminAnalyticsDashboard() {
   const navigate = useNavigate()
   const defaults = useMemo(() => getDefaultAnalyticsDateRange(), [])
@@ -68,6 +199,7 @@ export default function AdminAnalyticsDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [calendarView, setCalendarView] = useState('month')
+  const [calendarDate, setCalendarDate] = useState(new Date())
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null)
   const [filters, setFilters] = useState({
     ...defaults,
@@ -120,6 +252,46 @@ export default function AdminAnalyticsDashboard() {
       .sort((left, right) => left.start - right.start)
   }, [analytics, selectedCalendarDate])
 
+  const agendaEvents = useMemo(() => {
+    if (!analytics) return []
+    const agendaStart = startOfDay(calendarDate)
+    const agendaEnd = endOfDay(addDays(calendarDate, 29))
+
+    return analytics.events
+      .filter((event) => {
+        if (isBefore(event.start, agendaStart)) return false
+        if (isAfter(event.start, agendaEnd)) return false
+        return true
+      })
+      .sort((left, right) => left.start - right.start)
+  }, [analytics, calendarDate])
+
+  const handleCalendarNavigate = (action) => {
+    if (action === 'TODAY') {
+      setCalendarDate(new Date())
+      return
+    }
+
+    if (calendarView === 'month') {
+      setCalendarDate((current) => {
+        const monthDelta = action === 'NEXT' ? 1 : -1
+        return new Date(current.getFullYear(), current.getMonth() + monthDelta, 1)
+      })
+      return
+    }
+
+    if (calendarView === 'week') {
+      setCalendarDate((current) => addDays(current, action === 'NEXT' ? 7 : -7))
+      return
+    }
+
+    setCalendarDate((current) => addDays(current, action === 'NEXT' ? 30 : -30))
+  }
+
+  const handleCalendarViewChange = (view) => {
+    setCalendarView(view)
+  }
+
   const toggleType = (typeKey) => {
     setFilters((current) => {
       const enabled = current.enabledTypes.includes(typeKey)
@@ -143,9 +315,14 @@ export default function AdminAnalyticsDashboard() {
     }))
   }
 
-  const handleSelectEvent = (event) => {
+  const handleSelectEvent = (event, mouseEvent) => {
     const path = event.resource?.sourcePath
-    if (path) navigate(path)
+    if (!path) return
+
+    followAppPath(navigate, path, {
+      event: mouseEvent,
+      defaultNewTab: event.resource?.type === ANALYTICS_TYPE_META.meetings.key,
+    })
   }
 
   const openDayModal = (date) => {
@@ -379,22 +556,36 @@ export default function AdminAnalyticsDashboard() {
               <p>{analytics.events.length} events in the current filter set</p>
             </div>
           </div>
+          <AnalyticsCalendarToolbar
+            currentDate={calendarDate}
+            currentView={calendarView}
+            onNavigate={handleCalendarNavigate}
+            onChangeView={handleCalendarViewChange}
+          />
           <div className="analytics-calendar-shell">
-            <Calendar
-              localizer={localizer}
-              events={analytics.events}
-              startAccessor="start"
-              endAccessor="end"
-              view={calendarView}
-              onView={setCalendarView}
-              views={['month', 'week', 'agenda']}
-              popup
-              selectable
-              eventPropGetter={eventStyleGetter}
-              onSelectEvent={handleSelectEvent}
-              onSelectSlot={(slotInfo) => openDayModal(slotInfo.start)}
-              onShowMore={(events, date) => openDayModal(date)}
-            />
+            {calendarView === 'agenda' ? (
+              <AnalyticsAgendaTable events={agendaEvents} />
+            ) : (
+              <Calendar
+                localizer={localizer}
+                events={analytics.events}
+                date={calendarDate}
+                startAccessor="start"
+                endAccessor="end"
+                view={calendarView}
+                onNavigate={setCalendarDate}
+                onView={setCalendarView}
+                views={['month', 'week']}
+                toolbar={false}
+                popup
+                selectable
+                components={{ event: AnalyticsCalendarEvent }}
+                eventPropGetter={eventStyleGetter}
+                onSelectEvent={handleSelectEvent}
+                onSelectSlot={(slotInfo) => openDayModal(slotInfo.start)}
+                onShowMore={(events, date) => openDayModal(date)}
+              />
+            )}
           </div>
         </div>
 
@@ -532,12 +723,7 @@ export default function AdminAnalyticsDashboard() {
                     const attendeeNames = (event.resource.personNames || []).filter((name) => name && name !== event.resource.leaderName)
 
                     return (
-                      <button
-                        key={event.id}
-                        type="button"
-                        className="analytics-day-meeting-item"
-                        onClick={() => handleSelectEvent(event)}
-                      >
+                      <div key={event.id} className="analytics-day-meeting-item">
                         <div className="analytics-day-meeting-time">{format(event.start, 'HH:mm')}</div>
                         <div className="analytics-day-meeting-content">
                           <strong>{event.title}</strong>
@@ -547,10 +733,23 @@ export default function AdminAnalyticsDashboard() {
                           </span>
                           <div className="analytics-day-meeting-meta">
                             <span><strong>Worker performing the meeting:</strong> {leaderName}</span>
+                            <span><strong>Address:</strong> {event.resource.location || '—'}</span>
                             <span><strong>Attendees:</strong> {attendeeNames.length > 0 ? attendeeNames.join(', ') : '—'}</span>
                           </div>
+                          <div className="analytics-day-meeting-actions">
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={(mouseEvent) => handleSelectEvent(event, mouseEvent)}
+                            >
+                              Open Here
+                            </button>
+                            <Link className="btn btn-secondary btn-sm" to={event.resource.sourcePath} {...NEW_TAB_LINK_PROPS}>
+                              New Tab
+                            </Link>
+                          </div>
                         </div>
-                      </button>
+                      </div>
                     )
                   })()
                 ))}

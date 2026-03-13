@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { fetchTrades } from '../lib/trades'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import { applyResolvedMeetingLeader, resolveMeetingLeader } from '../lib/meetingLeader'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
 import './Meetings.css'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
+const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
+const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
@@ -142,6 +145,13 @@ const getPageRangeLabel = (page, pageSize, total) => {
   return `${start}-${end} of ${total}`
 }
 
+const getStoredPageSize = (storageKey, fallback = 50) => {
+  if (typeof window === 'undefined') return fallback
+
+  const storedValue = Number(window.localStorage.getItem(storageKey))
+  return PAGE_SIZE_OPTIONS.includes(storedValue) ? storedValue : fallback
+}
+
 const FilterField = ({ label, span = '', children }) => (
   <div className={[
     'filter-field',
@@ -173,7 +183,7 @@ export default function Meetings() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
   const [sortBy, setSortBy] = useState('newest')
-  const [meetingPageSize, setMeetingPageSize] = useState(50)
+  const [meetingPageSize, setMeetingPageSize] = useState(() => getStoredPageSize(MEETINGS_PAGE_SIZE_STORAGE_KEY, 50))
 
   // Derived filter options
   const tradesInMeetings = useMemo(() => {
@@ -247,7 +257,7 @@ export default function Meetings() {
   const [draftDateFrom, setDraftDateFrom] = useState('')
   const [draftDateTo, setDraftDateTo] = useState('')
   const [draftSortBy, setDraftSortBy] = useState('date-desc')
-  const [draftPageSize, setDraftPageSize] = useState(50)
+  const [draftPageSize, setDraftPageSize] = useState(() => getStoredPageSize(DRAFTS_PAGE_SIZE_STORAGE_KEY, 50))
 
   // Draft editing
   const [showDraftEditModal, setShowDraftEditModal] = useState(false)
@@ -342,6 +352,14 @@ export default function Meetings() {
   useEffect(() => {
     if (draftPage > draftTotalPages) setDraftPage(draftTotalPages)
   }, [draftPage, draftTotalPages])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(MEETINGS_PAGE_SIZE_STORAGE_KEY, String(meetingPageSize))
+  }, [meetingPageSize])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(DRAFTS_PAGE_SIZE_STORAGE_KEY, String(draftPageSize))
+  }, [draftPageSize])
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -910,9 +928,9 @@ export default function Meetings() {
         <h2 className="page-title">Toolbox Meetings</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           {isAdmin && (
-            <button className="btn btn-secondary" onClick={() => navigate('/bulk-import')}>
+            <Link className="btn btn-secondary" to="/bulk-import">
               ⬆ Import CSV
-            </button>
+            </Link>
           )}
           {isAdmin && filteredMeetings.length > 0 && (
             <>
@@ -933,9 +951,9 @@ export default function Meetings() {
               </button>
             </>
           )}
-          <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
+          <Link className="btn btn-primary" to="/meetings/new">
             + New Meeting
-          </button>
+          </Link>
         </div>
       </div>
 
@@ -1144,6 +1162,14 @@ export default function Meetings() {
                         >
                           Review
                         </button>
+                        <Link
+                          className="btn btn-secondary btn-sm"
+                          to={`/meetings/${d.id}/edit`}
+                          {...NEW_TAB_LINK_PROPS}
+                          title="Open this draft in a new tab"
+                        >
+                          New Tab
+                        </Link>
                         <button
                           className="btn btn-secondary btn-sm"
                           onClick={() => handleOpenDraftEdit([d.id], d)}
@@ -1318,12 +1344,9 @@ export default function Meetings() {
                 </div>
                 {isAdmin && (
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button 
-                      className="btn btn-primary"
-                      onClick={() => navigate(`/meetings/${meeting.id}/edit`)}
-                    >
+                    <Link className="btn btn-primary" to={`/meetings/${meeting.id}/edit`}>
                       Edit
-                    </button>
+                    </Link>
                     <button 
                       className="btn btn-danger"
                       onClick={() => handleDelete(meeting.id, meeting.topic)}
@@ -1367,12 +1390,12 @@ export default function Meetings() {
               </div>
 
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
-                  className="btn btn-secondary"
-                  onClick={() => navigate(`/meetings/${meeting.id}`)}
-                >
+                <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`}>
                   View Details
-                </button>
+                </Link>
+                <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`} {...NEW_TAB_LINK_PROPS}>
+                  New Tab
+                </Link>
                 <button
                   className="btn btn-secondary"
                   onClick={() => handlePDF(meeting)}

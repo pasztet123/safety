@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
 import './People.css'
 
@@ -318,10 +318,10 @@ export default function PersonDetail() {
           ) : (
             <div className="person-activity-list">
               {meetings.map((m) => (
-                <button
+                <Link
                   key={m.id}
                   className="person-activity-row"
-                  onClick={() => navigate(`/meetings/${m.id}`)}
+                  to={`/meetings/${m.id}`}
                 >
                   <div className="person-activity-main">
                     <span className="person-activity-title">{m.topic || 'Toolbox Meeting'}</span>
@@ -334,7 +334,7 @@ export default function PersonDetail() {
                       month: 'short', day: 'numeric', year: 'numeric',
                     }) : '—'}
                   </span>
-                </button>
+                </Link>
               ))}
             </div>
           )
@@ -347,10 +347,10 @@ export default function PersonDetail() {
           ) : (
             <div className="person-activity-list">
               {projects.map((p) => (
-                <button
+                <Link
                   key={p.id}
                   className="person-activity-row"
-                  onClick={() => navigate(`/projects/${p.id}`)}
+                  to={`/projects/${p.id}`}
                 >
                   <div className="person-activity-main">
                     <span className="person-activity-title">{p.name}</span>
@@ -361,7 +361,7 @@ export default function PersonDetail() {
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="9 18 15 12 9 6"/>
                   </svg>
-                </button>
+                </Link>
               ))}
             </div>
           )
@@ -385,10 +385,10 @@ export default function PersonDetail() {
             ) : (
               <div className="person-activity-list">
                 {incidents.map((inc) => (
-                  <button
+                  <Link
                     key={inc.id}
                     className="person-activity-row"
-                    onClick={() => navigate(`/incidents/${inc.id}`)}
+                    to={`/incidents/${inc.id}`}
                   >
                     <div className="person-activity-main">
                       <span className="person-activity-title">
@@ -416,7 +416,7 @@ export default function PersonDetail() {
                         month: 'short', day: 'numeric', year: 'numeric',
                       }) : '—'}
                     </span>
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -430,10 +430,10 @@ export default function PersonDetail() {
           ) : (
             <div className="person-activity-list">
               {correctiveActions.map((ca) => (
-                <button
+                <Link
                   key={ca.id}
                   className="person-activity-row"
-                  onClick={() => navigate(`/corrective-actions`)}
+                  to="/corrective-actions"
                 >
                   <div className="person-activity-main">
                     <span className="person-activity-title">{ca.description || 'Corrective Action'}</span>
@@ -446,7 +446,7 @@ export default function PersonDetail() {
                   <span className={`person-ca-status person-ca-status--${ca.status}`}>
                     {ca.status === 'completed' ? 'Completed' : 'Open'}
                   </span>
-                </button>
+                </Link>
               ))}
             </div>
           )
@@ -460,10 +460,10 @@ export default function PersonDetail() {
           ) : (
             <div className="person-activity-list">
               {disciplinaryActions.map((action) => (
-                <button
+                <Link
                   key={action.id}
                   className="person-activity-row"
-                  onClick={() => navigate(action.incident?.id ? `/incidents/${action.incident.id}` : '/disciplinary-actions')}
+                  to={action.incident?.id ? `/incidents/${action.incident.id}` : '/disciplinary-actions'}
                 >
                   <div className="person-activity-main">
                     <span className="person-activity-title">{action.action_type}</span>
@@ -481,7 +481,7 @@ export default function PersonDetail() {
                       month: 'short', day: 'numeric', year: 'numeric',
                     })}
                   </span>
-                </button>
+                </Link>
               ))}
             </div>
           )

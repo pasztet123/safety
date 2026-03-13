@@ -1238,7 +1238,7 @@ tbody tr:last-child td {
 
 .analytics-layout-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
@@ -1246,6 +1246,10 @@ tbody tr:last-child td {
 .analytics-bottom-grid {
   display: grid;
   gap: 16px;
+}
+
+.analytics-side-stack {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .analytics-bottom-grid {
@@ -1279,6 +1283,111 @@ tbody tr:last-child td {
   min-height: 620px;
 }
 
+.analytics-calendar-toolbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.analytics-calendar-toolbar-nav,
+.analytics-calendar-toolbar-views {
+  display: inline-flex;
+  align-items: center;
+}
+
+.analytics-calendar-toolbar-title {
+  margin: 0;
+  text-align: center;
+  font-size: 20px;
+  color: var(--color-primary);
+}
+
+.analytics-toolbar-btn {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-primary);
+  min-height: 38px;
+  padding: 8px 16px;
+  font-size: 13px;
+}
+
+.analytics-calendar-toolbar-nav .analytics-toolbar-btn:first-child,
+.analytics-calendar-toolbar-views .analytics-toolbar-btn:first-child {
+  border-radius: 12px 0 0 12px;
+}
+
+.analytics-calendar-toolbar-nav .analytics-toolbar-btn:last-child,
+.analytics-calendar-toolbar-views .analytics-toolbar-btn:last-child {
+  border-radius: 0 12px 12px 0;
+}
+
+.analytics-calendar-toolbar-nav .analytics-toolbar-btn:not(:first-child),
+.analytics-calendar-toolbar-views .analytics-toolbar-btn:not(:first-child) {
+  border-left: none;
+}
+
+.analytics-toolbar-btn.is-active,
+.analytics-toolbar-btn:hover,
+.analytics-toolbar-btn:focus-visible {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.analytics-agenda-shell {
+  overflow-x: auto;
+}
+
+.analytics-agenda-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.analytics-agenda-table th,
+.analytics-agenda-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+}
+
+.analytics-agenda-table th {
+  color: var(--color-primary);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.analytics-agenda-title-cell {
+  display: grid;
+  gap: 4px;
+}
+
+.analytics-agenda-title-cell span {
+  color: var(--color-text-secondary);
+}
+
+.analytics-agenda-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--agenda-accent-soft);
+  color: var(--agenda-accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.analytics-agenda-actions,
+.analytics-day-meeting-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .analytics-calendar-shell .rbc-calendar {
   min-height: 620px;
 }
@@ -1304,6 +1413,20 @@ tbody tr:last-child td {
 
 .analytics-calendar-shell .rbc-today {
   background: rgba(31, 78, 121, 0.06);
+}
+
+.analytics-calendar-event {
+  display: grid;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.analytics-calendar-event span {
+  font-size: 11px;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .analytics-chart-shell {
@@ -1435,6 +1558,10 @@ tbody tr:last-child td {
   display: grid;
   gap: 4px;
   min-width: 0;
+
+.analytics-day-meeting-actions {
+  margin-top: 4px;
+}
 }
 
 .analytics-day-meeting-content strong {
@@ -1477,6 +1604,7 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 1200px) {
+  .analytics-side-stack,
   .analytics-layout-grid,
   .analytics-bottom-grid {
     grid-template-columns: 1fr;
@@ -1514,6 +1642,14 @@ tbody tr:last-child td {
   .analytics-calendar-shell,
   .analytics-calendar-shell .rbc-calendar {
     min-height: 520px;
+  }
+
+  .analytics-calendar-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .analytics-calendar-toolbar-title {
+    order: -1;
   }
 
   .analytics-gap-card {

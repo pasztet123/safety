@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { applyResolvedMeetingLeader } from '../lib/meetingLeader'
+import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import LocationMap from '../components/LocationMap'
 import './MeetingForm.css'
 
@@ -91,12 +92,9 @@ export default function MeetingDetails() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2 className="page-title">Meeting Details</h2>
         {isAdmin && (
-          <button 
-            className="btn btn-primary"
-            onClick={() => navigate(`/meetings/${id}/edit`)}
-          >
+          <Link className="btn btn-primary" to={`/meetings/${id}/edit`}>
             Edit Meeting
-          </button>
+          </Link>
         )}
       </div>
 
@@ -193,12 +191,14 @@ export default function MeetingDetails() {
                       )}
                     </div>
                   </div>
-                  <button 
-                    className="btn btn-secondary"
-                    onClick={() => navigate(`/checklists/${checklist.id}`)}
-                  >
-                    View Checklist
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <Link className="btn btn-secondary" to={`/checklists/${checklist.id}`}>
+                      View Checklist
+                    </Link>
+                    <Link className="btn btn-secondary" to={`/checklists/${checklist.id}`} {...NEW_TAB_LINK_PROPS}>
+                      New Tab
+                    </Link>
+                  </div>
                 </div>
               ))}
             </div>

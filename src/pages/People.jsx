@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { fetchAllPages, supabase } from '../lib/supabase'
 import './People.css'
 
 export default function People() {
-  const navigate = useNavigate()
   const [persons, setPersons] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -128,10 +127,10 @@ export default function People() {
       ) : (
         <div className="people-grid">
           {filtered.map((person) => (
-            <button
+            <Link
               key={`${person._type}-${person.id}`}
               className="person-card"
-              onClick={() => navigate(`/people/${person._type === 'leader' ? 'leader' : 'worker'}/${person.id}`)}
+              to={`/people/${person._type === 'leader' ? 'leader' : 'worker'}/${person.id}`}
             >
               <div className="person-card-top">
                 <div className="person-avatar">
@@ -193,7 +192,7 @@ export default function People() {
                   </span>
                 )}
               </div>
-            </button>
+            </Link>
           ))}
         </div>
       )}
