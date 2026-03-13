@@ -197,12 +197,14 @@ export default function Layout({ children, session }) {
     <div className="layout">
       <header className="header">
         <div className="header-content">
-          <img
-            src="https://lnfzvpaonuzbcnlulyyk.supabase.co/storage/v1/object/public/product-images/public/RGB_ABEdward_logo_horizontal_mono_no-bckg.png"
-            alt="AB Edward Logo"
-            className="header-logo"
+          <button
+            type="button"
+            className="header-logo-button"
             onClick={() => navigate('/')}
-          />
+            aria-label="Go to homepage"
+          >
+            <span className="header-logo" aria-hidden="true" />
+          </button>
           <div className="header-center">
           </div>
           <button
@@ -284,7 +286,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v8.9.3</span>
+          <span className="app-footer-version">v8.9.4</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.

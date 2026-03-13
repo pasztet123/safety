@@ -25,16 +25,46 @@
   height: 64px;
 }
 
-.header-logo {
-  height: 44px;
+.header-logo-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 196px;
+  min-height: 48px;
+  padding: 2px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
   cursor: pointer;
-  transition: opacity 0.2s;
-  filter: brightness(0) invert(1);
   flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.2s, opacity 0.2s;
 }
 
-.header-logo:hover {
-  opacity: 0.85;
+.header-logo-button:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.header-logo-button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 2px;
+}
+
+.header-logo {
+  display: block;
+  width: 188px;
+  height: 44px;
+  background-image: url('https://lnfzvpaonuzbcnlulyyk.supabase.co/storage/v1/object/public/product-images/public/RGB_ABEdward_logo_horizontal_mono_no-bckg.png');
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  filter: brightness(0) invert(1);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  pointer-events: none;
 }
 
 .header-center {
@@ -330,6 +360,7 @@
   }
   
   .header-logo {
+    width: 136px;
     height: 32px;
   }
 

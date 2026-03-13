@@ -7,6 +7,7 @@ import { followAppPath } from '../lib/navigation'
 import {
   fetchPersonLinkCandidates,
   formatElapsedSince,
+  resolveMostRecentSignatureUrl,
   savePersonLink,
   syncPersonProfileToLinkedRecords,
 } from '../lib/personProfiles'
@@ -419,13 +420,22 @@ export default function AdminPanel() {
   const applyLinkSourceToDraft = (candidate, draft, sourceKey) => {
     const sourceOption = getLinkSourceOptions(candidate, draft).find((option) => option.key === sourceKey)
     const sourceRecord = sourceOption?.record || candidate.currentProfile || null
+    const selectedUser = candidate.users.find((user) => user.id === draft.selectedUserId)
+    const selectedLeader = candidate.leaders.find((leader) => leader.id === draft.selectedLeaderId)
+    const selectedInvolvedPerson = candidate.involvedPersons.find((person) => person.id === draft.selectedInvolvedPersonId)
 
     return {
       ...draft,
       sourceKey: sourceOption?.key || sourceKey,
       sharedEmail: sourceRecord?.email || candidate.currentProfile?.email || '',
       sharedPhone: sourceRecord?.phone || candidate.currentProfile?.phone || '',
-      sharedSignatureUrl: sourceRecord?.default_signature_url || candidate.currentProfile?.default_signature_url || '',
+      sharedSignatureUrl: resolveMostRecentSignatureUrl([
+        sourceRecord,
+        candidate.currentProfile,
+        selectedUser,
+        selectedLeader,
+        selectedInvolvedPerson,
+      ]) || '',
     }
   }
 

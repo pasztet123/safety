@@ -61,6 +61,45 @@ export const formatElapsedSince = (timestamp) => {
   return `${days}d ${hours % 24}h`
 }
 
+const extractSignatureVersion = (signatureUrl) => {
+  const value = cleanValue(signatureUrl)
+  if (!value) return 0
+
+  const candidate = (() => {
+    try {
+      return decodeURIComponent(new URL(value).pathname)
+    } catch {
+      return value
+    }
+  })()
+
+  const match = candidate.match(/(?:^|\/)(?:default|leader|involved-person)-signature-(\d{10,})\.png$/i)
+    || candidate.match(/(?:^|\/)[^/]*signature-(\d{10,})\.png$/i)
+
+  if (!match) return 0
+
+  const version = Number(match[1])
+  return Number.isFinite(version) ? version : 0
+}
+
+export const resolveMostRecentSignatureUrl = (sources = []) => {
+  let chosenUrl = null
+  let chosenVersion = -1
+
+  sources.forEach((source) => {
+    const url = cleanValue(source?.default_signature_url || source?.signature_url || source)
+    if (!url) return
+
+    const version = extractSignatureVersion(url)
+    if (!chosenUrl || version > chosenVersion) {
+      chosenUrl = url
+      chosenVersion = version
+    }
+  })
+
+  return chosenUrl || null
+}
+
 const getProfileValuesFromSource = ({ sourceRecord, currentProfile, fallbackName }) => ({
   display_name: cleanValue(sourceRecord?.name) || cleanValue(currentProfile?.display_name) || cleanValue(fallbackName),
   normalized_name:
@@ -115,6 +154,19 @@ const getUserContactInvokeErrorMessage = async (error) => {
   return message || 'Unable to update linked user record.'
 }
 
+const updateUserRecordDirectly = async ({ userId, updates }) => {
+  if (!userId || !updates || Object.keys(updates).length === 0) {
+    return
+  }
+
+  const { error } = await supabase
+    .from('users')
+    .update(updates)
+    .eq('id', userId)
+
+  if (error) throw error
+}
+
 const callAdminUpdateUserContact = async (payload) => {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session?.access_token) {
@@ -137,6 +189,49 @@ const callAdminUpdateUserContact = async (payload) => {
   }
 
   return data
+}
+
+const syncLinkedUserRecord = async ({
+  userId,
+  currentEmail = null,
+  personProfileId,
+  defaultSignatureUrl,
+  name,
+  nextEmail,
+}) => {
+  if (!userId) return
+
+  const directUpdates = {
+    person_profile_id: personProfileId ?? null,
+  }
+
+  if (typeof defaultSignatureUrl !== 'undefined') {
+    directUpdates.default_signature_url = defaultSignatureUrl ?? null
+  }
+
+  if (typeof name !== 'undefined') {
+    directUpdates.name = name || null
+  }
+
+  const trimmedNextEmail = cleanValue(nextEmail) || null
+  const trimmedCurrentEmail = cleanValue(currentEmail) || null
+  const requiresAuthEmailUpdate = Boolean(trimmedNextEmail && trimmedNextEmail !== trimmedCurrentEmail)
+
+  if (!requiresAuthEmailUpdate) {
+    if (trimmedNextEmail !== null) {
+      directUpdates.email = trimmedNextEmail
+    }
+    await updateUserRecordDirectly({ userId, updates: directUpdates })
+    return
+  }
+
+  await callAdminUpdateUserContact({
+    userId,
+    person_profile_id: personProfileId ?? null,
+    ...(trimmedNextEmail ? { email: trimmedNextEmail } : {}),
+    ...(typeof defaultSignatureUrl !== 'undefined' ? { default_signature_url: defaultSignatureUrl ?? null } : {}),
+    ...(typeof name !== 'undefined' && name ? { name } : {}),
+  })
 }
 
 export const fetchPersonLinkCandidates = async () => {
@@ -316,8 +411,8 @@ export const syncPersonProfileToLinkedRecords = async (profileId) => {
   const [{ data: profile, error: profileError }, usersRes, leadersRes, personsRes] = await Promise.all([
     supabase.from('person_profiles').select('*').eq('id', profileId).single(),
     supabase.from('users').select('id, email, default_signature_url').eq('person_profile_id', profileId),
-    supabase.from('leaders').select('id').eq('person_profile_id', profileId),
-    supabase.from('involved_persons').select('id').eq('person_profile_id', profileId),
+    supabase.from('leaders').select('id, default_signature_url').eq('person_profile_id', profileId),
+    supabase.from('involved_persons').select('id, default_signature_url').eq('person_profile_id', profileId),
   ])
 
   if (profileError) throw profileError
@@ -325,11 +420,29 @@ export const syncPersonProfileToLinkedRecords = async (profileId) => {
   if (leadersRes.error) throw leadersRes.error
   if (personsRes.error) throw personsRes.error
 
-  await Promise.all((usersRes.data || []).map((user) => callAdminUpdateUserContact({
+  const resolvedSignatureUrl = resolveMostRecentSignatureUrl([
+    profile,
+    ...(usersRes.data || []),
+    ...(leadersRes.data || []),
+    ...(personsRes.data || []),
+  ])
+
+  if ((resolvedSignatureUrl || null) !== (profile.default_signature_url || null)) {
+    const { error: profileSignatureError } = await supabase
+      .from('person_profiles')
+      .update({ default_signature_url: resolvedSignatureUrl })
+      .eq('id', profileId)
+
+    if (profileSignatureError) throw profileSignatureError
+    profile.default_signature_url = resolvedSignatureUrl
+  }
+
+  await Promise.all((usersRes.data || []).map((user) => syncLinkedUserRecord({
     userId: user.id,
-    person_profile_id: profileId,
-    ...(profile.email ? { email: profile.email } : {}),
-    ...(profile.default_signature_url ? { default_signature_url: profile.default_signature_url } : {}),
+    currentEmail: user.email,
+    personProfileId: profileId,
+    defaultSignatureUrl: profile.default_signature_url ?? null,
+    nextEmail: profile.email ?? null,
   })))
 
   const leaderUpdates = { person_profile_id: profileId }
@@ -410,6 +523,14 @@ export const savePersonLink = async ({
     fallbackName,
   })
 
+  profileValues.default_signature_url = resolveMostRecentSignatureUrl([
+    sourceRecord,
+    currentProfile,
+    user,
+    leader,
+    involvedPerson,
+  ]) || profileValues.default_signature_url
+
   if (typeof sharedEmail === 'string') {
     profileValues.email = cleanValue(sharedEmail) || null
   }
@@ -444,11 +565,13 @@ export const savePersonLink = async ({
   }
 
   if (selectedUserId) {
-    await callAdminUpdateUserContact({
+    await syncLinkedUserRecord({
       userId: selectedUserId,
-      person_profile_id: profileId,
-      ...(profileValues.email ? { email: profileValues.email } : {}),
-      ...(profileValues.default_signature_url ? { default_signature_url: profileValues.default_signature_url } : {}),
+      currentEmail: user?.email ?? null,
+      personProfileId: profileId,
+      defaultSignatureUrl: profileValues.default_signature_url ?? null,
+      nextEmail: profileValues.email ?? null,
+      name: profileValues.display_name,
     })
   }
 
