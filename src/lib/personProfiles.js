@@ -1,7 +1,5 @@
 import { fetchAllPages, supabase } from './supabase'
 
-const updateUserContactEndpoint = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-update-user-contact`
-
 const cleanValue = (value) => (typeof value === 'string' ? value.trim() : '')
 
 const uniqueValues = (items) => [...new Set((items || []).filter(Boolean))]
@@ -90,27 +88,55 @@ const fetchSingleRow = async (table, select, id) => {
   return data
 }
 
+const getUserContactInvokeErrorMessage = async (error) => {
+  const context = error?.context
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json()
+      if (cleanValue(body?.error)) {
+        return cleanValue(body.error)
+      }
+    } catch {
+      // Fall through to generic handling when the edge function response is not JSON.
+    }
+  }
+
+  const message = cleanValue(error?.message)
+  const normalizedMessage = message.toLowerCase()
+
+  if (
+    normalizedMessage.includes('failed to fetch') ||
+    normalizedMessage.includes('failed to send a request') ||
+    normalizedMessage.includes('networkerror')
+  ) {
+    return 'Unable to reach the admin contact update service. Check the Supabase edge function deployment or network access, then try again.'
+  }
+
+  return message || 'Unable to update linked user record.'
+}
+
 const callAdminUpdateUserContact = async (payload) => {
   const { data: { session } } = await supabase.auth.getSession()
   if (!session?.access_token) {
     throw new Error('Missing session token for admin user update.')
   }
 
-  const response = await fetch(updateUserContactEndpoint, {
-    method: 'POST',
+  const { data, error } = await supabase.functions.invoke('admin-update-user-contact', {
+    body: payload,
     headers: {
       Authorization: `Bearer ${session.access_token}`,
-      'Content-Type': 'application/json',
     },
-    body: JSON.stringify(payload),
   })
 
-  const body = await response.json()
-  if (!response.ok) {
-    throw new Error(body.error || 'Unable to update linked user record.')
+  if (error) {
+    throw new Error(await getUserContactInvokeErrorMessage(error))
   }
 
-  return body
+  if (cleanValue(data?.error)) {
+    throw new Error(cleanValue(data.error))
+  }
+
+  return data
 }
 
 export const fetchPersonLinkCandidates = async () => {

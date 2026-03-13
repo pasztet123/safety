@@ -84,7 +84,7 @@ function App() {
           <Route path="/people" element={<People />} />
           <Route path="/people/:type/:id" element={<PersonDetail />} />
           <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/admin/analytics" element={<AdminPanel />} />
+          <Route path="/admin/:tab" element={<AdminPanel />} />
           <Route path="/bulk-import" element={<BulkImport />} />
           <Route path="/export" element={<ExportPanel />} />
           <Route path="/system-records" element={<SystemRecords />} />

@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { JurisdictionWarningNotice, LegalClauseNotice } from './LegalNotice'
 import SignaturePad from './SignaturePad'
 import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
+import { normalizeMeetingPersonName, resolveMeetingLeader } from '../lib/meetingLeader'
 import './ApproveDraftsModal.css'
 
 /**
@@ -17,6 +18,8 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   const sigRef = useRef()
 
   const [leaders, setLeaders] = useState([])
+  const [involvedPersons, setInvolvedPersons] = useState([])
+  const [signatureByName, setSignatureByName] = useState({})
   const [leaderId, setLeaderId] = useState('')
   const [leaderName, setLeaderName] = useState('')
   const [leaderDefaultSig, setLeaderDefaultSig] = useState(null)
@@ -37,17 +40,59 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   ))
 
   useEffect(() => {
-    loadLeaders()
+    loadReferenceData()
   }, [])
 
-  const loadLeaders = async () => {
-    const { data } = await supabase
-      .from('leaders')
-      .select('id, name, default_signature_url')
-      .order('name')
-    if (data) {
-      setLeaders(data)
+  const loadReferenceData = async () => {
+    const [leadersRes, involvedRes, usersRes] = await Promise.all([
+      supabase
+        .from('leaders')
+        .select('id, name, default_signature_url')
+        .order('name'),
+      supabase
+        .from('involved_persons')
+        .select('id, name, leader_id, default_signature_url')
+        .order('name'),
+      supabase
+        .from('users')
+        .select('name, default_signature_url')
+        .order('name'),
+    ])
+
+    if (leadersRes.data) {
+      setLeaders(leadersRes.data)
     }
+
+    if (involvedRes.data) {
+      setInvolvedPersons(involvedRes.data)
+    }
+
+    const nextSignatureByName = {}
+    ;(leadersRes.data || []).forEach((leader) => {
+      if (leader.default_signature_url) {
+        nextSignatureByName[leader.name] = leader.default_signature_url
+        nextSignatureByName[normalizeMeetingPersonName(leader.name)] = leader.default_signature_url
+      }
+    })
+    ;(involvedRes.data || []).forEach((person) => {
+      if (person.default_signature_url) {
+        nextSignatureByName[person.name] = person.default_signature_url
+        nextSignatureByName[normalizeMeetingPersonName(person.name)] = person.default_signature_url
+      }
+    })
+    ;(usersRes.data || []).forEach((user) => {
+      if (user.default_signature_url) {
+        nextSignatureByName[user.name] = user.default_signature_url
+        nextSignatureByName[normalizeMeetingPersonName(user.name)] = user.default_signature_url
+      }
+    })
+
+    setSignatureByName(nextSignatureByName)
+  }
+
+  const getDefaultSignatureForName = (name) => {
+    if (!name) return null
+    return signatureByName[name] || signatureByName[normalizeMeetingPersonName(name)] || null
   }
 
   const handleLeaderSelect = (id) => {
@@ -63,10 +108,11 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
 
     const l = leaders.find(x => x.id === id)
     if (!l) return
+    const preferredLeaderSignature = l.default_signature_url || getDefaultSignatureForName(l.name)
     setLeaderId(l.id)
     setLeaderName(l.name)
-    setLeaderDefaultSig(l.default_signature_url || null)
-    setSigMode(l.default_signature_url ? 'default' : 'draw')
+    setLeaderDefaultSig(preferredLeaderSignature || null)
+    setSigMode(preferredLeaderSignature ? 'default' : 'draw')
     setManualSigDataUrl(null)
     if (sigRef.current) sigRef.current.clear()
   }
@@ -74,14 +120,15 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
   const setOverrideLeader = (meetingId, id) => {
     const l = leaders.find(x => x.id === id)
     if (!l) { clearOverride(meetingId); return }
+    const preferredLeaderSignature = l.default_signature_url || getDefaultSignatureForName(l.name)
     setOverrides(prev => ({
       ...prev,
       [meetingId]: {
         ...prev[meetingId],
         leaderId: l.id,
         leaderName: l.name,
-        leaderDefaultSig: l.default_signature_url || null,
-        sigMode: l.default_signature_url ? 'default' : 'draw',
+        leaderDefaultSig: preferredLeaderSignature || null,
+        sigMode: preferredLeaderSignature ? 'default' : 'draw',
         manualSigDataUrl: null,
       }
     }))
@@ -131,6 +178,28 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
     return override?.manualSigDataUrl ?? manualSigDataUrl
   }
 
+  const buildSelfTrainingAttendeeUpdate = ({ draft, meetingAttendees, effectiveSigUrl, resolvedLeaderName }) => {
+    const effectiveIsSelfTraining = (draft.is_self_training || meetingAttendees.length === 1) && meetingAttendees.length === 1
+    if (!effectiveIsSelfTraining || meetingAttendees.length !== 1) {
+      return null
+    }
+
+    const attendee = meetingAttendees[0]
+    const attendeeSignatureUrl = attendee.signature_url
+      || getDefaultSignatureForName(attendee.name)
+      || getDefaultSignatureForName(resolvedLeaderName)
+      || effectiveSigUrl
+
+    if (!attendeeSignatureUrl) {
+      return null
+    }
+
+    return {
+      attendeeId: attendee.id,
+      signatureUrl: attendeeSignatureUrl,
+    }
+  }
+
   // ── Approve ──────────────────────────────────────────────────────────────
   const handleApprove = async () => {
     if (draftsWithDateTimeMismatch.length > 0) {
@@ -143,6 +212,22 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
     setSaving(true)
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      const { data: attendeeRows, error: attendeeError } = await supabase
+        .from('meeting_attendees')
+        .select('id, meeting_id, name, signature_url, signed_with_checkbox')
+        .in('meeting_id', drafts.map(draft => draft.id))
+
+      if (attendeeError) {
+        throw attendeeError
+      }
+
+      const attendeesByMeetingId = {}
+      ;(attendeeRows || []).forEach((attendee) => {
+        if (!attendeesByMeetingId[attendee.meeting_id]) {
+          attendeesByMeetingId[attendee.meeting_id] = []
+        }
+        attendeesByMeetingId[attendee.meeting_id].push(attendee)
+      })
 
       // Upload global signature once (if not per-meeting)
       const globalSigInput = leaderId ? resolveSignatureInput(null) : undefined
@@ -150,13 +235,24 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
 
       for (const draft of drafts) {
         const ovr = overrides[draft.id]
-        const effectiveLeaderId = ovr?.leaderId || leaderId || draft.leader_id || ''
-        const effectiveLeaderName = ovr?.leaderName || leaderName || draft.leader_name || ''
+        const meetingAttendees = attendeesByMeetingId[draft.id] || []
+        const resolution = resolveMeetingLeader({
+          attendees: meetingAttendees,
+          leaders,
+          involvedPersons,
+          isSelfTraining: draft.is_self_training || meetingAttendees.length === 1,
+        })
+        const effectiveLeaderId = ovr?.leaderId || leaderId || draft.leader_id || resolution.leaderId || ''
+        const effectiveLeaderName = ovr?.leaderName || leaderName || draft.leader_name || resolution.leaderName || ''
+        const effectiveLeaderDefaultSig = ovr?.leaderDefaultSig
+          || leaders.find(l => l.id === effectiveLeaderId)?.default_signature_url
+          || resolution.leaderDefaultSignature
+          || getDefaultSignatureForName(effectiveLeaderName)
+          || null
         const effectiveSigInput = ovr
           ? resolveSignatureInput(ovr)
           : (leaderId ? resolveSignatureInput(null) : (() => {
-              const draftLeader = effectiveLeaderId ? leaders.find(l => l.id === effectiveLeaderId) : null
-              return draftLeader?.default_signature_url || null
+              return effectiveLeaderDefaultSig
             })())
 
         if (!effectiveLeaderName) {
@@ -171,16 +267,42 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
         const updateData = {
           is_draft: false,
           completed: true,
+          is_self_training: resolution.isSelfTraining,
           updated_by: user?.id || null,
           ...(effectiveLeaderId ? { leader_id: effectiveLeaderId } : {}),
           leader_name: effectiveLeaderName,
           ...(sigUrl !== undefined ? { signature_url: sigUrl } : {}),
         }
 
-        await supabase
+        const { error: meetingUpdateError } = await supabase
           .from('meetings')
           .update(updateData)
           .eq('id', draft.id)
+
+        if (meetingUpdateError) {
+          throw meetingUpdateError
+        }
+
+        const attendeeUpdate = buildSelfTrainingAttendeeUpdate({
+          draft,
+          meetingAttendees,
+          effectiveSigUrl: sigUrl,
+          resolvedLeaderName: effectiveLeaderName,
+        })
+
+        if (attendeeUpdate) {
+          const { error: attendeeUpdateError } = await supabase
+            .from('meeting_attendees')
+            .update({
+              signature_url: attendeeUpdate.signatureUrl,
+              signed_with_checkbox: false,
+            })
+            .eq('id', attendeeUpdate.attendeeId)
+
+          if (attendeeUpdateError) {
+            throw attendeeUpdateError
+          }
+        }
       }
 
       onApproved()

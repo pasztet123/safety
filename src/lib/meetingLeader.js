@@ -61,12 +61,15 @@ export const resolveMeetingLeader = ({
 
   if (normalizedAttendees.length === 1 && isSelfTraining) {
     const attendee = normalizedAttendees[0]
+    const selfTrainingLeader = directLeader || linkedLeader
     return {
-      leaderId: directLeader?.id || '',
+      leaderId: selfTrainingLeader?.id || '',
       leaderName: attendee.name,
-      leaderDefaultSignature: directLeader?.default_signature_url || null,
+      leaderDefaultSignature: selfTrainingLeader?.default_signature_url || null,
       isSelfTraining: true,
-      resolution: directLeader ? 'self-training-direct-match' : 'self-training-attendee',
+      resolution: selfTrainingLeader
+        ? (directLeader ? 'self-training-direct-match' : 'self-training-linked-leader')
+        : 'self-training-attendee',
     }
   }
 

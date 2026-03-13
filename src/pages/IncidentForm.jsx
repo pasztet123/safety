@@ -7,6 +7,7 @@ import MapPicker from '../components/MapPicker'
 import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
 import { MAX_INCIDENT_PHOTOS, normalizeIncidentPhotos } from '../lib/incidentPhotos'
+import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import './IncidentForm.css'
 
 const SEVERITY_OPTIONS = [
@@ -179,6 +180,7 @@ export default function IncidentForm() {
   const [disciplinaryActions, setDisciplinaryActions] = useState([])
   const [newDisciplinaryAction, setNewDisciplinaryAction] = useState(createEmptyDisciplinaryAction())
   const [showAddDisciplinaryAction, setShowAddDisciplinaryAction] = useState(false)
+  const responsiblePersonOptions = buildResponsiblePersonOptions({ involvedPersons, leaders })
 
   useEffect(() => {
     const init = async () => {
@@ -220,8 +222,16 @@ export default function IncidentForm() {
   }
 
   const fetchInvolvedPersons = async () => {
-    const { data } = await supabase.from('involved_persons').select('id, name, default_signature_url').order('name')
+    const { data } = await supabase.from('involved_persons').select('id, name, default_signature_url, leader_id').order('name')
     if (data) setInvolvedPersons(data)
+  }
+
+  const getResponsiblePersonLabel = (value) => {
+    if (!value) return ''
+
+    return involvedPersons.find(person => person.id === value)?.name
+      || responsiblePersonOptions.find(option => option.value === value)?.label
+      || ''
   }
 
   const fetchLeaders = async () => {
@@ -608,8 +618,40 @@ export default function IncidentForm() {
         await supabase.from('corrective_actions').delete().in('id', deletedActionIds)
       }
 
-      const existingActions = correctiveActions.filter(action => action.id)
-      const newActions = correctiveActions.filter(action => !action.id)
+      let availableResponsiblePersons = involvedPersons
+      const normalizedCorrectiveActions = []
+
+      for (const action of correctiveActions) {
+        try {
+          const { responsiblePersonId, syncedPerson } = await resolveResponsiblePersonId({
+            selectedValue: action.responsible_person_id,
+            involvedPersons: availableResponsiblePersons,
+            leaders,
+            supabase,
+          })
+
+          if (syncedPerson) {
+            availableResponsiblePersons = mergeResponsiblePerson(availableResponsiblePersons, syncedPerson)
+          }
+
+          normalizedCorrectiveActions.push({
+            ...action,
+            responsible_person_id: responsiblePersonId || '',
+          })
+        } catch (resolveError) {
+          console.error(resolveError)
+          alert('Unable to assign one of the selected responsible people')
+          setLoading(false)
+          return
+        }
+      }
+
+      if (availableResponsiblePersons !== involvedPersons) {
+        setInvolvedPersons(availableResponsiblePersons)
+      }
+
+      const existingActions = normalizedCorrectiveActions.filter(action => action.id)
+      const newActions = normalizedCorrectiveActions.filter(action => !action.id)
       const syncedActions = []
 
       if (existingActions.length > 0) {
@@ -1143,7 +1185,7 @@ export default function IncidentForm() {
                     <label className="form-label">Responsible person</label>
                     <select className="form-select" value={newAction.responsible_person_id} onChange={e => setNewAction(prev => ({ ...prev, responsible_person_id: e.target.value }))}>
                       <option value="">Not assigned</option>
-                      {involvedPersons.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      {responsiblePersonOptions.map(person => <option key={person.value} value={person.value}>{person.label}</option>)}
                     </select>
                   </div>
                   <div className="form-group">
@@ -1178,13 +1220,13 @@ export default function IncidentForm() {
             {correctiveActions.length > 0 && (
               <div className="if-action-list">
                 {correctiveActions.map((a, i) => {
-                  const responsible = involvedPersons.find(p => p.id === a.responsible_person_id)
+                  const responsible = getResponsiblePersonLabel(a.responsible_person_id)
                   return (
                     <div key={i} className={`if-action-card ${a.status === 'completed' ? 'is-done' : ''}`}>
                       <div className="if-action-main">
                         <p className="if-action-desc">{a.description}</p>
                         <div className="if-action-meta">
-                          {responsible && <span>Responsible: {responsible.name}</span>}
+                          {responsible && <span>Responsible: {responsible}</span>}
                           {a.declared_created_date && <span>Created on: {new Date(a.declared_created_date).toLocaleDateString()}</span>}
                           {a.due_date && <span>Due: {new Date(a.due_date).toLocaleDateString()}</span>}
                           {(a.photos?.length || 0) > 0 && <span>{a.photos.length} photo{a.photos.length === 1 ? '' : 's'}</span>}

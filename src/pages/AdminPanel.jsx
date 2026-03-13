@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import { resolveMeetingLeader } from '../lib/meetingLeader'
@@ -25,6 +25,13 @@ const ADMIN_TABS = [
   { key: 'settings', label: 'Settings' },
   { key: 'analytics', label: 'Analytics' },
 ]
+
+const ADMIN_TAB_KEYS = new Set(ADMIN_TABS.map((tab) => tab.key))
+
+const getAdminTabFromRoute = (routeTab) => {
+  if (!routeTab) return 'meetings'
+  return ADMIN_TAB_KEYS.has(routeTab) ? routeTab : 'meetings'
+}
 
 const EMPTY_PROFILE_FILTERS = {
   missingEmail: false,
@@ -86,6 +93,7 @@ const captureSignatureDataUrl = ({ signatureRef, enabled, emptyMessage, dataUrl 
 export default function AdminPanel() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { tab: routeTab } = useParams()
   const tabsRef = useRef(null)
   const newUserSignatureRef = useRef()
   const newLeaderSignatureRef = useRef()
@@ -268,8 +276,15 @@ export default function AdminPanel() {
   }, [])
 
   useEffect(() => {
-    setActiveTab(location.pathname === '/admin/analytics' ? 'analytics' : 'meetings')
-  }, [location.pathname])
+    const nextTab = getAdminTabFromRoute(routeTab)
+
+    if (routeTab && !ADMIN_TAB_KEYS.has(routeTab)) {
+      navigate('/admin', { replace: true })
+      return
+    }
+
+    setActiveTab(nextTab)
+  }, [navigate, routeTab])
 
   useEffect(() => {
     if (!adminChecked || !isAdmin) return
@@ -321,16 +336,16 @@ export default function AdminPanel() {
   }
 
   const handleTabChange = (tabKey) => {
-    if (tabKey === 'analytics') {
-      navigate('/admin/analytics')
-      return
-    }
+    if (!ADMIN_TAB_KEYS.has(tabKey)) return
 
     setActiveTab(tabKey)
 
-    if (location.pathname === '/admin/analytics') {
+    if (tabKey === 'meetings') {
       navigate('/admin')
+      return
     }
+
+    navigate(`/admin/${encodeURIComponent(tabKey)}`)
   }
 
   const closeLeaderEditModal = () => {

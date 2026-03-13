@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
 import { downloadCorrectiveActionsListPDF } from '../lib/pdfBulkGenerator'
+import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import './CorrectiveActions.css'
 
 const createEmptyAction = () => ({
@@ -30,6 +31,7 @@ export default function CorrectiveActions() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [projects, setProjects] = useState([])
   const [involvedPersons, setInvolvedPersons] = useState([])
+  const [leaders, setLeaders] = useState([])
   const [incidents, setIncidents] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [predefinedActions, setPredefinedActions] = useState([])
@@ -38,6 +40,7 @@ export default function CorrectiveActions() {
   const [editForm, setEditForm] = useState({})
   
   const [newAction, setNewAction] = useState(createEmptyAction())
+    const responsiblePersonOptions = buildResponsiblePersonOptions({ involvedPersons, leaders })
 
   useEffect(() => {
     checkAdminAndLoadActions()
@@ -59,11 +62,14 @@ export default function CorrectiveActions() {
       setIsAdmin(data?.is_admin || false)
     }
     
-    await fetchProjects()
-    await fetchInvolvedPersons()
-    await fetchIncidents()
-    await fetchPredefinedActions()
-    await fetchActions()
+    await Promise.all([
+      fetchProjects(),
+      fetchInvolvedPersons(),
+      fetchLeaders(),
+      fetchIncidents(),
+      fetchPredefinedActions(),
+      fetchActions(),
+    ])
   }
 
   const fetchProjects = async () => {
@@ -76,8 +82,17 @@ export default function CorrectiveActions() {
   const fetchInvolvedPersons = async () => {
     const { data } = await supabase
       .from('involved_persons')
-      .select('id, name')
+      .select('id, name, leader_id')
+      .order('name')
     if (data) setInvolvedPersons(data)
+  }
+
+  const fetchLeaders = async () => {
+    const { data } = await supabase
+      .from('leaders')
+      .select('id, name')
+      .order('name')
+    if (data) setLeaders(data)
   }
 
   const fetchIncidents = async () => {
@@ -276,11 +291,30 @@ export default function CorrectiveActions() {
   const handleSaveEdit = async (actionId) => {
     const { data: { user } } = await supabase.auth.getUser()
 
+    let responsiblePersonId = null
+    let syncedPerson = null
+
+    try {
+      const resolved = await resolveResponsiblePersonId({
+        selectedValue: editForm.responsible_person_id,
+        involvedPersons,
+        leaders,
+        supabase,
+      })
+
+      responsiblePersonId = resolved.responsiblePersonId
+      syncedPerson = resolved.syncedPerson
+    } catch (error) {
+      console.error(error)
+      alert('Unable to assign the selected responsible person')
+      return
+    }
+
     const { error } = await supabase
       .from('corrective_actions')
       .update({
         description: editForm.description,
-        responsible_person_id: editForm.responsible_person_id || null,
+        responsible_person_id: responsiblePersonId,
         declared_created_date: editForm.declared_created_date || null,
         due_date: editForm.due_date || null,
         status: editForm.status,
@@ -291,8 +325,11 @@ export default function CorrectiveActions() {
     if (!error) {
       try {
         await syncCorrectiveActionPhotos(actionId, editForm.photos)
+        if (syncedPerson) {
+          setInvolvedPersons(prev => mergeResponsiblePerson(prev, syncedPerson))
+        }
         setEditingActionId(null)
-        await fetchActions()
+        await Promise.all([fetchActions(), fetchInvolvedPersons()])
       } catch (photoError) {
         console.error(photoError)
         alert('Unable to save corrective action photos')
@@ -307,13 +344,31 @@ export default function CorrectiveActions() {
     }
 
     const { data: { user } } = await supabase.auth.getUser()
+    let responsiblePersonId = null
+    let syncedPerson = null
+
+    try {
+      const resolved = await resolveResponsiblePersonId({
+        selectedValue: newAction.responsible_person_id,
+        involvedPersons,
+        leaders,
+        supabase,
+      })
+
+      responsiblePersonId = resolved.responsiblePersonId
+      syncedPerson = resolved.syncedPerson
+    } catch (resolveError) {
+      console.error(resolveError)
+      alert('Unable to assign the selected responsible person')
+      return
+    }
     
     const { data: insertedAction, error } = await supabase
       .from('corrective_actions')
       .insert({
         incident_id: newAction.incident_id,
         description: newAction.description,
-        responsible_person_id: newAction.responsible_person_id || null,
+        responsible_person_id: responsiblePersonId,
         declared_created_date: newAction.declared_created_date || null,
         due_date: newAction.due_date || null,
         status: newAction.status,
@@ -337,7 +392,10 @@ export default function CorrectiveActions() {
     
     setNewAction(createEmptyAction())
     setShowAddForm(false)
-    await fetchActions()
+    if (syncedPerson) {
+      setInvolvedPersons(prev => mergeResponsiblePerson(prev, syncedPerson))
+    }
+    await Promise.all([fetchActions(), fetchInvolvedPersons()])
   }
   
   const handleSelectPredefinedAction = (actionDescription) => {
@@ -442,9 +500,9 @@ export default function CorrectiveActions() {
                   onChange={(e) => setNewAction({...newAction, responsible_person_id: e.target.value})}
                 >
                   <option value="">Select Person (Optional)</option>
-                  {involvedPersons.map(person => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
+                  {responsiblePersonOptions.map(person => (
+                    <option key={person.value} value={person.value}>
+                      {person.label}
                     </option>
                   ))}
                 </select>
@@ -571,8 +629,8 @@ export default function CorrectiveActions() {
                           onChange={e => setEditForm({ ...editForm, responsible_person_id: e.target.value })}
                         >
                           <option value="">Unassigned</option>
-                          {involvedPersons.map(p => (
-                            <option key={p.id} value={p.id}>{p.name}</option>
+                          {responsiblePersonOptions.map(person => (
+                            <option key={person.value} value={person.value}>{person.label}</option>
                           ))}
                         </select>
                       </div>

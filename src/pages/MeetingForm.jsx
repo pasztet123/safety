@@ -7,7 +7,7 @@ import MapPicker from '../components/MapPicker'
 import TopicPicker from '../components/TopicPicker'
 import { JurisdictionWarningNotice, LegalClauseNotice } from '../components/LegalNotice'
 import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
-import { resolveMeetingLeader } from '../lib/meetingLeader'
+import { normalizeMeetingPersonName, resolveMeetingLeader } from '../lib/meetingLeader'
 import { fetchTrades } from '../lib/trades'
 import './MeetingForm.css'
 
@@ -126,6 +126,40 @@ export default function MeetingForm() {
   const hasAttendeeSignature = (attendee) => Boolean(attendee?.signature_url || attendee?.drawn_sig_data_url)
   const isAttendeeConfirmationMissing = (attendee) => !attendee?.signed_with_checkbox && !hasAttendeeSignature(attendee)
   const isAttendeeSignatureMissing = (attendee) => attendee?.show_signature_field && !hasAttendeeSignature(attendee)
+  const getDefaultSignatureForName = (name) => {
+    if (!name) return null
+    return userDefaultSignatures[name] || userDefaultSignatures[normalizeMeetingPersonName(name)] || null
+  }
+
+  const getPreferredLeaderSignature = ({ leaderName, fallbackSignatureUrl = null }) => (
+    fallbackSignatureUrl || getDefaultSignatureForName(leaderName)
+  )
+
+  const applySelfTrainingSignatureDefaults = ({
+    attendeeList,
+    isSelfTraining,
+    fallbackSignatureUrl = null,
+  }) => {
+    if (!isSelfTraining || attendeeList.length !== 1) {
+      return attendeeList
+    }
+
+    const [attendee] = attendeeList
+    if (!attendee?.name || hasAttendeeSignature(attendee) || attendee?.signed_with_checkbox) {
+      return attendeeList
+    }
+
+    const defaultSignatureUrl = getDefaultSignatureForName(attendee.name) || fallbackSignatureUrl
+    if (!defaultSignatureUrl) {
+      return attendeeList
+    }
+
+    return [{
+      ...attendee,
+      show_signature_field: true,
+      signature_url: defaultSignatureUrl,
+    }]
+  }
 
   const focusFirstInvalidField = (errors) => {
     const fieldOrder = [
@@ -149,7 +183,11 @@ export default function MeetingForm() {
     }
   }
 
-  const buildValidationErrors = ({ requiresFinalApproval }) => {
+  const buildValidationErrors = ({
+    requiresFinalApproval,
+    attendeeList = attendees,
+    isSelfTraining = formData.is_self_training,
+  }) => {
     const errors = {}
 
     if (!formData.leader_name) {
@@ -165,13 +203,13 @@ export default function MeetingForm() {
       errors.topic = 'Select or enter a meeting topic.'
     }
 
-    if (attendees.length === 0) {
+    if (attendeeList.length === 0) {
       errors.attendees = 'Add at least one attendee.'
     } else {
-      if (attendees.some(isAttendeeConfirmationMissing)) {
+      if (!isSelfTraining && attendeeList.some(isAttendeeConfirmationMissing)) {
         errors.attendeeConfirmations = 'Each attendee must be confirmed or signed.'
       }
-      if (attendees.some(isAttendeeSignatureMissing)) {
+      if (attendeeList.some(isAttendeeSignatureMissing)) {
         errors.attendeeSignatures = 'Complete every attendee signature that was enabled.'
       }
     }
@@ -204,6 +242,31 @@ export default function MeetingForm() {
     initialDetectionDoneRef.current = false
     checkAdminAndLoadData()
   }, [id])
+
+  useEffect(() => {
+    if (!formData.is_self_training || attendees.length !== 1) {
+      return
+    }
+
+    const preferredLeaderSignature = getPreferredLeaderSignature({
+      leaderName: formData.leader_name,
+      fallbackSignatureUrl: leaderDefaultSignature,
+    })
+
+    if (preferredLeaderSignature !== leaderDefaultSignature) {
+      setLeaderDefaultSignature(preferredLeaderSignature)
+    }
+
+    if (!manualSigDataUrl && !(id && existingSignatureUrl && existingSignatureUrl !== preferredLeaderSignature && !removeExistingSig)) {
+      setChosenDefaultSigUrl(preferredLeaderSignature || null)
+    }
+
+    setAttendees(prev => applySelfTrainingSignatureDefaults({
+      attendeeList: prev,
+      isSelfTraining: formData.is_self_training,
+      fallbackSignatureUrl: preferredLeaderSignature,
+    }))
+  }, [attendees.length, formData.is_self_training, formData.leader_name, leaderDefaultSignature, userDefaultSignatures, manualSigDataUrl, id, existingSignatureUrl, removeExistingSig])
 
   // For meetings loaded from DB (drafts or edits), run autoDetectLeader once all
   // async data (attendees, leaders, involvedPersons) has settled.
@@ -407,6 +470,7 @@ export default function MeetingForm() {
     usersData.forEach(user => {
       if (user.default_signature_url) {
         sigMap[user.name] = user.default_signature_url
+        sigMap[normalizeMeetingPersonName(user.name)] = user.default_signature_url
       }
     })
     
@@ -414,6 +478,7 @@ export default function MeetingForm() {
     involvedPersonsData.forEach(person => {
       if (person.default_signature_url) {
         sigMap[person.name] = person.default_signature_url
+        sigMap[normalizeMeetingPersonName(person.name)] = person.default_signature_url
       }
     })
     
@@ -498,14 +563,30 @@ export default function MeetingForm() {
       isSelfTraining: options.isSelfTraining ?? (newAttendees.length === 1),
     })
 
-    setLeaderDefaultSignature(resolution.leaderDefaultSignature)
-    setChosenDefaultSigUrl((resolution.leaderDefaultSignature && !manualSigDataUrl) ? resolution.leaderDefaultSignature : null)
+    const preferredLeaderSignature = getPreferredLeaderSignature({
+      leaderName: resolution.leaderName,
+      fallbackSignatureUrl: resolution.leaderDefaultSignature,
+    })
+    const nextIsSelfTraining = resolution.isSelfTraining
+    const nextAttendees = applySelfTrainingSignatureDefaults({
+      attendeeList: newAttendees,
+      isSelfTraining: nextIsSelfTraining,
+      fallbackSignatureUrl: preferredLeaderSignature,
+    })
+
+    setLeaderDefaultSignature(preferredLeaderSignature)
+    if (!manualSigDataUrl && !(id && existingSignatureUrl && existingSignatureUrl !== preferredLeaderSignature && !removeExistingSig)) {
+      setChosenDefaultSigUrl(preferredLeaderSignature || null)
+    }
     setFormData(prev => ({
       ...prev,
       leader_id: resolution.leaderId,
       leader_name: resolution.leaderName,
-      is_self_training: resolution.isSelfTraining,
+      is_self_training: nextIsSelfTraining,
     }))
+    if (nextAttendees !== newAttendees) {
+      setAttendees(nextAttendees)
+    }
   }
 
   const addAttendeeFromPerson = (person) => {
@@ -767,27 +848,29 @@ export default function MeetingForm() {
         completed: isDraftMeeting ? true : (data.completed || false),
         is_self_training: data.is_self_training || false,
       })
-      setLeaderDefaultSignature(resolvedLeaderSig)
-      setAttendees(
-        (data.attendees || []).map(a => ({
+      setLeaderDefaultSignature(getPreferredLeaderSignature({
+        leaderName: data.leader_name,
+        fallbackSignatureUrl: resolvedLeaderSig,
+      }))
+      const loadedAttendees = (data.attendees || []).map(a => ({
           ...a,
-          show_signature_field: isDraftMeeting ? false : (a.show_signature_field || !!a.signature_url),
-          // Drafts: Confirmed pre-checked — admin can uncheck if needed
-          signed_with_checkbox: isDraftMeeting ? true : (a.signed_with_checkbox || false),
+          show_signature_field: Boolean(a.show_signature_field || a.signature_url),
+          signed_with_checkbox: a.signed_with_checkbox || false,
         }))
-      )
+      setAttendees(applySelfTrainingSignatureDefaults({
+        attendeeList: loadedAttendees,
+        isSelfTraining: data.is_self_training || loadedAttendees.length === 1,
+        fallbackSignatureUrl: getPreferredLeaderSignature({
+          leaderName: data.leader_name,
+          fallbackSignatureUrl: resolvedLeaderSig,
+        }),
+      }))
       setPhotos(data.photos || [])
 
       // Draft mode
       setIsDraft(isDraftMeeting)
 
       if (isDraftMeeting) {
-        // Pre-check "Add digital signature".
-        // chosenDefaultSigUrl is intentionally NOT set here — autoDetectLeader
-        // will run after attendees/leaders load and set the correct leader's sig
-        // (or null if that leader has no default sig). This prevents Bo Mikuta's
-        // sig from being pre-filled for drafts that were imported with a wrong
-        // default leader_name.
         setShowSignaturePanel(true)
       } else if (data.signature_url) {
         setExistingSignatureUrl(data.signature_url)
@@ -879,7 +962,7 @@ export default function MeetingForm() {
 
   // Load default signature into canvas
   const loadDefaultSignature = (attendeeName, index) => {
-    const defaultSignatureUrl = userDefaultSignatures[attendeeName]
+    const defaultSignatureUrl = getDefaultSignatureForName(attendeeName)
     
     if (defaultSignatureUrl && attendeeSignatureRefs.current[index]) {
       const canvas = attendeeSignatureRefs.current[index]
@@ -939,7 +1022,20 @@ export default function MeetingForm() {
       }
 
       const requiresFinalApproval = !isDraft || approveModeRef.current
-      const errors = buildValidationErrors({ requiresFinalApproval })
+      const effectiveIsSelfTraining = formData.is_self_training && attendees.length === 1
+      const attendeesForSubmit = applySelfTrainingSignatureDefaults({
+        attendeeList: attendees,
+        isSelfTraining: effectiveIsSelfTraining,
+        fallbackSignatureUrl: getPreferredLeaderSignature({
+          leaderName: formData.leader_name,
+          fallbackSignatureUrl: chosenDefaultSigUrl || leaderDefaultSignature,
+        }),
+      })
+      const errors = buildValidationErrors({
+        requiresFinalApproval,
+        attendeeList: attendeesForSubmit,
+        isSelfTraining: effectiveIsSelfTraining,
+      })
       if (Object.keys(errors).length > 0) {
         showValidationFeedback(errors)
         setLoading(false)
@@ -1013,7 +1109,7 @@ export default function MeetingForm() {
         notes: formData.notes || null,
         ...(signatureUrl !== undefined ? { signature_url: signatureUrl } : {}),
         completed: approveModeRef.current ? true : formData.completed,
-        is_self_training: formData.is_self_training || false,
+        is_self_training: effectiveIsSelfTraining,
         // Draft handling: preserve is_draft unless explicitly approving
         ...(id && isDraft ? { is_draft: approveModeRef.current ? false : true } : {}),
         // Tag manually-created meetings
@@ -1065,9 +1161,9 @@ export default function MeetingForm() {
     }
 
       // Insert attendees with signatures
-      if (attendees.length > 0) {
+      if (attendeesForSubmit.length > 0) {
         const attendeesWithSignatures = await Promise.all(
-          attendees.map(async (attendee, index) => {
+          attendeesForSubmit.map(async (attendee, index) => {
             let signatureUrl = attendee.signature_url || null
             
             // Upload drawn signature if present (stored in state on each stroke)
@@ -1197,6 +1293,10 @@ export default function MeetingForm() {
     }
     clearValidationError('leader')
     const leader = leaders.find(l => l.id === leaderId)
+    const preferredLeaderSignature = getPreferredLeaderSignature({
+      leaderName: leader?.name,
+      fallbackSignatureUrl: leader?.default_signature_url || null,
+    })
     setFormData({
       ...formData,
       leader_id: leaderId,
@@ -1204,9 +1304,9 @@ export default function MeetingForm() {
       is_self_training: false,
     })
     // Set leader's default signature
-    if (leader?.default_signature_url) {
-      setLeaderDefaultSignature(leader.default_signature_url)
-      if (!manualSigDataUrl) setChosenDefaultSigUrl(leader.default_signature_url)
+    if (preferredLeaderSignature) {
+      setLeaderDefaultSignature(preferredLeaderSignature)
+      if (!manualSigDataUrl) setChosenDefaultSigUrl(preferredLeaderSignature)
     } else {
       setLeaderDefaultSignature(null)
       if (!manualSigDataUrl) setChosenDefaultSigUrl(null)
