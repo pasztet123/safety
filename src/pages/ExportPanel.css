@@ -158,9 +158,20 @@
   border: 1.5px solid #d1d5db;
 }
 
+.ep-btn--chunk {
+  background: #fff8ed;
+  color: #9a3412;
+  border: 1.5px solid #fdba74;
+}
+
 .ep-btn--zip:hover {
   border-color: #171717;
   color: #171717;
+}
+
+.ep-btn--chunk:hover {
+  border-color: #ea580c;
+  color: #7c2d12;
 }
 
 /* ── Hint text ── */

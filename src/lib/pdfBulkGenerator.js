@@ -136,15 +136,27 @@ const bulkBaseHTML = (content) => `
  * @param {string} [subtitle] - optional subtitle / filter description
  */
 export const generateMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys Report', subtitle = '') => {
-  const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains meeting and safety survey records.',
-    details: `${meetings.length} meeting${meetings.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
-  })
-  if (!confirmed) return null
+  return buildMeetingListPDF(meetings, title, subtitle)
+}
+
+const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys Report', subtitle = '', options = {}) => {
+  const {
+    confirmExport = true,
+    fileNameSuffix = '',
+    metadata = {},
+  } = options
+
+  if (confirmExport) {
+    const confirmed = await confirmEvidencePdfExport({
+      title: 'This export contains meeting and safety survey records.',
+      details: `${meetings.length} meeting${meetings.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+    })
+    if (!confirmed) return null
+  }
 
   const slug = title.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')
   const dateStr = new Date().toISOString().split('T')[0]
-  const filename = `meetings-${slug}-${dateStr}.pdf`
+  const filename = `meetings-${slug}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.meetings_list',
     fileName: filename,
@@ -152,6 +164,7 @@ export const generateMeetingListPDF = async (meetings, title = 'Meetings & Safet
       report_title: title,
       report_subtitle: subtitle || null,
       record_count: meetings.length,
+      ...metadata,
     },
   })
 
@@ -204,10 +217,90 @@ export const generateMeetingListPDF = async (meetings, title = 'Meetings & Safet
 
 /** Same as generateMeetingListPDF but also saves the file immediately. */
 export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
-  const result = await generateMeetingListPDF(meetings, title, subtitle)
+  const result = await buildMeetingListPDF(meetings, title, subtitle)
   if (!result?.buffer || !result?.filename) return
   const { buffer, filename } = result
   saveAs(new Blob([buffer], { type: 'application/pdf' }), filename)
+}
+
+export const downloadChunkedMeetingListPDFZIP = async ({
+  totalCount,
+  chunkSize,
+  getChunk,
+  title = 'Meetings & Safety Surveys Report',
+  subtitle = '',
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  const safeTotalCount = Math.max(0, Number(totalCount) || 0)
+  const safeChunkSize = Math.max(1, Number(chunkSize) || 1)
+  if (!safeTotalCount || typeof getChunk !== 'function') return
+
+  const chunkCount = Math.ceil(safeTotalCount / safeChunkSize)
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains meeting and safety survey records split across multiple list PDFs.',
+    details: `${safeTotalCount} meeting${safeTotalCount === 1 ? '' : 's'} · ${chunkCount} PDF part${chunkCount === 1 ? '' : 's'}`,
+  })
+  if (!confirmed) return
+
+  const zip = new JSZip()
+  const dateStr = new Date().toISOString().split('T')[0]
+
+  for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
+    if (shouldCancel()) throw new Error('Cancelled')
+
+    const offset = chunkIndex * safeChunkSize
+    const limit = Math.min(safeChunkSize, safeTotalCount - offset)
+    const recordStart = offset + 1
+    const recordEnd = Math.min(offset + limit, safeTotalCount)
+
+    onProgress({
+      done: chunkIndex,
+      total: chunkCount,
+      label: `Fetching meetings ${recordStart}-${recordEnd} of ${safeTotalCount}…`,
+    })
+
+    const meetings = await getChunk({ offset, limit, chunkIndex, chunkCount })
+    if (shouldCancel()) throw new Error('Cancelled')
+
+    const chunkSubtitle = [
+      subtitle,
+      `Part ${chunkIndex + 1} of ${chunkCount}`,
+      `${recordStart}-${recordEnd} of ${safeTotalCount}`,
+    ].filter(Boolean).join(' · ')
+
+    const result = await buildMeetingListPDF(meetings || [], title, chunkSubtitle, {
+      confirmExport: false,
+      fileNameSuffix: `part-${String(chunkIndex + 1).padStart(2, '0')}`,
+      metadata: {
+        chunk_index: chunkIndex + 1,
+        chunk_total: chunkCount,
+        chunk_start: recordStart,
+        chunk_end: recordEnd,
+        chunk_size: limit,
+      },
+    })
+
+    if (result?.buffer && result?.filename) {
+      zip.file(result.filename, result.buffer)
+    }
+
+    onProgress({
+      done: chunkIndex + 1,
+      total: chunkCount,
+      label: `Built list PDF part ${chunkIndex + 1} of ${chunkCount}`,
+    })
+  }
+
+  onProgress({
+    done: chunkCount,
+    total: chunkCount,
+    label: 'Finalizing ZIP…',
+  })
+
+  const slug = title.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } })
+  saveAs(blob, `meetings-${slug}-chunked-${dateStr}.zip`)
 }
 
 // ─── Safety Topics Brochure PDF ───────────────────────────────────────────────

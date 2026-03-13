@@ -7,6 +7,400 @@ import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from './supabase'
 
+export const MEETING_SINGLE_PDF_MAX_RECORDS = 250
+export const DEFAULT_MEETING_CHUNK_SIZE = 200
+export const MEETING_CHUNK_SIZE_OPTIONS = [50, 100, 150, 200, 300, 500]
+
+const uniqueValues = (items) => [...new Set((items || []).filter(Boolean))]
+const normalizeText = (value) => (typeof value === 'string' ? value.trim() : '')
+
+const normalizeMeetingFilters = (filters = {}) => ({
+  dateFrom: normalizeText(filters.dateFrom),
+  dateTo: normalizeText(filters.dateTo),
+  projectId: normalizeText(filters.projectId),
+  attendeeName: normalizeText(filters.attendeeName),
+  trade: normalizeText(filters.trade),
+  topic: normalizeText(filters.topic),
+  leaderName: normalizeText(filters.leaderName),
+  location: normalizeText(filters.location),
+  timeRange: normalizeText(filters.timeRange),
+  sortBy: normalizeText(filters.sortBy) || 'newest',
+  selfTraining: normalizeText(filters.selfTraining || filters.selfTrainingMode || 'all') || 'all',
+})
+
+const compareText = (left, right, direction = 'asc') => {
+  const result = String(left || '').localeCompare(String(right || ''), 'en', { sensitivity: 'base' })
+  return direction === 'desc' ? -result : result
+}
+
+const compareNumber = (left, right, direction = 'desc') => {
+  const safeLeft = Number.isFinite(left) ? left : -Infinity
+  const safeRight = Number.isFinite(right) ? right : -Infinity
+  return direction === 'asc' ? safeLeft - safeRight : safeRight - safeLeft
+}
+
+const getMeetingMinutes = (meeting) => {
+  const rawTime = (meeting?.time || '').trim()
+  const match = rawTime.match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return null
+
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+
+  return (hours * 60) + minutes
+}
+
+const getTimestampValue = (meeting, field = 'date-time-desc') => {
+  const baseValue = field === 'created-asc' || field === 'created-desc'
+    ? meeting?.created_at
+    : meeting?.date
+
+  if (!baseValue) return 0
+
+  const timeValue = field === 'created-asc' || field === 'created-desc'
+    ? ''
+    : (meeting?.time || '00:00')
+
+  const parsed = new Date(`${baseValue}${timeValue ? `T${timeValue}` : ''}`)
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
+
+const sortMeetingRecords = (records, sortBy) => {
+  const result = [...records]
+
+  result.sort((left, right) => {
+    switch (sortBy) {
+      case 'date-asc':
+      case 'oldest':
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'asc')
+      case 'newest':
+      case 'date-desc':
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'time-asc':
+        return compareNumber(getMeetingMinutes(left), getMeetingMinutes(right), 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'asc')
+      case 'time-desc':
+        return compareNumber(getMeetingMinutes(left), getMeetingMinutes(right), 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'topic-asc':
+      case 'az':
+        return compareText(left?.topic, right?.topic, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'topic-desc':
+      case 'za':
+        return compareText(left?.topic, right?.topic, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'trade-asc':
+      case 'trade':
+        return compareText(left?.trade, right?.trade, 'asc') || compareText(left?.topic, right?.topic, 'asc')
+      case 'trade-desc':
+        return compareText(left?.trade, right?.trade, 'desc') || compareText(left?.topic, right?.topic, 'asc')
+      case 'leader-asc':
+        return compareText(left?.leader_name, right?.leader_name, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'leader-desc':
+        return compareText(left?.leader_name, right?.leader_name, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'project-asc':
+        return compareText(left?.project?.name, right?.project?.name, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'project-desc':
+        return compareText(left?.project?.name, right?.project?.name, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'location-asc':
+        return compareText(left?.location, right?.location, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'location-desc':
+        return compareText(left?.location, right?.location, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'attendees-asc':
+      case 'least-attendees':
+        return compareNumber(left?.attendees?.length || 0, right?.attendees?.length || 0, 'asc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'attendees-desc':
+      case 'attendees':
+      case 'most-attendees':
+        return compareNumber(left?.attendees?.length || 0, right?.attendees?.length || 0, 'desc') || compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+      case 'created-asc':
+        return compareNumber(getTimestampValue(left, 'created-asc'), getTimestampValue(right, 'created-asc'), 'asc')
+      case 'created-desc':
+        return compareNumber(getTimestampValue(left, 'created-desc'), getTimestampValue(right, 'created-desc'), 'desc')
+      default:
+        return compareNumber(getTimestampValue(left), getTimestampValue(right), 'desc')
+    }
+  })
+
+  return result
+}
+
+const hasUnsupportedServerSort = (sortBy) => (
+  sortBy === 'project-asc' ||
+  sortBy === 'project-desc' ||
+  sortBy === 'attendees-asc' ||
+  sortBy === 'least-attendees' ||
+  sortBy === 'attendees-desc' ||
+  sortBy === 'attendees' ||
+  sortBy === 'most-attendees'
+)
+
+const applyMeetingTimeRange = (query, timeRange) => {
+  switch (timeRange) {
+    case 'before-06':
+      return query.lt('time', '06:00')
+    case 'morning':
+      return query.gte('time', '06:00').lt('time', '12:00')
+    case 'midday':
+      return query.gte('time', '12:00').lt('time', '15:00')
+    case 'afternoon':
+      return query.gte('time', '15:00').lt('time', '18:00')
+    case 'evening':
+      return query.gte('time', '18:00').lt('time', '22:00')
+    case 'night':
+      return query.or('time.gte.22:00,time.lt.06:00')
+    default:
+      return query
+  }
+}
+
+const applyMeetingDirectFilters = (query, rawFilters = {}) => {
+  const filters = normalizeMeetingFilters(rawFilters)
+  let nextQuery = query
+    .is('deleted_at', null)
+    .eq('is_draft', false)
+
+  if (filters.dateFrom) nextQuery = nextQuery.gte('date', filters.dateFrom)
+  if (filters.dateTo) nextQuery = nextQuery.lte('date', filters.dateTo)
+  if (filters.projectId) nextQuery = nextQuery.eq('project_id', filters.projectId)
+  if (filters.trade) nextQuery = nextQuery.eq('trade', filters.trade)
+  if (filters.topic) nextQuery = nextQuery.ilike('topic', `%${filters.topic}%`)
+  if (filters.leaderName) nextQuery = nextQuery.ilike('leader_name', `%${filters.leaderName}%`)
+  if (filters.location) nextQuery = nextQuery.ilike('location', `%${filters.location}%`)
+  if (filters.selfTraining === 'true') nextQuery = nextQuery.eq('is_self_training', true)
+  if (filters.selfTraining === 'false') nextQuery = nextQuery.eq('is_self_training', false)
+  if (filters.timeRange) nextQuery = applyMeetingTimeRange(nextQuery, filters.timeRange)
+
+  return nextQuery
+}
+
+const applyMeetingServerSort = (query, rawSortBy = 'newest') => {
+  const sortBy = normalizeText(rawSortBy) || 'newest'
+
+  switch (sortBy) {
+    case 'date-asc':
+    case 'oldest':
+      return query.order('date', { ascending: true }).order('time', { ascending: true })
+    case 'time-asc':
+      return query.order('time', { ascending: true }).order('date', { ascending: true })
+    case 'time-desc':
+      return query.order('time', { ascending: false }).order('date', { ascending: false })
+    case 'topic-asc':
+    case 'az':
+      return query.order('topic', { ascending: true }).order('date', { ascending: false })
+    case 'topic-desc':
+    case 'za':
+      return query.order('topic', { ascending: false }).order('date', { ascending: false })
+    case 'trade-asc':
+    case 'trade':
+      return query.order('trade', { ascending: true }).order('date', { ascending: false })
+    case 'trade-desc':
+      return query.order('trade', { ascending: false }).order('date', { ascending: false })
+    case 'leader-asc':
+      return query.order('leader_name', { ascending: true }).order('date', { ascending: false })
+    case 'leader-desc':
+      return query.order('leader_name', { ascending: false }).order('date', { ascending: false })
+    case 'location-asc':
+      return query.order('location', { ascending: true }).order('date', { ascending: false })
+    case 'location-desc':
+      return query.order('location', { ascending: false }).order('date', { ascending: false })
+    case 'created-asc':
+      return query.order('created_at', { ascending: true })
+    case 'created-desc':
+      return query.order('created_at', { ascending: false })
+    case 'project-asc':
+    case 'project-desc':
+    case 'attendees-asc':
+    case 'least-attendees':
+    case 'attendees-desc':
+    case 'attendees':
+    case 'most-attendees':
+    case 'newest':
+    case 'date-desc':
+    default:
+      return query.order('date', { ascending: false }).order('time', { ascending: false })
+  }
+}
+
+const hydrateMeetingChecklists = async (meetings = []) => {
+  const meetingIds = uniqueValues(meetings.map(meeting => meeting.id))
+  if (meetingIds.length === 0) return []
+
+  let checklistsData = []
+
+  try {
+    checklistsData = await fetchByIdsInBatches({
+      table: 'meeting_checklists',
+      select: 'meeting_id, checklist:checklists(name)',
+      ids: meetingIds,
+      idColumn: 'meeting_id',
+    })
+  } catch (error) {
+    checklistsData = []
+  }
+
+  const checklistsByMeeting = {}
+  checklistsData.forEach((row) => {
+    if (!checklistsByMeeting[row.meeting_id]) checklistsByMeeting[row.meeting_id] = []
+    if (row.checklist) checklistsByMeeting[row.meeting_id].push(row.checklist)
+  })
+
+  return meetings.map((meeting) => ({
+    ...meeting,
+    checklists: checklistsByMeeting[meeting.id] || [],
+  }))
+}
+
+const fetchMatchingMeetingIdsByAttendee = async (attendeeName) => {
+  const trimmedName = normalizeText(attendeeName)
+  if (!trimmedName) return null
+
+  const rows = await fetchAllPages(() => supabase
+    .from('meeting_attendees')
+    .select('meeting_id')
+    .ilike('name', `%${trimmedName}%`))
+
+  return uniqueValues(rows.map(row => row.meeting_id))
+}
+
+const fetchMeetingsByIds = async ({ ids = [], filters = {} }) => {
+  const uniqueIds = uniqueValues(ids)
+  if (uniqueIds.length === 0) return []
+
+  const rows = await fetchByIdsInBatches({
+    table: 'meetings',
+    select: `
+      *,
+      project:projects(name),
+      attendees:meeting_attendees(name),
+      photos:meeting_photos(photo_url)
+    `,
+    ids: uniqueIds,
+    idColumn: 'id',
+    batchSize: 150,
+    buildQuery: (query) => applyMeetingDirectFilters(query, filters),
+  })
+
+  const hydratedRows = await hydrateMeetingChecklists(rows || [])
+  return sortMeetingRecords(hydratedRows, normalizeMeetingFilters(filters).sortBy)
+}
+
+export const fetchMeetingFilterOptions = async () => {
+  const [projects, trades, attendeeRows, leaderRows] = await Promise.all([
+    fetchProjects(),
+    supabase.from('trades').select('name').order('name'),
+    fetchAllPages(() => supabase.from('meeting_attendees').select('name')),
+    fetchAllPages(() => supabase.from('meetings').select('leader_name').eq('is_draft', false).is('deleted_at', null)),
+  ])
+
+  return {
+    projects,
+    trades: uniqueValues((trades.data || []).map(item => item.name)).sort((left, right) => compareText(left, right, 'asc')),
+    attendees: uniqueValues(attendeeRows.map(item => item.name)).sort((left, right) => compareText(left, right, 'asc')),
+    leaders: uniqueValues(leaderRows.map(item => item.leader_name)).sort((left, right) => compareText(left, right, 'asc')),
+  }
+}
+
+export const fetchMeetingsWindow = async (rawFilters = {}, options = {}) => {
+  const filters = normalizeMeetingFilters(rawFilters)
+  const page = Math.max(1, Number(options.page) || 1)
+  const pageSize = Math.max(1, Number(options.pageSize) || 50)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  try {
+    const attendeeIds = await fetchMatchingMeetingIdsByAttendee(filters.attendeeName)
+
+    if (Array.isArray(attendeeIds)) {
+      if (attendeeIds.length === 0) return { rows: [], count: 0 }
+      const allRows = await fetchMeetingsByIds({ ids: attendeeIds, filters })
+      return {
+        rows: allRows.slice(from, to + 1),
+        count: allRows.length,
+      }
+    }
+
+    const countQuery = applyMeetingDirectFilters(
+      supabase.from('meetings').select('id', { count: 'exact', head: true }),
+      filters,
+    )
+
+    const rowsQuery = applyMeetingServerSort(
+      applyMeetingDirectFilters(
+        supabase
+          .from('meetings')
+          .select(`
+            *,
+            project:projects(name),
+            attendees:meeting_attendees(name),
+            photos:meeting_photos(photo_url)
+          `),
+        filters,
+      ),
+      filters.sortBy,
+    ).range(from, to)
+
+    const [{ count, error: countError }, { data, error: rowsError }] = await Promise.all([countQuery, rowsQuery])
+    if (countError) throw countError
+    if (rowsError) throw rowsError
+
+    let rows = await hydrateMeetingChecklists(data || [])
+    if (hasUnsupportedServerSort(filters.sortBy)) {
+      rows = sortMeetingRecords(rows, filters.sortBy)
+    }
+
+    return { rows, count: count || 0 }
+  } catch (error) {
+    console.error('fetchMeetingsWindow error:', error)
+    return { rows: [], count: 0 }
+  }
+}
+
+export const fetchMeetingExportChunk = async (rawFilters = {}, options = {}) => {
+  const filters = normalizeMeetingFilters(rawFilters)
+  const offset = Math.max(0, Number(options.offset) || 0)
+  const limit = Math.max(1, Number(options.limit) || DEFAULT_MEETING_CHUNK_SIZE)
+
+  try {
+    const attendeeIds = await fetchMatchingMeetingIdsByAttendee(filters.attendeeName)
+
+    if (Array.isArray(attendeeIds)) {
+      if (attendeeIds.length === 0) return { rows: [], count: 0 }
+      const allRows = await fetchMeetingsByIds({ ids: attendeeIds, filters })
+      return {
+        rows: allRows.slice(offset, offset + limit),
+        count: allRows.length,
+      }
+    }
+
+    const query = applyMeetingServerSort(
+      applyMeetingDirectFilters(
+        supabase
+          .from('meetings')
+          .select(`
+            *,
+            project:projects(name),
+            attendees:meeting_attendees(name),
+            photos:meeting_photos(photo_url)
+          `, { count: 'exact' }),
+        filters,
+      ),
+      filters.sortBy,
+    ).range(offset, offset + limit - 1)
+
+    const { data, count, error } = await query
+    if (error) throw error
+
+    let rows = await hydrateMeetingChecklists(data || [])
+    if (hasUnsupportedServerSort(filters.sortBy)) {
+      rows = sortMeetingRecords(rows, filters.sortBy)
+    }
+
+    return { rows, count: count || 0 }
+  } catch (error) {
+    console.error('fetchMeetingExportChunk error:', error)
+    return { rows: [], count: 0 }
+  }
+}
+
 // ─── Fetch Meetings (with filters) ───────────────────────────────────────────
 
 /**
@@ -22,71 +416,37 @@ import { fetchAllPages, fetchByIdsInBatches, supabase } from './supabase'
  * @param {string} [filters.topic]         partial topic match (client-side)
  */
 export const fetchMeetingsFull = async (filters = {}) => {
-  let data = []
-
   try {
-    data = await fetchAllPages(() => {
-      let query = supabase
-        .from('meetings')
-        .select(`
-          *,
-          project:projects(name),
-          attendees:meeting_attendees(name),
-          photos:meeting_photos(photo_url)
-        `)
-        .eq('is_draft', false)
-        .order('date', { ascending: false })
-        .order('time', { ascending: false })
+    const attendeeIds = await fetchMatchingMeetingIdsByAttendee(filters.attendeeName)
 
-      if (filters.dateFrom) query = query.gte('date', filters.dateFrom)
-      if (filters.dateTo) query = query.lte('date', filters.dateTo)
-      if (filters.projectId) query = query.eq('project_id', filters.projectId)
-      if (filters.trade) query = query.eq('trade', filters.trade)
+    if (Array.isArray(attendeeIds)) {
+      return fetchMeetingsByIds({ ids: attendeeIds, filters })
+    }
 
-      return query
-    })
+    const data = await fetchAllPages(() => applyMeetingServerSort(
+      applyMeetingDirectFilters(
+        supabase
+          .from('meetings')
+          .select(`
+            *,
+            project:projects(name),
+            attendees:meeting_attendees(name),
+            photos:meeting_photos(photo_url)
+          `),
+        filters,
+      ),
+      normalizeMeetingFilters(filters).sortBy,
+    ))
+
+    let rows = await hydrateMeetingChecklists(data || [])
+    if (hasUnsupportedServerSort(normalizeMeetingFilters(filters).sortBy)) {
+      rows = sortMeetingRecords(rows, normalizeMeetingFilters(filters).sortBy)
+    }
+
+    return rows
   } catch (error) {
     return []
   }
-
-  // Fetch checklist names for all meetings
-  const meetingIds = data.map(m => m.id)
-  let checklistsData = []
-
-  try {
-    checklistsData = await fetchByIdsInBatches({
-      table: 'meeting_checklists',
-      select: 'meeting_id, checklist:checklists(name)',
-      ids: meetingIds,
-      idColumn: 'meeting_id',
-    })
-  } catch (error) {
-    checklistsData = []
-  }
-
-  const checklistsByMeeting = {}
-  checklistsData?.forEach(mc => {
-    if (!checklistsByMeeting[mc.meeting_id]) checklistsByMeeting[mc.meeting_id] = []
-    if (mc.checklist) checklistsByMeeting[mc.meeting_id].push(mc.checklist)
-  })
-
-  let result = data.map(m => ({ ...m, checklists: checklistsByMeeting[m.id] || [] }))
-
-  // Client-side filters
-  if (filters.attendeeName?.trim()) {
-    const q2 = filters.attendeeName.toLowerCase()
-    result = result.filter(m => m.attendees?.some(a => a.name?.toLowerCase().includes(q2)))
-  }
-  if (filters.topic?.trim()) {
-    const q2 = filters.topic.toLowerCase()
-    result = result.filter(m => m.topic?.toLowerCase().includes(q2))
-  }
-  if (filters.leaderName?.trim()) {
-    const q2 = filters.leaderName.toLowerCase()
-    result = result.filter(m => m.leader_name?.toLowerCase().includes(q2))
-  }
-
-  return result
 }
 
 // ─── Fetch Incidents (with filters) ──────────────────────────────────────────

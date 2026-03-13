@@ -4,6 +4,7 @@ import { fetchAllPages, supabase } from '../lib/supabase'
 import { SAFETY_CATEGORIES } from '../lib/categories'
 import ExportProgress from '../components/ExportProgress'
 import {
+  downloadChunkedMeetingListPDFZIP,
   downloadMeetingListPDF,
   downloadMeetingsAsZIP,
   downloadSafetyTopicsBrochurePDF,
@@ -12,6 +13,10 @@ import {
   downloadChecklistHistoryPDF,
 } from '../lib/pdfBulkGenerator'
 import {
+  DEFAULT_MEETING_CHUNK_SIZE,
+  MEETING_CHUNK_SIZE_OPTIONS,
+  MEETING_SINGLE_PDF_MAX_RECORDS,
+  fetchMeetingExportChunk,
   fetchMeetingsFull,
   fetchIncidentsFull,
   fetchCorrectiveActionsFull,
@@ -22,6 +27,8 @@ import {
   downloadCSVsAsZIP,
 } from '../lib/exportHelpers'
 import './ExportPanel.css'
+
+const MEETING_ZIP_EXPORT_LIMIT = 100
 
 // ─── Section skeleton ─────────────────────────────────────────────────────────
 function ExportSection({ title, children }) {
@@ -91,6 +98,10 @@ export default function ExportPanel() {
   const [mAttendee, setMAttendee] = useState('')
   const [mLeader, setMLeader]     = useState('')
   const [mTopic, setMTopic]       = useState('')
+  const [mLocation, setMLocation] = useState('')
+  const [mTimeRange, setMTimeRange] = useState('')
+  const [mSelfTraining, setMSelfTraining] = useState('all')
+  const [mChunkSize, setMChunkSize] = useState(DEFAULT_MEETING_CHUNK_SIZE)
 
   // ── Safety Topics filters ──────────────────────────────────────────────────
   const [stCategory, setStCategory] = useState('')
@@ -165,6 +176,35 @@ export default function ExportPanel() {
   // ── Utility: build readable filter summary ─────────────────────────────────
   const filterDesc = (parts) => parts.filter(Boolean).join(' · ') || 'All records'
 
+  const buildMeetingFilters = () => ({
+    dateFrom: mDateFrom,
+    dateTo: mDateTo,
+    projectId: mProject,
+    trade: mTrade,
+    attendeeName: mAttendee,
+    leaderName: mLeader,
+    topic: mTopic,
+    location: mLocation,
+    timeRange: mTimeRange,
+    selfTraining: mSelfTraining,
+  })
+
+  const buildMeetingFilterDescription = () => {
+    const projectName = mProject ? projects.find(p => p.id === mProject)?.name : ''
+    return filterDesc([
+      mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')),
+      projectName,
+      mTrade,
+      mLeader ? `Worker performing the meeting: ${mLeader}` : '',
+      mAttendee ? `Attendee: ${mAttendee}` : '',
+      mTopic ? `Topic: ${mTopic}` : '',
+      mLocation ? `Address: ${mLocation}` : '',
+      mSelfTraining === 'true' ? 'Self-training only' : '',
+      mSelfTraining === 'false' ? 'Led meetings only' : '',
+      mTimeRange ? `Time: ${mTimeRange}` : '',
+    ])
+  }
+
   // ── Generic wrapper for any async export ───────────────────────────────────
   const runExport = async (label, fn) => {
     cancelRef.current = false
@@ -181,14 +221,55 @@ export default function ExportPanel() {
 
   // ── Meetings: list PDF ─────────────────────────────────────────────────────
   const handleMeetingListPDF = () => runExport('Fetching meetings…', async () => {
-    const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, leaderName: mLeader, topic: mTopic }
+    const filters = buildMeetingFilters()
+    const { count } = await fetchMeetingExportChunk(filters, { offset: 0, limit: 1 })
+    if (!count) { alert('No meetings found for the selected filters.'); return }
+    if (count > MEETING_SINGLE_PDF_MAX_RECORDS) {
+      alert(`Single list PDF is limited to ${MEETING_SINGLE_PDF_MAX_RECORDS} meetings. Use the chunked list export for larger result sets.`)
+      return
+    }
+
     const meetings = await fetchMeetingsFull(filters)
     if (!meetings.length) { alert('No meetings found for the selected filters.'); return }
     setProgress(p => ({ ...p, label: `Building PDF for ${meetings.length} meetings…` }))
-    const projectName = mProject ? projects.find(p => p.id === mProject)?.name : ''
-    const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mLeader ? `Worker performing the meeting: ${mLeader}` : '', mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
-    await downloadMeetingListPDF(meetings, 'Meetings & Safety Surveys Report', filterDesc(parts))
+    await downloadMeetingListPDF(meetings, 'Meetings & Safety Surveys Report', buildMeetingFilterDescription())
   })
+
+  const handleMeetingChunkedListPDF = () => {
+    cancelRef.current = false
+    const runChunked = async () => {
+      try {
+        const filters = buildMeetingFilters()
+        const { count } = await fetchMeetingExportChunk(filters, { offset: 0, limit: 1 })
+        if (!count) { alert('No meetings found for the selected filters.'); return }
+
+        setProgress({ visible: true, done: 0, total: Math.ceil(count / mChunkSize), label: 'Preparing chunked list export…' })
+
+        await downloadChunkedMeetingListPDFZIP({
+          totalCount: count,
+          chunkSize: mChunkSize,
+          title: 'Meetings & Safety Surveys Report',
+          subtitle: buildMeetingFilterDescription(),
+          shouldCancel: () => cancelRef.current,
+          getChunk: async ({ offset, limit }) => {
+            const { rows } = await fetchMeetingExportChunk(filters, { offset, limit })
+            return rows
+          },
+          onProgress: ({ done, total, label }) => {
+            setProgress({ visible: true, done, total, label })
+          },
+        })
+      } catch (error) {
+        if (!cancelRef.current) {
+          console.error('Chunked list export error:', error)
+          alert('Export failed: ' + (error.message || 'Unknown error'))
+        }
+      } finally {
+        setProgress({ visible: false, done: 0, total: 0, label: '' })
+      }
+    }
+    runChunked()
+  }
 
   // ── Meetings: individual PDFs as ZIP ──────────────────────────────────────
   const handleMeetingZIP = () => {
@@ -196,7 +277,15 @@ export default function ExportPanel() {
     const runZip = async () => {
       setProgress({ visible: true, done: 0, total: 0, label: 'Fetching meetings…' })
       try {
-        const filters = { dateFrom: mDateFrom, dateTo: mDateTo, projectId: mProject, trade: mTrade, attendeeName: mAttendee, leaderName: mLeader, topic: mTopic }
+        const filters = buildMeetingFilters()
+        const { count } = await fetchMeetingExportChunk(filters, { offset: 0, limit: 1 })
+        if (!count) { alert('No meetings found for the selected filters.'); setProgress({ visible: false, done: 0, total: 0, label: '' }); return }
+        if (count > MEETING_ZIP_EXPORT_LIMIT) {
+          alert(`ZIP with individual PDFs is limited to ${MEETING_ZIP_EXPORT_LIMIT} meetings. Narrow the filters or use the chunked list export instead.`)
+          setProgress({ visible: false, done: 0, total: 0, label: '' })
+          return
+        }
+
         const meetings = await fetchMeetingsFull(filters)
         if (!meetings.length) { alert('No meetings found for the selected filters.'); setProgress({ visible: false }); return }
 
@@ -303,7 +392,7 @@ export default function ExportPanel() {
       <ExportSection title="Meetings & Safety Surveys">
         <p className="ep-desc">
           Export a list PDF of all meetings and safety surveys, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
-          Or download all filtered meetings as individual PDFs packed into a ZIP file.
+          For large result sets, use chunked list export to split the report into smaller PDF files packed into one ZIP.
         </p>
 
         <div className="ep-filters">
@@ -350,11 +439,48 @@ export default function ExportPanel() {
             <label className="ep-label">Topic keyword</label>
             <input className="ep-input" placeholder="e.g. Fall Protection" value={mTopic} onChange={e => setMTopic(e.target.value)} />
           </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Address</label>
+            <input className="ep-input" placeholder="Address contains..." value={mLocation} onChange={e => setMLocation(e.target.value)} />
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Time range</label>
+            <select className="ep-select" value={mTimeRange} onChange={e => setMTimeRange(e.target.value)}>
+              <option value="">Any time</option>
+              <option value="before-06">Before 06:00</option>
+              <option value="morning">06:00-11:59</option>
+              <option value="midday">12:00-14:59</option>
+              <option value="afternoon">15:00-17:59</option>
+              <option value="evening">18:00-21:59</option>
+              <option value="night">22:00-05:59</option>
+            </select>
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Meeting type</label>
+            <select className="ep-select" value={mSelfTraining} onChange={e => setMSelfTraining(e.target.value)}>
+              <option value="all">All meeting types</option>
+              <option value="true">Self-training only</option>
+              <option value="false">Led meetings only</option>
+            </select>
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Chunk size</label>
+            <select className="ep-select" value={mChunkSize} onChange={e => setMChunkSize(Number(e.target.value))}>
+              {MEETING_CHUNK_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size} meetings per file</option>)}
+            </select>
+          </div>
         </div>
 
         <div className="ep-actions">
           <button className="btn btn-primary ep-btn" onClick={handleMeetingListPDF}>
             Download List PDF
+          </button>
+          <button className="btn btn-secondary ep-btn ep-btn--chunk" onClick={handleMeetingChunkedListPDF}>
+            Download Chunked List ZIP
           </button>
           <button className="btn btn-secondary ep-btn ep-btn--zip" onClick={handleMeetingZIP}>
             Download Individual PDFs (ZIP)
@@ -362,8 +488,8 @@ export default function ExportPanel() {
         </div>
 
         <div className="ep-hint">
-          The <strong>List PDF</strong> creates one document with all matching meetings summarised as cards (fastest).
-          The <strong>ZIP</strong> generates a full individual PDF for every meeting — may take a few minutes for large sets.
+          The <strong>List PDF</strong> is best for smaller result sets. <strong>Chunked List ZIP</strong> splits a large result into multiple list PDFs.
+          The <strong>Individual ZIP</strong> generates one full PDF per meeting and is intended only for smaller batches.
         </div>
       </ExportSection>
 

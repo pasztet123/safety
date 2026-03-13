@@ -1,10 +1,19 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { fetchTrades } from '../lib/trades'
-import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
+import { fetchAllPages, supabase } from '../lib/supabase'
 import { applyResolvedMeetingLeader, normalizeMeetingPersonName, resolveMeetingLeader } from '../lib/meetingLeader'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
-import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
+import { downloadChunkedMeetingListPDFZIP, downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
+import {
+  DEFAULT_MEETING_CHUNK_SIZE,
+  MEETING_CHUNK_SIZE_OPTIONS,
+  MEETING_SINGLE_PDF_MAX_RECORDS,
+  fetchMeetingExportChunk,
+  fetchMeetingFilterOptions,
+  fetchMeetingsFull,
+  fetchMeetingsWindow,
+} from '../lib/exportHelpers'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
@@ -13,6 +22,8 @@ import './Meetings.css'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
 const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
 const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
+const MEETINGS_EXPORT_CHUNK_STORAGE_KEY = 'meetings:export-chunk-size'
+const MEETING_ZIP_EXPORT_LIMIT = 100
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
@@ -177,6 +188,13 @@ const getStoredPageSize = (storageKey, fallback = 50) => {
   return PAGE_SIZE_OPTIONS.includes(storedValue) ? storedValue : fallback
 }
 
+const getStoredOption = (storageKey, allowedValues, fallback) => {
+  if (typeof window === 'undefined') return fallback
+
+  const storedValue = Number(window.localStorage.getItem(storageKey))
+  return allowedValues.includes(storedValue) ? storedValue : fallback
+}
+
 const FilterField = ({ label, span = '', children }) => (
   <div className={[
     'filter-field',
@@ -189,12 +207,17 @@ const FilterField = ({ label, span = '', children }) => (
 
 export default function Meetings() {
   const navigate = useNavigate()
+  const cancelExportRef = useRef(false)
   const [meetings, setMeetings] = useState([])
+  const [meetingTotalCount, setMeetingTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [isAdmin, setIsAdmin] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(null)
   const [exportListLoading, setExportListLoading] = useState(false)
-  const [zipProgress, setZipProgress] = useState({ visible: false, done: 0, total: 0 })
+  const [chunkedExportLoading, setChunkedExportLoading] = useState(false)
+  const [zipProgress, setZipProgress] = useState({ visible: false, done: 0, total: 0, label: '' })
+  const [meetingFilterOptions, setMeetingFilterOptions] = useState({ projects: [], trades: [], attendees: [], leaders: [] })
+  const [meetingLeaderLookups, setMeetingLeaderLookups] = useState({ leaders: [], involvedPersons: [] })
 
   // Search / filter / sort
   const [searchText, setSearchText] = useState('')
@@ -202,6 +225,7 @@ export default function Meetings() {
   const [filterPerson, setFilterPerson] = useState('')
   const [filterLeader, setFilterLeader] = useState('')
   const [filterProject, setFilterProject] = useState('')
+  const [filterTopic, setFilterTopic] = useState('')
   const [filterLocation, setFilterLocation] = useState('')
   const [filterTimeRange, setFilterTimeRange] = useState('')
   const [filterSelfTraining, setFilterSelfTraining] = useState('all')
@@ -209,28 +233,22 @@ export default function Meetings() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [sortBy, setSortBy] = useState('newest')
   const [meetingPageSize, setMeetingPageSize] = useState(() => getStoredPageSize(MEETINGS_PAGE_SIZE_STORAGE_KEY, 50))
+  const [exportChunkSize, setExportChunkSize] = useState(() => getStoredOption(MEETINGS_EXPORT_CHUNK_STORAGE_KEY, MEETING_CHUNK_SIZE_OPTIONS, DEFAULT_MEETING_CHUNK_SIZE))
   const [selectedMeetingIds, setSelectedMeetingIds] = useState(new Set())
 
-  // Derived filter options
-  const tradesInMeetings = useMemo(() => {
-    const t = new Set(meetings.map(m => m.trade).filter(Boolean))
-    return [...t].sort()
-  }, [meetings])
-
-  const personsInMeetings = useMemo(() => {
-    const people = new Set()
-    meetings.forEach(m => m.attendees?.forEach(a => a.name && people.add(a.name)))
-    return [...people].sort((left, right) => compareText(left, right, 'asc'))
-  }, [meetings])
-  const projectsInMeetings = useMemo(() => {
-    const projects = new Set(meetings.map(m => getProjectName(m)).filter(Boolean))
-    return [...projects].sort((left, right) => compareText(left, right, 'asc'))
-  }, [meetings])
-
-  const leadersInMeetings = useMemo(() => {
-    const leaders = new Set(meetings.map(m => m.leader_name).filter(Boolean))
-    return [...leaders].sort((left, right) => compareText(left, right, 'asc'))
-  }, [meetings])
+  const meetingQueryFilters = useMemo(() => ({
+    dateFrom: filterDateFrom,
+    dateTo: filterDateTo,
+    projectId: filterProject,
+    trade: filterTrade,
+    attendeeName: filterPerson,
+    leaderName: filterLeader,
+    topic: filterTopic,
+    location: filterLocation,
+    timeRange: filterTimeRange,
+    selfTraining: filterSelfTraining,
+    sortBy,
+  }), [filterDateFrom, filterDateTo, filterProject, filterTrade, filterPerson, filterLeader, filterTopic, filterLocation, filterTimeRange, filterSelfTraining, sortBy])
 
   const filteredMeetings = useMemo(() => {
     let result = [...meetings]
@@ -245,24 +263,11 @@ export default function Meetings() {
         m.attendees?.some(a => normalizeText(a.name).includes(q))
       )
     }
-    if (filterTrade) result = result.filter(m => m.trade === filterTrade)
-    if (filterPerson) result = result.filter(m => m.attendees?.some(a => a.name === filterPerson))
-    if (filterLeader) result = result.filter(m => m.leader_name === filterLeader)
-    if (filterProject) result = result.filter(m => getProjectName(m) === filterProject)
-    if (filterLocation.trim()) {
-      const locationQuery = normalizeText(filterLocation)
-      result = result.filter(m => normalizeText(m.location).includes(locationQuery))
-    }
-    if (filterSelfTraining !== 'all') {
-      result = result.filter(m => String(Boolean(m.is_self_training)) === filterSelfTraining)
-    }
-    result = result.filter(m => matchesDateRange(m, filterDateFrom, filterDateTo))
-    result = result.filter(m => matchesTimeRange(m, filterTimeRange))
     return sortMeetingRecords(result, sortBy)
-  }, [meetings, searchText, filterTrade, filterPerson, filterLeader, filterProject, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy])
+  }, [meetings, searchText, sortBy])
 
   const filtersActive = Boolean(
-    searchText || filterTrade || filterPerson || filterLeader || filterProject || filterLocation || filterTimeRange || filterDateFrom || filterDateTo || filterSelfTraining !== 'all' || sortBy !== 'newest'
+    searchText || filterTrade || filterPerson || filterLeader || filterProject || filterTopic || filterLocation || filterTimeRange || filterDateFrom || filterDateTo || filterSelfTraining !== 'all' || sortBy !== 'newest'
   )
 
   const [draftMeetings, setDraftMeetings] = useState([])
@@ -348,12 +353,12 @@ export default function Meetings() {
 
   const draftTotalPages = Math.max(1, Math.ceil(filteredDrafts.length / draftPageSize))
   const pagedDrafts = filteredDrafts.slice((draftPage - 1) * draftPageSize, draftPage * draftPageSize)
-  const meetingTotalPages = Math.max(1, Math.ceil(filteredMeetings.length / meetingPageSize))
-  const pagedMeetings = filteredMeetings.slice((meetingPage - 1) * meetingPageSize, meetingPage * meetingPageSize)
+  const meetingTotalPages = Math.max(1, Math.ceil(meetingTotalCount / meetingPageSize))
+  const pagedMeetings = filteredMeetings
 
   useEffect(() => {
     checkAdmin()
-    fetchMeetings()
+    loadMeetingMeta()
   }, [])
 
   // Load drafts once we know we're admin
@@ -364,8 +369,12 @@ export default function Meetings() {
     }
   }, [isAdmin])
 
-  // Reset meeting page when filters change
-  useEffect(() => { setMeetingPage(1) }, [searchText, filterTrade, filterPerson, filterLeader, filterProject, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
+  useEffect(() => {
+    fetchMeetings()
+  }, [meetingPage, meetingPageSize, meetingQueryFilters, meetingLeaderLookups])
+
+  // Reset meeting page when server-side filters change
+  useEffect(() => { setMeetingPage(1) }, [filterTrade, filterPerson, filterLeader, filterProject, filterTopic, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
   // Reset draft page when draft filters/sort change
   useEffect(() => { setDraftPage(1) }, [draftSearchText, draftFilterLeader, draftFilterAttendee, draftFilterTrade, draftFilterProject, draftFilterLocation, draftFilterTimeRange, draftFilterSelfTraining, draftDateFrom, draftDateTo, draftSortBy, draftPageSize])
   useEffect(() => {
@@ -378,6 +387,10 @@ export default function Meetings() {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(MEETINGS_PAGE_SIZE_STORAGE_KEY, String(meetingPageSize))
   }, [meetingPageSize])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(MEETINGS_EXPORT_CHUNK_STORAGE_KEY, String(exportChunkSize))
+  }, [exportChunkSize])
   useEffect(() => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(DRAFTS_PAGE_SIZE_STORAGE_KEY, String(draftPageSize))
@@ -400,6 +413,24 @@ export default function Meetings() {
         .single()
       
       setIsAdmin(data?.is_admin || false)
+    }
+  }
+
+  const loadMeetingMeta = async () => {
+    try {
+      const [options, leadersRes, involvedRes] = await Promise.all([
+        fetchMeetingFilterOptions(),
+        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
+      ])
+
+      setMeetingFilterOptions(options)
+      setMeetingLeaderLookups({
+        leaders: leadersRes.data || [],
+        involvedPersons: involvedRes.data || [],
+      })
+    } catch (error) {
+      console.error('Failed to load meeting filter metadata:', error)
     }
   }
 
@@ -446,54 +477,22 @@ export default function Meetings() {
   const fetchMeetings = async () => {
     setLoading(true)
     try {
-      const [data, leadersRes, involvedRes] = await Promise.all([
-        fetchAllPages(() => supabase
-          .from('meetings')
-          .select(`
-            *,
-            project:projects(name),
-            attendees:meeting_attendees(name),
-            photos:meeting_photos(photo_url)
-          `)
-          .is('deleted_at', null)
-          .eq('is_draft', false)
-          .order('date', { ascending: false })
-          .order('time', { ascending: false })),
-        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
-        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
-      ])
-
-      const meetingIds = data.map(m => m.id)
-      const checklistsData = await fetchByIdsInBatches({
-        table: 'meeting_checklists',
-        select: `
-          meeting_id,
-          checklist:checklists(name)
-        `,
-        ids: meetingIds,
-        idColumn: 'meeting_id',
+      const { rows, count } = await fetchMeetingsWindow(meetingQueryFilters, {
+        page: meetingPage,
+        pageSize: meetingPageSize,
       })
 
-      const checklistsByMeeting = {}
-      checklistsData.forEach(mc => {
-        if (!checklistsByMeeting[mc.meeting_id]) {
-          checklistsByMeeting[mc.meeting_id] = []
-        }
-        checklistsByMeeting[mc.meeting_id].push(mc.checklist)
-      })
-
-      const meetingsWithChecklists = data.map(meeting => applyResolvedMeetingLeader({
-        meeting: {
-          ...meeting,
-          checklists: checklistsByMeeting[meeting.id] || []
-        },
-        leaders: leadersRes.data || [],
-        involvedPersons: involvedRes.data || [],
+      const resolvedMeetings = rows.map((meeting) => applyResolvedMeetingLeader({
+        meeting,
+        leaders: meetingLeaderLookups.leaders || [],
+        involvedPersons: meetingLeaderLookups.involvedPersons || [],
       }))
 
-      setMeetings(meetingsWithChecklists)
+      setMeetings(resolvedMeetings)
+      setMeetingTotalCount(count)
     } catch (error) {
       setMeetings([])
+      setMeetingTotalCount(0)
     } finally {
       setLoading(false)
     }
@@ -935,15 +934,17 @@ export default function Meetings() {
     if (!selectedMeetings.length) return
     if (selectedMeetings.length > 20 && !confirm(`This will generate ${selectedMeetings.length} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
 
-    setZipProgress({ visible: true, done: 0, total: selectedMeetings.length })
+    cancelExportRef.current = false
+    setZipProgress({ visible: true, done: 0, total: selectedMeetings.length, label: 'Generating selected meeting PDFs…' })
     try {
       await downloadMeetingsAsZIP(selectedMeetings, (done, total) => {
-        setZipProgress({ visible: true, done, total })
+        if (cancelExportRef.current) throw new Error('Cancelled')
+        setZipProgress({ visible: true, done, total, label: `Generating selected PDF ${done + 1} of ${total}…` })
       })
     } catch (error) {
-      console.error(error)
+      if (!cancelExportRef.current) console.error(error)
     } finally {
-      setZipProgress({ visible: false, done: 0, total: 0 })
+      setZipProgress({ visible: false, done: 0, total: 0, label: '' })
     }
   }
 
@@ -1047,25 +1048,91 @@ export default function Meetings() {
 
   if (loading) return <div className="spinner"></div>
 
+  const buildMeetingExportScopeLabel = () => {
+    const parts = []
+    if (filterDateFrom && filterDateTo) parts.push(`${filterDateFrom} – ${filterDateTo}`)
+    else if (filterDateFrom) parts.push(`from ${filterDateFrom}`)
+    else if (filterDateTo) parts.push(`to ${filterDateTo}`)
+
+    const projectName = meetingFilterOptions.projects.find(project => project.id === filterProject)?.name
+    if (projectName) parts.push(projectName)
+    if (filterTrade) parts.push(filterTrade)
+    if (filterLeader) parts.push(`Leader: ${filterLeader}`)
+    if (filterPerson) parts.push(`Attendee: ${filterPerson}`)
+    if (filterTopic) parts.push(`Topic: ${filterTopic}`)
+    if (filterLocation) parts.push(`Address: ${filterLocation}`)
+    if (filterSelfTraining === 'true') parts.push('Self-training only')
+    if (filterSelfTraining === 'false') parts.push('Led meetings only')
+    if (filterTimeRange) parts.push(`Time: ${filterTimeRange}`)
+    return parts.join(' · ')
+  }
+
   const handleExportListPDF = async () => {
-    if (!filteredMeetings.length) return
+    if (!meetingTotalCount) return
+    if (meetingTotalCount > MEETING_SINGLE_PDF_MAX_RECORDS) {
+      alert(`Single list PDF is limited to ${MEETING_SINGLE_PDF_MAX_RECORDS} meetings. Use the chunked list export for larger result sets.`)
+      return
+    }
+
     setExportListLoading(true)
     try {
-      await downloadMeetingListPDF(filteredMeetings, 'Meetings & Safety Surveys Report', `${filteredMeetings.length} meetings`)
+      const meetingsForExport = await fetchMeetingsFull(meetingQueryFilters)
+      await downloadMeetingListPDF(meetingsForExport, 'Meetings & Safety Surveys Report', buildMeetingExportScopeLabel() || `${meetingTotalCount} meetings`)
     } catch (e) { console.error(e) }
     finally { setExportListLoading(false) }
   }
 
-  const handleExportZIP = async () => {
-    if (!filteredMeetings.length) return
-    if (filteredMeetings.length > 20 && !confirm(`This will generate ${filteredMeetings.length} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
-    setZipProgress({ visible: true, done: 0, total: filteredMeetings.length })
+  const handleChunkedExportListPDF = async () => {
+    if (!meetingTotalCount) return
+
+    cancelExportRef.current = false
+    setChunkedExportLoading(true)
     try {
-      await downloadMeetingsAsZIP(filteredMeetings, (done, total) => {
-        setZipProgress({ visible: true, done, total })
+      await downloadChunkedMeetingListPDFZIP({
+        totalCount: meetingTotalCount,
+        chunkSize: exportChunkSize,
+        title: 'Meetings & Safety Surveys Report',
+        subtitle: buildMeetingExportScopeLabel() || `${meetingTotalCount} meetings`,
+        shouldCancel: () => cancelExportRef.current,
+        getChunk: async ({ offset, limit }) => {
+          const { rows } = await fetchMeetingExportChunk(meetingQueryFilters, { offset, limit })
+          return rows
+        },
+        onProgress: ({ done, total, label }) => {
+          setZipProgress({ visible: true, done, total, label })
+        },
       })
-    } catch (e) { console.error(e) }
-    finally { setZipProgress({ visible: false, done: 0, total: 0 }) }
+    } catch (error) {
+      if (!cancelExportRef.current) {
+        console.error(error)
+        alert('Chunked export failed: ' + (error.message || 'Unknown error'))
+      }
+    } finally {
+      setChunkedExportLoading(false)
+      setZipProgress({ visible: false, done: 0, total: 0, label: '' })
+    }
+  }
+
+  const handleExportZIP = async () => {
+    if (!meetingTotalCount) return
+    if (meetingTotalCount > MEETING_ZIP_EXPORT_LIMIT) {
+      alert(`ZIP with individual PDFs is limited to ${MEETING_ZIP_EXPORT_LIMIT} meetings. Narrow the filters or use the chunked list export instead.`)
+      return
+    }
+
+    if (meetingTotalCount > 20 && !confirm(`This will generate ${meetingTotalCount} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
+
+    cancelExportRef.current = false
+    setZipProgress({ visible: true, done: 0, total: meetingTotalCount, label: 'Fetching meetings for ZIP export…' })
+    try {
+      const meetingsForExport = await fetchMeetingsFull(meetingQueryFilters)
+      await downloadMeetingsAsZIP(meetingsForExport, (done, total) => {
+        if (cancelExportRef.current) throw new Error('Cancelled')
+        setZipProgress({ visible: true, done, total, label: `Generating PDF ${done + 1} of ${total}…` })
+      })
+    } catch (e) {
+      if (!cancelExportRef.current) console.error(e)
+    } finally { setZipProgress({ visible: false, done: 0, total: 0, label: '' }) }
   }
 
   const draftFiltersActive = Boolean(
@@ -1078,12 +1145,17 @@ export default function Meetings() {
     setFilterPerson('')
     setFilterLeader('')
     setFilterProject('')
+    setFilterTopic('')
     setFilterLocation('')
     setFilterTimeRange('')
     setFilterSelfTraining('all')
     setFilterDateFrom('')
     setFilterDateTo('')
     setSortBy('newest')
+  }
+
+  const handleCancelExport = () => {
+    cancelExportRef.current = true
   }
 
   const resetDraftFilters = () => {
@@ -1107,7 +1179,8 @@ export default function Meetings() {
         visible={zipProgress.visible}
         done={zipProgress.done}
         total={zipProgress.total}
-        label={`Generating PDF ${zipProgress.done + 1} of ${zipProgress.total}…`}
+        label={zipProgress.label || `Generating PDF ${zipProgress.done + 1} of ${zipProgress.total}…`}
+        onCancel={zipProgress.total > 0 ? handleCancelExport : undefined}
       />
 
       {/* ── Approve Modal ── */}
@@ -1198,20 +1271,28 @@ export default function Meetings() {
               ⬆ Import CSV
             </Link>
           )}
-          {isAdmin && filteredMeetings.length > 0 && (
+          {isAdmin && meetingTotalCount > 0 && (
             <>
               <button
                 className="btn btn-secondary"
                 onClick={handleExportListPDF}
                 disabled={exportListLoading}
-                title="Download a summary PDF of filtered meetings"
+                title="Download a summary PDF of the current filtered result"
               >
                 {exportListLoading ? '…' : '↓ List PDF'}
               </button>
               <button
                 className="btn btn-secondary"
+                onClick={handleChunkedExportListPDF}
+                disabled={chunkedExportLoading}
+                title="Split the current filtered result into smaller list PDFs"
+              >
+                {chunkedExportLoading ? '…' : '↓ Chunked List'}
+              </button>
+              <button
+                className="btn btn-secondary"
                 onClick={handleExportZIP}
-                title="Download each meeting as its own PDF inside a ZIP"
+                title="Download each meeting as its own PDF inside a ZIP for smaller filtered result sets"
               >
                 ↓ ZIP PDFs
               </button>
@@ -1474,37 +1555,60 @@ export default function Meetings() {
       {/* ── Filter bar ── */}
       <div className="filter-bar meetings-filter-bar">
         <div className="filter-grid filter-grid--top">
-          <FilterField label="Search">
+          <FilterField label="Loaded-page search">
             <input
               className="filter-search-input"
               type="text"
-              placeholder="Search topic, worker performing the meeting, address, attendee..."
+              placeholder="Quick search inside loaded results..."
               value={searchText}
               onChange={e => setSearchText(e.target.value)}
+            />
+          </FilterField>
+          <FilterField label="Topic keyword">
+            <input
+              className="meetings-filter-input"
+              type="text"
+              placeholder="Topic contains..."
+              value={filterTopic}
+              onChange={e => setFilterTopic(e.target.value)}
             />
           </FilterField>
           <FilterField label="Trade">
             <select value={filterTrade} onChange={e => setFilterTrade(e.target.value)} className="filter-select">
               <option value="">All trades</option>
-              {tradesInMeetings.map(t => <option key={t} value={t}>{t}</option>)}
+              {meetingFilterOptions.trades.map(trade => <option key={trade} value={trade}>{trade}</option>)}
             </select>
           </FilterField>
           <FilterField label="Attendee">
-            <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
-              <option value="">All attendees</option>
-              {personsInMeetings.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <input
+              list="meeting-attendee-options"
+              className="meetings-filter-input"
+              type="text"
+              placeholder="Attendee name..."
+              value={filterPerson}
+              onChange={e => setFilterPerson(e.target.value)}
+            />
+            <datalist id="meeting-attendee-options">
+              {meetingFilterOptions.attendees.map(attendee => <option key={attendee} value={attendee} />)}
+            </datalist>
           </FilterField>
           <FilterField label="Leader">
-            <select value={filterLeader} onChange={e => setFilterLeader(e.target.value)} className="filter-select">
-              <option value="">All leaders</option>
-              {leadersInMeetings.map(leader => <option key={leader} value={leader}>{leader}</option>)}
-            </select>
+            <input
+              list="meeting-leader-options"
+              className="meetings-filter-input"
+              type="text"
+              placeholder="Leader name..."
+              value={filterLeader}
+              onChange={e => setFilterLeader(e.target.value)}
+            />
+            <datalist id="meeting-leader-options">
+              {meetingFilterOptions.leaders.map(leader => <option key={leader} value={leader} />)}
+            </datalist>
           </FilterField>
           <FilterField label="Project">
             <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="filter-select">
               <option value="">All projects</option>
-              {projectsInMeetings.map(project => <option key={project} value={project}>{project}</option>)}
+              {meetingFilterOptions.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </FilterField>
         </div>
@@ -1568,11 +1672,19 @@ export default function Meetings() {
         </div>
 
         <div className="filter-toolbar filter-toolbar--meetings">
-          <div className="pagination-page-size">
-            <span className="pagination-page-size-label">Rows per page</span>
-            <select className="filter-select filter-select--compact" value={meetingPageSize} onChange={e => setMeetingPageSize(Number(e.target.value))}>
-              {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
-            </select>
+          <div className="meeting-toolbar-groups">
+            <div className="pagination-page-size">
+              <span className="pagination-page-size-label">Rows per page</span>
+              <select className="filter-select filter-select--compact" value={meetingPageSize} onChange={e => setMeetingPageSize(Number(e.target.value))}>
+                {PAGE_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </div>
+            <div className="pagination-page-size">
+              <span className="pagination-page-size-label">Export chunk</span>
+              <select className="filter-select filter-select--compact" value={exportChunkSize} onChange={e => setExportChunkSize(Number(e.target.value))}>
+                {MEETING_CHUNK_SIZE_OPTIONS.map(size => <option key={size} value={size}>{size}</option>)}
+              </select>
+            </div>
           </div>
           <div className="filter-toolbar-actions">
             {filtersActive && (
@@ -1582,14 +1694,17 @@ export default function Meetings() {
             )}
           </div>
           <span className="pagination-info meetings-filter-summary filter-summary-pill">
-            {filteredMeetings.length !== meetings.length
-              ? `${getPageRangeLabel(meetingPage, meetingPageSize, filteredMeetings.length)} filtered from ${meetings.length}`
-              : `${getPageRangeLabel(meetingPage, meetingPageSize, meetings.length)} total`}
+            {getPageRangeLabel(meetingPage, meetingPageSize, meetingTotalCount)} total
           </span>
         </div>
+        {searchText && (
+          <div className="meetings-inline-note">
+            Quick search applies only to the currently loaded page. Server-side filters above control the full result set and exports.
+          </div>
+        )}
       </div>
 
-      {isAdmin && filteredMeetings.length > 0 && (
+      {isAdmin && pagedMeetings.length > 0 && (
         <div className="meeting-selection-toolbar">
           <label className="meeting-selection-toggle">
             <input
@@ -1619,9 +1734,9 @@ export default function Meetings() {
       )}
 
       <div className="meetings-list">
-        {filteredMeetings.length === 0 ? (
+        {pagedMeetings.length === 0 ? (
           <div className="empty-state">
-            <p>{meetings.length === 0 ? 'No meetings recorded yet. Create your first safety meeting!' : 'Brak wyników dla podanych filtrów.'}</p>
+            <p>{meetingTotalCount === 0 ? 'No meetings recorded for the selected filters.' : 'No loaded-page matches for the current quick search.'}</p>
           </div>
         ) : (
           pagedMeetings.map((meeting) => (
