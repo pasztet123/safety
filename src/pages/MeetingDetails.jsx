@@ -50,7 +50,7 @@ export default function MeetingDetails() {
         .eq('id', id)
         .single(),
       supabase.from('leaders').select('id, name, default_signature_url').order('name'),
-      supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+      supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
     ])
 
     if (!error && data) {

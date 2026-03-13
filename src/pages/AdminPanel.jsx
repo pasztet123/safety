@@ -203,7 +203,7 @@ export default function AdminPanel() {
           .order('name'),
         supabase
           .from('involved_persons')
-          .select('name, leader_id'),
+          .select('name, leader_id, default_signature_url'),
       ])
 
       const allDrafts    = draftsRes.data    || []

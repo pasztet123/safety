@@ -5,10 +5,19 @@ const normalizeDisplayName = (value) => {
 
 export const normalizeMeetingPersonName = (value) => normalizeDisplayName(value).toLowerCase()
 
+const getSignatureFromLookup = (signatureByName, name) => {
+  if (!name) return null
+
+  return signatureByName?.[name]
+    || signatureByName?.[normalizeMeetingPersonName(name)]
+    || null
+}
+
 export const resolveMeetingLeader = ({
   attendees = [],
   leaders = [],
   involvedPersons = [],
+  signatureByName = {},
   isSelfTraining = attendees.length === 1,
 }) => {
   const normalizedAttendees = attendees
@@ -25,6 +34,8 @@ export const resolveMeetingLeader = ({
       leaderId: '',
       leaderName: '',
       leaderDefaultSignature: null,
+      signatureOwnerName: '',
+      signatureDefaultUrl: null,
       isSelfTraining: false,
       resolution: 'none',
     }
@@ -61,24 +72,39 @@ export const resolveMeetingLeader = ({
 
   if (normalizedAttendees.length === 1 && isSelfTraining) {
     const attendee = normalizedAttendees[0]
-    const selfTrainingLeader = directLeader || linkedLeader
+    const attendeePerson = personByName[attendee.key]
+    const attendeeDefaultSignature = directLeader?.default_signature_url
+      || attendeePerson?.default_signature_url
+      || getSignatureFromLookup(signatureByName, attendee.name)
+      || null
+
     return {
-      leaderId: selfTrainingLeader?.id || '',
+      leaderId: directLeader?.id || '',
       leaderName: attendee.name,
-      leaderDefaultSignature: selfTrainingLeader?.default_signature_url || null,
+      leaderDefaultSignature: attendeeDefaultSignature,
+      signatureOwnerName: attendee.name,
+      signatureDefaultUrl: attendeeDefaultSignature,
       isSelfTraining: true,
-      resolution: selfTrainingLeader
-        ? (directLeader ? 'self-training-direct-match' : 'self-training-linked-leader')
-        : 'self-training-attendee',
+      resolution: directLeader
+        ? 'self-training-direct-match'
+        : linkedLeader
+          ? 'self-training-linked-attendee'
+          : 'self-training-attendee',
     }
   }
 
   const resolvedLeader = directLeader || linkedLeader
   if (resolvedLeader) {
+    const resolvedSignature = resolvedLeader.default_signature_url
+      || getSignatureFromLookup(signatureByName, resolvedLeader.name)
+      || null
+
     return {
       leaderId: resolvedLeader.id,
       leaderName: resolvedLeader.name,
-      leaderDefaultSignature: resolvedLeader.default_signature_url || null,
+      leaderDefaultSignature: resolvedSignature,
+      signatureOwnerName: resolvedLeader.name,
+      signatureDefaultUrl: resolvedSignature,
       isSelfTraining: false,
       resolution: directLeader ? 'direct-match' : 'linked-leader',
     }
@@ -88,6 +114,8 @@ export const resolveMeetingLeader = ({
     leaderId: '',
     leaderName: '',
     leaderDefaultSignature: null,
+    signatureOwnerName: '',
+    signatureDefaultUrl: null,
     isSelfTraining: false,
     resolution: 'none',
   }
@@ -97,6 +125,7 @@ export const applyResolvedMeetingLeader = ({
   meeting,
   leaders = [],
   involvedPersons = [],
+  signatureByName = {},
 }) => {
   if (!meeting) return meeting
 
@@ -105,6 +134,7 @@ export const applyResolvedMeetingLeader = ({
     attendees,
     leaders,
     involvedPersons,
+    signatureByName,
     isSelfTraining: meeting.is_self_training || attendees.length === 1,
   })
 
@@ -117,6 +147,6 @@ export const applyResolvedMeetingLeader = ({
     leader_id: resolution.leaderId || meeting.leader_id || '',
     leader_name: resolution.leaderName || meeting.leader_name || '',
     is_self_training: resolution.isSelfTraining,
-    signature_url: resolution.leaderDefaultSignature || meeting.signature_url || null,
+    signature_url: resolution.signatureDefaultUrl || meeting.signature_url || null,
   }
 }

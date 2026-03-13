@@ -178,7 +178,7 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
     return override?.manualSigDataUrl ?? manualSigDataUrl
   }
 
-  const buildSelfTrainingAttendeeUpdate = ({ draft, meetingAttendees, effectiveSigUrl, resolvedLeaderName }) => {
+  const buildSelfTrainingAttendeeUpdate = ({ draft, meetingAttendees, effectiveSigUrl }) => {
     const effectiveIsSelfTraining = (draft.is_self_training || meetingAttendees.length === 1) && meetingAttendees.length === 1
     if (!effectiveIsSelfTraining || meetingAttendees.length !== 1) {
       return null
@@ -187,7 +187,6 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
     const attendee = meetingAttendees[0]
     const attendeeSignatureUrl = attendee.signature_url
       || getDefaultSignatureForName(attendee.name)
-      || getDefaultSignatureForName(resolvedLeaderName)
       || effectiveSigUrl
 
     if (!attendeeSignatureUrl) {
@@ -240,20 +239,31 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
           attendees: meetingAttendees,
           leaders,
           involvedPersons,
+          signatureByName,
           isSelfTraining: draft.is_self_training || meetingAttendees.length === 1,
         })
-        const effectiveLeaderId = ovr?.leaderId || leaderId || draft.leader_id || resolution.leaderId || ''
-        const effectiveLeaderName = ovr?.leaderName || leaderName || draft.leader_name || resolution.leaderName || ''
-        const effectiveLeaderDefaultSig = ovr?.leaderDefaultSig
-          || leaders.find(l => l.id === effectiveLeaderId)?.default_signature_url
-          || resolution.leaderDefaultSignature
-          || getDefaultSignatureForName(effectiveLeaderName)
-          || null
-        const effectiveSigInput = ovr
-          ? resolveSignatureInput(ovr)
-          : (leaderId ? resolveSignatureInput(null) : (() => {
-              return effectiveLeaderDefaultSig
-            })())
+        const isSelfTrainingMeeting = resolution.isSelfTraining && meetingAttendees.length === 1
+        const effectiveLeaderId = isSelfTrainingMeeting
+          ? (resolution.leaderId || draft.leader_id || '')
+          : (ovr?.leaderId || leaderId || draft.leader_id || resolution.leaderId || '')
+        const effectiveLeaderName = isSelfTrainingMeeting
+          ? (resolution.leaderName || draft.leader_name || '')
+          : (ovr?.leaderName || leaderName || draft.leader_name || resolution.leaderName || '')
+        const effectiveLeaderDefaultSig = isSelfTrainingMeeting
+          ? (resolution.signatureDefaultUrl || getDefaultSignatureForName(effectiveLeaderName) || null)
+          : (ovr?.leaderDefaultSig
+            || leaders.find(l => l.id === effectiveLeaderId)?.default_signature_url
+            || resolution.signatureDefaultUrl
+            || resolution.leaderDefaultSignature
+            || getDefaultSignatureForName(effectiveLeaderName)
+            || null)
+        const effectiveSigInput = isSelfTrainingMeeting
+          ? (((ovr?.sigMode ?? sigMode) === 'draw')
+            ? resolveSignatureInput(ovr)
+            : effectiveLeaderDefaultSig)
+          : (ovr
+            ? resolveSignatureInput(ovr)
+            : (leaderId ? resolveSignatureInput(null) : effectiveLeaderDefaultSig))
 
         if (!effectiveLeaderName) {
           throw new Error(`Meeting ${draft.date} ${draft.topic ? `(${draft.topic})` : ''} has no resolved worker performing the meeting.`)
@@ -287,7 +297,6 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
           draft,
           meetingAttendees,
           effectiveSigUrl: sigUrl,
-          resolvedLeaderName: effectiveLeaderName,
         })
 
         if (attendeeUpdate) {

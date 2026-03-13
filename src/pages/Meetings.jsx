@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { fetchTrades } from '../lib/trades'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
-import { applyResolvedMeetingLeader, resolveMeetingLeader } from '../lib/meetingLeader'
+import { applyResolvedMeetingLeader, normalizeMeetingPersonName, resolveMeetingLeader } from '../lib/meetingLeader'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { downloadMeetingListPDF, downloadMeetingsAsZIP } from '../lib/pdfBulkGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
@@ -15,6 +15,19 @@ const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
 const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
+
+const addSignatureEntries = (target, items = []) => {
+  ;(items || []).forEach((item) => {
+    if (!item?.name || !item?.default_signature_url) return
+    target[item.name] = item.default_signature_url
+    target[normalizeMeetingPersonName(item.name)] = item.default_signature_url
+  })
+}
+
+const getDefaultSignatureForName = (signatureByName, name) => {
+  if (!name) return null
+  return signatureByName[name] || signatureByName[normalizeMeetingPersonName(name)] || null
+}
 
 const getProjectName = (meeting) => meeting?.project?.name || ''
 const getLocationName = (meeting) => meeting?.location || ''
@@ -145,6 +158,18 @@ const getPageRangeLabel = (page, pageSize, total) => {
   return `${start}-${end} of ${total}`
 }
 
+const formatMeetingDate = (value) => {
+  if (!value) return 'No date'
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString()
+}
+
+const summarizeList = (items, limit = 3) => {
+  const normalizedItems = (items || []).filter(Boolean)
+  if (normalizedItems.length <= limit) return normalizedItems.join(', ')
+  return `${normalizedItems.slice(0, limit).join(', ')} +${normalizedItems.length - limit}`
+}
+
 const getStoredPageSize = (storageKey, fallback = 50) => {
   if (typeof window === 'undefined') return fallback
 
@@ -184,6 +209,7 @@ export default function Meetings() {
   const [filterDateTo, setFilterDateTo] = useState('')
   const [sortBy, setSortBy] = useState('newest')
   const [meetingPageSize, setMeetingPageSize] = useState(() => getStoredPageSize(MEETINGS_PAGE_SIZE_STORAGE_KEY, 50))
+  const [selectedMeetingIds, setSelectedMeetingIds] = useState(new Set())
 
   // Derived filter options
   const tradesInMeetings = useMemo(() => {
@@ -192,9 +218,13 @@ export default function Meetings() {
   }, [meetings])
 
   const personsInMeetings = useMemo(() => {
-    const p = new Set()
-    meetings.forEach(m => m.attendees?.forEach(a => a.name && p.add(a.name)))
-    return [...p].sort()
+    const people = new Set()
+    meetings.forEach(m => m.attendees?.forEach(a => a.name && people.add(a.name)))
+    return [...people].sort((left, right) => compareText(left, right, 'asc'))
+  }, [meetings])
+  const projectsInMeetings = useMemo(() => {
+    const projects = new Set(meetings.map(m => getProjectName(m)).filter(Boolean))
+    return [...projects].sort((left, right) => compareText(left, right, 'asc'))
   }, [meetings])
 
   const leadersInMeetings = useMemo(() => {
@@ -202,22 +232,17 @@ export default function Meetings() {
     return [...leaders].sort((left, right) => compareText(left, right, 'asc'))
   }, [meetings])
 
-  const projectsInMeetings = useMemo(() => {
-    const projects = new Set(meetings.map(m => getProjectName(m)).filter(Boolean))
-    return [...projects].sort((left, right) => compareText(left, right, 'asc'))
-  }, [meetings])
-
   const filteredMeetings = useMemo(() => {
     let result = [...meetings]
     if (searchText.trim()) {
-      const q = searchText.toLowerCase()
+      const q = normalizeText(searchText)
       result = result.filter(m =>
-        m.topic?.toLowerCase().includes(q) ||
-        m.leader_name?.toLowerCase().includes(q) ||
-        m.project?.name?.toLowerCase().includes(q) ||
-        m.location?.toLowerCase().includes(q) ||
-        m.trade?.toLowerCase().includes(q) ||
-        m.attendees?.some(a => a.name?.toLowerCase().includes(q))
+        normalizeText(m.topic).includes(q) ||
+        normalizeText(m.leader_name).includes(q) ||
+        normalizeText(m.trade).includes(q) ||
+        normalizeText(getProjectName(m)).includes(q) ||
+        normalizeText(m.location).includes(q) ||
+        m.attendees?.some(a => normalizeText(a.name).includes(q))
       )
     }
     if (filterTrade) result = result.filter(m => m.trade === filterTrade)
@@ -240,15 +265,12 @@ export default function Meetings() {
     searchText || filterTrade || filterPerson || filterLeader || filterProject || filterLocation || filterTimeRange || filterDateFrom || filterDateTo || filterSelfTraining !== 'all' || sortBy !== 'newest'
   )
 
-  // Drafts (admin only)
   const [draftMeetings, setDraftMeetings] = useState([])
   const [selectedDraftIds, setSelectedDraftIds] = useState(new Set())
   const [showApproveModal, setShowApproveModal] = useState(false)
-
-  // Draft filters
+  const [draftSearchText, setDraftSearchText] = useState('')
   const [draftFilterLeader, setDraftFilterLeader] = useState('')
   const [draftFilterAttendee, setDraftFilterAttendee] = useState('')
-  const [draftSearchText, setDraftSearchText] = useState('')
   const [draftFilterTrade, setDraftFilterTrade] = useState('')
   const [draftFilterProject, setDraftFilterProject] = useState('')
   const [draftFilterLocation, setDraftFilterLocation] = useState('')
@@ -360,6 +382,13 @@ export default function Meetings() {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(DRAFTS_PAGE_SIZE_STORAGE_KEY, String(draftPageSize))
   }, [draftPageSize])
+  useEffect(() => {
+    setSelectedMeetingIds(prev => {
+      const validIds = new Set(meetings.map(meeting => meeting.id))
+      const next = new Set([...prev].filter(id => validIds.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [meetings])
 
   const checkAdmin = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -388,7 +417,7 @@ export default function Meetings() {
           .eq('is_draft', true)
           .order('date', { ascending: false })),
         supabase.from('leaders').select('id, name, default_signature_url').order('name'),
-        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
       ])
 
       const resolvedDrafts = (data || []).map((meeting) => applyResolvedMeetingLeader({
@@ -431,7 +460,7 @@ export default function Meetings() {
           .order('date', { ascending: false })
           .order('time', { ascending: false })),
         supabase.from('leaders').select('id, name, default_signature_url').order('name'),
-        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
       ])
 
       const meetingIds = data.map(m => m.id)
@@ -588,74 +617,202 @@ export default function Meetings() {
   }
 
   const handleSyncDrafts = async () => {
-    if (!confirm(`Sync all ${draftMeetings.length} drafts? This will auto-assign workers performing the meetings and signatures based on attendees.`)) return
+    if (!confirm(`Sync will scan draft and approved meetings. Drafts will be auto-fixed, duplicate drafts may be deleted, and approved self-trainings with the wrong auto-assigned signature will be moved back to draft for manual correction. Continue?`)) return
     setSyncRunning(true)
     setSyncResult(null)
     try {
-      // Load leaders and involved_persons once
-      const { data: leaders } = await supabase.from('leaders').select('id, name, default_signature_url').order('name')
-      const { data: involvedPersons } = await supabase.from('involved_persons').select('id, name, leader_id').order('name')
+      const { data: { user } } = await supabase.auth.getUser()
+      const [allMeetings, leadersRes, involvedRes, usersRes] = await Promise.all([
+        fetchAllPages(() => supabase
+          .from('meetings')
+          .select(`
+            id,
+            date,
+            project_id,
+            leader_id,
+            leader_name,
+            signature_url,
+            is_draft,
+            completed,
+            is_self_training,
+            attendees:meeting_attendees(id, name, signature_url, signed_with_checkbox)
+          `)
+          .is('deleted_at', null)
+          .order('date', { ascending: false })
+          .order('time', { ascending: false })),
+        supabase.from('leaders').select('id, name, default_signature_url').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
+        supabase.from('users').select('name, default_signature_url').order('name'),
+      ])
 
-      let fixed = 0
-      let skipped = 0
-      const seen = new Map() // "date|project_id|sorted_attendee_names" -> meeting id (duplicate detection)
+      const leaders = leadersRes.data || []
+      const involvedPersons = involvedRes.data || []
+      const users = usersRes.data || []
+      const signatureByName = {}
+      addSignatureEntries(signatureByName, leaders)
+      addSignatureEntries(signatureByName, involvedPersons)
+      addSignatureEntries(signatureByName, users)
 
-      // Fetch full attendees for all drafts
-      const allDraftIds = draftMeetings.map(d => d.id)
-      const { data: allAttendees } = await supabase
-        .from('meeting_attendees')
-        .select('meeting_id, name')
-        .in('meeting_id', allDraftIds)
-
-      const attendeesByMeeting = {}
-      ;(allAttendees || []).forEach(a => {
-        if (!attendeesByMeeting[a.meeting_id]) attendeesByMeeting[a.meeting_id] = []
-        attendeesByMeeting[a.meeting_id].push(a.name)
+      const leaderById = {}
+      leaders.forEach((leader) => {
+        leaderById[leader.id] = leader
       })
 
-      for (const draft of draftMeetings) {
-        const names = (attendeesByMeeting[draft.id] || []).map(n => n.toLowerCase().trim())
-        const key = `${draft.date}|${draft.project_id || ''}|${[...names].sort().join(',')}`
-        if (seen.has(key)) {
-          // Duplicate — delete this draft
-          await supabase.from('meetings').delete().eq('id', draft.id)
-          skipped++
-          continue
+      const personByName = {}
+      involvedPersons.forEach((person) => {
+        const key = normalizeMeetingPersonName(person.name)
+        if (key && !personByName[key]) {
+          personByName[key] = person
         }
-        seen.set(key, draft.id)
+      })
+
+      let fixedDrafts = 0
+      let requeuedApproved = 0
+      let deletedDuplicates = 0
+      let unchanged = 0
+      const seen = new Map() // "date|project_id|sorted_attendee_names" -> meeting id (duplicate detection)
+
+      for (const meeting of allMeetings) {
+        const meetingAttendees = meeting.attendees || []
+        const attendeeNames = meetingAttendees.map((attendee) => attendee.name).filter(Boolean)
+
+        if (meeting.is_draft) {
+          const names = attendeeNames.map((name) => name.toLowerCase().trim())
+          const key = `${meeting.date}|${meeting.project_id || ''}|${[...names].sort().join(',')}`
+          if (seen.has(key)) {
+            await supabase.from('meetings').delete().eq('id', meeting.id)
+            deletedDuplicates++
+            continue
+          }
+          seen.set(key, meeting.id)
+        }
 
         const resolution = resolveMeetingLeader({
-          attendees: (attendeesByMeeting[draft.id] || []).map(name => ({ name })),
-          leaders: leaders || [],
-          involvedPersons: involvedPersons || [],
-          isSelfTraining: (attendeesByMeeting[draft.id] || []).length === 1,
+          attendees: meetingAttendees,
+          leaders,
+          involvedPersons,
+          signatureByName,
+          isSelfTraining: meeting.is_self_training || meetingAttendees.length === 1,
         })
 
         const nextLeaderId = resolution.leaderId || null
         const nextLeaderName = resolution.leaderName || null
-        const nextSignatureUrl = resolution.leaderDefaultSignature || null
-        const hasChanges =
-          (draft.leader_id || null) !== nextLeaderId ||
-          (draft.leader_name || null) !== nextLeaderName ||
-          (draft.signature_url || null) !== nextSignatureUrl ||
-          !!draft.is_self_training !== resolution.isSelfTraining
+        const nextSignatureUrl = resolution.signatureDefaultUrl || null
+        const isSelfTrainingMeeting = resolution.isSelfTraining && meetingAttendees.length === 1
+        const selfTrainingAttendee = isSelfTrainingMeeting ? meetingAttendees[0] : null
+        const linkedLeader = selfTrainingAttendee
+          ? leaderById[personByName[normalizeMeetingPersonName(selfTrainingAttendee.name)]?.leader_id]
+          : null
+        const linkedLeaderSignature = linkedLeader
+          ? (linkedLeader.default_signature_url || getDefaultSignatureForName(signatureByName, linkedLeader.name))
+          : null
+        const approvedSelfTrainingNeedsRequeue = Boolean(
+          !meeting.is_draft
+          && isSelfTrainingMeeting
+          && linkedLeaderSignature
+          && linkedLeaderSignature !== nextSignatureUrl
+          && (
+            (meeting.signature_url || null) === linkedLeaderSignature
+            || (selfTrainingAttendee?.signature_url || null) === linkedLeaderSignature
+          )
+        )
 
-        if (!hasChanges) {
-          skipped++
+        if (!meeting.is_draft) {
+          if (!approvedSelfTrainingNeedsRequeue) {
+            unchanged++
+            continue
+          }
+
+          const { error: approvedUpdateError } = await supabase
+            .from('meetings')
+            .update({
+              is_draft: true,
+              completed: false,
+              leader_id: nextLeaderId,
+              leader_name: nextLeaderName,
+              signature_url: null,
+              is_self_training: resolution.isSelfTraining,
+              updated_by: user?.id || null,
+            })
+            .eq('id', meeting.id)
+
+          if (approvedUpdateError) {
+            throw approvedUpdateError
+          }
+
+          if (selfTrainingAttendee?.id) {
+            const { error: attendeeResetError } = await supabase
+              .from('meeting_attendees')
+              .update({
+                signature_url: null,
+                signed_with_checkbox: false,
+              })
+              .eq('id', selfTrainingAttendee.id)
+
+            if (attendeeResetError) {
+              throw attendeeResetError
+            }
+          }
+
+          requeuedApproved++
           continue
         }
 
-        await supabase.from('meetings').update({
-          leader_id: nextLeaderId,
-          leader_name: nextLeaderName,
-          signature_url: nextSignatureUrl,
-          is_self_training: resolution.isSelfTraining,
-        }).eq('id', draft.id)
-        fixed++
+        const draftHasMeetingChanges =
+          (meeting.leader_id || null) !== nextLeaderId ||
+          (meeting.leader_name || null) !== nextLeaderName ||
+          (meeting.signature_url || null) !== nextSignatureUrl ||
+          !!meeting.is_self_training !== resolution.isSelfTraining
+        const draftNeedsAttendeeSync = Boolean(
+          isSelfTrainingMeeting
+          && selfTrainingAttendee?.id
+          && (
+            (selfTrainingAttendee.signature_url || null) !== nextSignatureUrl
+            || selfTrainingAttendee.signed_with_checkbox
+          )
+        )
+
+        if (!draftHasMeetingChanges && !draftNeedsAttendeeSync) {
+          unchanged++
+          continue
+        }
+
+        if (draftHasMeetingChanges) {
+          const { error: draftUpdateError } = await supabase
+            .from('meetings')
+            .update({
+              leader_id: nextLeaderId,
+              leader_name: nextLeaderName,
+              signature_url: nextSignatureUrl,
+              is_self_training: resolution.isSelfTraining,
+            })
+            .eq('id', meeting.id)
+
+          if (draftUpdateError) {
+            throw draftUpdateError
+          }
+        }
+
+        if (draftNeedsAttendeeSync) {
+          const { error: attendeeUpdateError } = await supabase
+            .from('meeting_attendees')
+            .update({
+              signature_url: nextSignatureUrl,
+              signed_with_checkbox: false,
+            })
+            .eq('id', selfTrainingAttendee.id)
+
+          if (attendeeUpdateError) {
+            throw attendeeUpdateError
+          }
+        }
+
+        fixedDrafts++
       }
 
-      setSyncResult(`Done: ${fixed} leaders assigned, ${skipped} skipped/deleted as duplicates.`)
+      setSyncResult(`Done: ${fixedDrafts} drafts fixed, ${requeuedApproved} approved self-trainings moved back to draft, ${deletedDuplicates} duplicate drafts deleted, ${unchanged} unchanged.`)
       fetchDraftMeetings()
+      fetchMeetings()
     } catch (err) {
       setSyncResult('Error: ' + err.message)
     } finally {
@@ -681,6 +838,69 @@ export default function Meetings() {
     }
   }
 
+  const toggleMeetingSelect = (id) => {
+    setSelectedMeetingIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAllMeetings = () => {
+    const allPageSelected = pagedMeetings.length > 0 && pagedMeetings.every(meeting => selectedMeetingIds.has(meeting.id))
+
+    setSelectedMeetingIds(prev => {
+      const next = new Set(prev)
+      if (allPageSelected) {
+        pagedMeetings.forEach(meeting => next.delete(meeting.id))
+      } else {
+        pagedMeetings.forEach(meeting => next.add(meeting.id))
+      }
+      return next
+    })
+  }
+
+  const clearSelectedMeetings = () => {
+    setSelectedMeetingIds(new Set())
+  }
+
+  const handleDeleteSelectedMeetings = async () => {
+    const meetingIds = Array.from(selectedMeetingIds)
+    if (meetingIds.length === 0) return
+    if (!confirm(`Delete ${meetingIds.length} approved meeting${meetingIds.length !== 1 ? 's' : ''}? This action cannot be undone.`)) return
+
+    const { error } = await supabase
+      .from('meetings')
+      .delete()
+      .in('id', meetingIds)
+
+    if (error) {
+      alert('Error deleting meetings: ' + error.message)
+      return
+    }
+
+    clearSelectedMeetings()
+    fetchMeetings()
+  }
+
+  const handleExportSelectedZIP = async () => {
+    const selectedMeetings = filteredMeetings.filter(meeting => selectedMeetingIds.has(meeting.id))
+    if (!selectedMeetings.length) return
+    if (selectedMeetings.length > 20 && !confirm(`This will generate ${selectedMeetings.length} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
+
+    setZipProgress({ visible: true, done: 0, total: selectedMeetings.length })
+    try {
+      await downloadMeetingsAsZIP(selectedMeetings, (done, total) => {
+        setZipProgress({ visible: true, done, total })
+      })
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setZipProgress({ visible: false, done: 0, total: 0 })
+    }
+  }
+
   const handlePDF = async (meeting) => {
     setPdfLoading(meeting.id)
     try {
@@ -703,7 +923,7 @@ export default function Meetings() {
 
       const [{ data: leaders }, { data: involvedPersons }] = await Promise.all([
         supabase.from('leaders').select('id, name, default_signature_url').order('name'),
-        supabase.from('involved_persons').select('id, name, leader_id').order('name'),
+        supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
       ])
 
       // Fetch checklists for this meeting (separate queries to avoid PostgREST deep-join 400)
@@ -958,7 +1178,7 @@ export default function Meetings() {
       </div>
 
       {/* ── DRAFTS SECTION (admin only) ── */}
-      {isAdmin && draftMeetings.length > 0 && (
+      {isAdmin && (draftMeetings.length > 0 || meetings.length > 0) && (
         <div className="drafts-section">
           <div className="drafts-header">
             <h3 className="drafts-title">
@@ -973,7 +1193,7 @@ export default function Meetings() {
                 className="btn btn-secondary btn-sm"
                 onClick={handleSyncDrafts}
                 disabled={syncRunning}
-                title="Auto-assign workers performing the meetings and remove duplicate drafts"
+                title="Fix draft signatures/leaders, delete duplicate drafts, and move contaminated approved self-trainings back to draft"
               >
                 {syncRunning ? '⟳ Syncing…' : '⟳ Sync'}
               </button>
@@ -1323,6 +1543,35 @@ export default function Meetings() {
         </div>
       </div>
 
+      {isAdmin && filteredMeetings.length > 0 && (
+        <div className="meeting-selection-toolbar">
+          <label className="meeting-selection-toggle">
+            <input
+              type="checkbox"
+              checked={pagedMeetings.length > 0 && pagedMeetings.every(meeting => selectedMeetingIds.has(meeting.id))}
+              onChange={toggleSelectAllMeetings}
+            />
+            <span>Select page</span>
+          </label>
+          <span className="meeting-selection-count">
+            Selected: {selectedMeetingIds.size}
+          </span>
+          {selectedMeetingIds.size > 0 && (
+            <div className="meeting-selection-actions">
+              <button className="btn btn-secondary btn-sm" onClick={clearSelectedMeetings}>
+                Clear selection
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={handleExportSelectedZIP}>
+                ZIP selected ({selectedMeetingIds.size})
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={handleDeleteSelectedMeetings}>
+                Delete selected
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="meetings-list">
         {filteredMeetings.length === 0 ? (
           <div className="empty-state">
@@ -1330,81 +1579,89 @@ export default function Meetings() {
           </div>
         ) : (
           pagedMeetings.map((meeting) => (
-            <div key={meeting.id} className="card">
-              <div className="meeting-header">
-                <div>
-                  <h3 className="meeting-topic">{meeting.topic}</h3>
-                  <p className="meeting-meta">
-                    {new Date(meeting.date).toLocaleDateString()} at{' '}
-                    {meeting.time}
-                  </p>
-                  {meeting.project && (
-                    <p className="meeting-project">Project: {meeting.project.name}</p>
-                  )}
+            <div key={meeting.id} className={`meeting-row ${selectedMeetingIds.has(meeting.id) ? 'meeting-row--selected' : ''}`}>
+              {isAdmin && (
+                <div className="meeting-row-select">
+                  <input
+                    type="checkbox"
+                    checked={selectedMeetingIds.has(meeting.id)}
+                    onChange={() => toggleMeetingSelect(meeting.id)}
+                    aria-label={`Select meeting ${meeting.topic}`}
+                  />
                 </div>
-                {isAdmin && (
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <Link className="btn btn-primary" to={`/meetings/${meeting.id}/edit`}>
-                      Edit
+              )}
+
+              <div className="meeting-row-body">
+                <div className="meeting-row-top">
+                  <div className="meeting-row-heading">
+                    <h3 className="meeting-row-topic">{meeting.topic}</h3>
+                    <div className="meeting-row-meta">
+                      <span>{formatMeetingDate(meeting.date)}</span>
+                      {meeting.time && <><span className="meta-sep">•</span><span>{meeting.time}</span></>}
+                      {meeting.project?.name && <><span className="meta-sep">•</span><span>{meeting.project.name}</span></>}
+                      {meeting.location && <><span className="meta-sep">•</span><span>{meeting.location}</span></>}
+                    </div>
+                  </div>
+
+                  <div className="meeting-row-actions">
+                    <Link className="meeting-action-btn" to={`/meetings/${meeting.id}`} title="View details" aria-label="View details">
+                      →
                     </Link>
-                    <button 
-                      className="btn btn-danger"
-                      onClick={() => handleDelete(meeting.id, meeting.topic)}
+                    <Link className="meeting-action-btn" to={`/meetings/${meeting.id}`} {...NEW_TAB_LINK_PROPS} title="Open in new tab" aria-label="Open in new tab">
+                      ↗
+                    </Link>
+                    <button
+                      className="meeting-action-btn meeting-action-btn--pdf"
+                      onClick={() => handlePDF(meeting)}
+                      disabled={pdfLoading === meeting.id}
+                      title="Download PDF"
+                      aria-label="Download PDF"
                     >
-                      Delete
+                      {pdfLoading === meeting.id ? '…' : 'PDF'}
                     </button>
+                    {isAdmin && (
+                      <>
+                        <Link className="meeting-action-btn" to={`/meetings/${meeting.id}/edit`} title="Edit" aria-label="Edit">
+                          ✎
+                        </Link>
+                        <button
+                          className="meeting-action-btn meeting-action-btn--danger"
+                          onClick={() => handleDelete(meeting.id, meeting.topic)}
+                          title="Delete"
+                          aria-label="Delete"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="meeting-row-chips">
+                  {meeting.leader_name && <span className="meeting-chip meeting-chip--leader">Leader: {meeting.leader_name}</span>}
+                  {meeting.trade && <span className="meeting-chip">Trade: {meeting.trade}</span>}
+                  <span className="meeting-chip">Attendees: {meeting.attendees?.length ?? 0}</span>
+                  {meeting.checklists?.length > 0 && <span className="meeting-chip">Checklists: {meeting.checklists.length}</span>}
+                  {meeting.photos?.length > 0 && <span className="meeting-chip">Photos: {meeting.photos.length}</span>}
+                  {meeting.is_self_training && <span className="meeting-chip">Self-training</span>}
+                </div>
+
+                {meeting.attendees?.length > 0 && (
+                  <div className="meeting-row-summary">
+                    <strong>Attendees:</strong> {summarizeList(meeting.attendees.map(attendee => attendee.name), 4)}
+                  </div>
+                )}
+
+                {meeting.checklists?.length > 0 && (
+                  <div className="meeting-row-summary meeting-row-summary--muted">
+                    <strong>Checklists:</strong> {summarizeList(meeting.checklists.map(checklist => checklist.name), 3)}
                   </div>
                 )}
               </div>
 
-              <div className="meeting-details">
-                <div className="meeting-detail-item">
-                  <strong>Worker performing the meeting:</strong> {meeting.leader_name}
-                </div>
-                {meeting.location && (
-                  <div className="meeting-detail-item">
-                    <strong>Location:</strong> {meeting.location}
-                  </div>
-                )}
-                {meeting.checklists && meeting.checklists.length > 0 && (
-                  <div className="meeting-detail-item">
-                    <strong>Checklists ({meeting.checklists.length}):</strong>{' '}
-                    {meeting.checklists.map(c => c.name).join(', ')}
-                  </div>
-                )}
-                <div className="meeting-detail-item">
-                  <strong>Attendees:</strong>{' '}
-                  {meeting.attendees?.map(a => a.name).join(', ') || 'None'}
-                </div>
-                {meeting.notes && (
-                  <div className="meeting-detail-item">
-                    <strong>Notes:</strong>
-                    <p>{meeting.notes}</p>
-                  </div>
-                )}
-                {meeting.photos && meeting.photos.length > 0 && (
-                  <div className="meeting-detail-item">
-                    <strong>Photos:</strong> {meeting.photos.length} attached
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`}>
-                  View Details
-                </Link>
-                <Link className="btn btn-secondary" to={`/meetings/${meeting.id}`} {...NEW_TAB_LINK_PROPS}>
-                  New Tab
-                </Link>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => handlePDF(meeting)}
-                  disabled={pdfLoading === meeting.id}
-                  style={{ minWidth: '70px' }}
-                >
-                  {pdfLoading === meeting.id ? '…' : 'PDF'}
-                </button>
-              </div>
+              <Link className="meeting-row-arrow" to={`/meetings/${meeting.id}`} aria-label={`Open ${meeting.topic}`}>
+                ›
+              </Link>
             </div>
           ))
         )}

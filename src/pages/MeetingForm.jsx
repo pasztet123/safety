@@ -560,12 +560,13 @@ export default function MeetingForm() {
       attendees: newAttendees,
       leaders,
       involvedPersons,
+      signatureByName: userDefaultSignatures,
       isSelfTraining: options.isSelfTraining ?? (newAttendees.length === 1),
     })
 
     const preferredLeaderSignature = getPreferredLeaderSignature({
       leaderName: resolution.leaderName,
-      fallbackSignatureUrl: resolution.leaderDefaultSignature,
+      fallbackSignatureUrl: resolution.signatureDefaultUrl || resolution.leaderDefaultSignature,
     })
     const nextIsSelfTraining = resolution.isSelfTraining
     const nextAttendees = applySelfTrainingSignatureDefaults({
@@ -821,6 +822,14 @@ export default function MeetingForm() {
       }
 
       const isDraftMeeting = data.is_draft === true
+      const loadedAttendees = (data.attendees || []).map(a => ({
+        ...a,
+        show_signature_field: Boolean(a.show_signature_field || a.signature_url),
+        signed_with_checkbox: a.signed_with_checkbox || false,
+      }))
+      const initialSignatureOwnerName = (data.is_self_training || loadedAttendees.length === 1)
+        ? (loadedAttendees[0]?.name || data.leader_name)
+        : data.leader_name
 
       // For drafts also check leader's default sig via leader_id if not already resolved by name
       if (!resolvedLeaderSig && resolvedLeaderId) {
@@ -831,6 +840,11 @@ export default function MeetingForm() {
           .maybeSingle()
         if (ldr2?.default_signature_url) resolvedLeaderSig = ldr2.default_signature_url
       }
+
+      const initialSignatureUrl = getPreferredLeaderSignature({
+        leaderName: initialSignatureOwnerName,
+        fallbackSignatureUrl: resolvedLeaderSig,
+      })
 
       setFormData({
         project_id: data.project_id || '',
@@ -848,21 +862,13 @@ export default function MeetingForm() {
         completed: isDraftMeeting ? true : (data.completed || false),
         is_self_training: data.is_self_training || false,
       })
-      setLeaderDefaultSignature(getPreferredLeaderSignature({
-        leaderName: data.leader_name,
-        fallbackSignatureUrl: resolvedLeaderSig,
-      }))
-      const loadedAttendees = (data.attendees || []).map(a => ({
-          ...a,
-          show_signature_field: Boolean(a.show_signature_field || a.signature_url),
-          signed_with_checkbox: a.signed_with_checkbox || false,
-        }))
+      setLeaderDefaultSignature(initialSignatureUrl)
       setAttendees(applySelfTrainingSignatureDefaults({
         attendeeList: loadedAttendees,
         isSelfTraining: data.is_self_training || loadedAttendees.length === 1,
         fallbackSignatureUrl: getPreferredLeaderSignature({
-          leaderName: data.leader_name,
-          fallbackSignatureUrl: resolvedLeaderSig,
+          leaderName: initialSignatureOwnerName,
+          fallbackSignatureUrl: initialSignatureUrl,
         }),
       }))
       setPhotos(data.photos || [])
