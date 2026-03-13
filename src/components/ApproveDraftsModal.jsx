@@ -242,12 +242,15 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
           signatureByName,
           isSelfTraining: draft.is_self_training || meetingAttendees.length === 1,
         })
+        const singleAttendeeName = meetingAttendees.length === 1
+          ? String(meetingAttendees[0]?.name || '').trim()
+          : ''
         const isSelfTrainingMeeting = resolution.isSelfTraining && meetingAttendees.length === 1
         const effectiveLeaderId = isSelfTrainingMeeting
           ? (resolution.leaderId || draft.leader_id || '')
           : (ovr?.leaderId || leaderId || draft.leader_id || resolution.leaderId || '')
         const effectiveLeaderName = isSelfTrainingMeeting
-          ? (resolution.leaderName || draft.leader_name || '')
+          ? (resolution.leaderName || singleAttendeeName || draft.leader_name || '')
           : (ovr?.leaderName || leaderName || draft.leader_name || resolution.leaderName || '')
         const effectiveLeaderDefaultSig = isSelfTrainingMeeting
           ? (resolution.signatureDefaultUrl || getDefaultSignatureForName(effectiveLeaderName) || null)
@@ -265,8 +268,11 @@ export default function ApproveDraftsModal({ drafts, onClose, onApproved }) {
             ? resolveSignatureInput(ovr)
             : (leaderId ? resolveSignatureInput(null) : effectiveLeaderDefaultSig))
 
-        if (!effectiveLeaderName) {
-          throw new Error(`Meeting ${draft.date} ${draft.topic ? `(${draft.topic})` : ''} has no resolved worker performing the meeting.`)
+        if (!effectiveLeaderName.trim()) {
+          const reason = meetingAttendees.length <= 1
+            ? 'the only attendee has no usable name'
+            : 'it has multiple attendees and needs a manual worker performing the meeting assignment'
+          throw new Error(`Meeting ${draft.date} ${draft.topic ? `(${draft.topic})` : ''} cannot be approved because ${reason}.`)
         }
 
         // Only re-upload if this meeting has its own override

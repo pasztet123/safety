@@ -667,9 +667,11 @@ export default function Meetings() {
       })
 
       let fixedDrafts = 0
+      let fixedApproved = 0
       let requeuedApproved = 0
       let deletedDuplicates = 0
       let unchanged = 0
+      let unresolvedDrafts = 0
       const seen = new Map() // "date|project_id|sorted_attendee_names" -> meeting id (duplicate detection)
 
       for (const meeting of allMeetings) {
@@ -695,9 +697,17 @@ export default function Meetings() {
           isSelfTraining: meeting.is_self_training || meetingAttendees.length === 1,
         })
 
-        const nextLeaderId = resolution.leaderId || null
-        const nextLeaderName = resolution.leaderName || null
-        const nextSignatureUrl = resolution.signatureDefaultUrl || null
+        const singleAttendeeName = meetingAttendees.length === 1
+          ? String(meetingAttendees[0]?.name || '').trim()
+          : ''
+        const hasResolvedLeader = Boolean((resolution.leaderName || '').trim())
+        const nextLeaderId = hasResolvedLeader
+          ? (resolution.leaderId || null)
+          : (meeting.leader_id || null)
+        const nextLeaderName = hasResolvedLeader
+          ? resolution.leaderName
+          : (singleAttendeeName || meeting.leader_name || '')
+        const nextSignatureUrl = hasResolvedLeader ? (resolution.signatureDefaultUrl || null) : (meeting.signature_url || null)
         const isSelfTrainingMeeting = resolution.isSelfTraining && meetingAttendees.length === 1
         const selfTrainingAttendee = isSelfTrainingMeeting ? meetingAttendees[0] : null
         const linkedLeader = selfTrainingAttendee
@@ -716,45 +726,81 @@ export default function Meetings() {
             || (selfTrainingAttendee?.signature_url || null) === linkedLeaderSignature
           )
         )
+        const approvedHasMissingLeader = !meeting.is_draft && !String(nextLeaderName || '').trim()
+        const approvedNeedsLeaderFix = Boolean(
+          !meeting.is_draft
+          && String(nextLeaderName || '').trim()
+          && (
+            (meeting.leader_id || null) !== nextLeaderId
+            || (meeting.leader_name || '') !== nextLeaderName
+            || !!meeting.is_self_training !== resolution.isSelfTraining
+          )
+        )
 
         if (!meeting.is_draft) {
-          if (!approvedSelfTrainingNeedsRequeue) {
-            unchanged++
+          if (approvedSelfTrainingNeedsRequeue || approvedHasMissingLeader) {
+            const fallbackLeaderName = singleAttendeeName || meeting.leader_name || ''
+            const { error: approvedUpdateError } = await supabase
+              .from('meetings')
+              .update({
+                is_draft: true,
+                completed: false,
+                leader_id: nextLeaderId,
+                leader_name: fallbackLeaderName,
+                signature_url: null,
+                is_self_training: resolution.isSelfTraining,
+                updated_by: user?.id || null,
+              })
+              .eq('id', meeting.id)
+
+            if (approvedUpdateError) {
+              throw approvedUpdateError
+            }
+
+            if (selfTrainingAttendee?.id) {
+              const { error: attendeeResetError } = await supabase
+                .from('meeting_attendees')
+                .update({
+                  signature_url: null,
+                  signed_with_checkbox: false,
+                })
+                .eq('id', selfTrainingAttendee.id)
+
+              if (attendeeResetError) {
+                throw attendeeResetError
+              }
+            }
+
+            requeuedApproved++
             continue
           }
 
-          const { error: approvedUpdateError } = await supabase
-            .from('meetings')
-            .update({
-              is_draft: true,
-              completed: false,
-              leader_id: nextLeaderId,
-              leader_name: nextLeaderName,
-              signature_url: null,
-              is_self_training: resolution.isSelfTraining,
-              updated_by: user?.id || null,
-            })
-            .eq('id', meeting.id)
-
-          if (approvedUpdateError) {
-            throw approvedUpdateError
-          }
-
-          if (selfTrainingAttendee?.id) {
-            const { error: attendeeResetError } = await supabase
-              .from('meeting_attendees')
+          if (approvedNeedsLeaderFix) {
+            const { error: approvedFixError } = await supabase
+              .from('meetings')
               .update({
-                signature_url: null,
-                signed_with_checkbox: false,
+                leader_id: nextLeaderId,
+                leader_name: nextLeaderName,
+                ...(meeting.signature_url ? {} : { signature_url: nextSignatureUrl }),
+                is_self_training: resolution.isSelfTraining,
+                updated_by: user?.id || null,
               })
-              .eq('id', selfTrainingAttendee.id)
+              .eq('id', meeting.id)
 
-            if (attendeeResetError) {
-              throw attendeeResetError
+            if (approvedFixError) {
+              throw approvedFixError
             }
+
+            fixedApproved++
+            continue
           }
 
-          requeuedApproved++
+          unchanged++
+          continue
+        }
+
+        if (!nextLeaderName.trim()) {
+          unresolvedDrafts++
           continue
         }
 
@@ -810,7 +856,7 @@ export default function Meetings() {
         fixedDrafts++
       }
 
-      setSyncResult(`Done: ${fixedDrafts} drafts fixed, ${requeuedApproved} approved self-trainings moved back to draft, ${deletedDuplicates} duplicate drafts deleted, ${unchanged} unchanged.`)
+      setSyncResult(`Done: ${fixedDrafts} drafts fixed, ${fixedApproved} approved meetings auto-fixed, ${requeuedApproved} approved meetings moved back to draft, ${deletedDuplicates} duplicate drafts deleted, ${unresolvedDrafts} drafts need manual leader assignment, ${unchanged} unchanged.`)
       fetchDraftMeetings()
       fetchMeetings()
     } catch (err) {
@@ -1195,7 +1241,7 @@ export default function Meetings() {
                 disabled={syncRunning}
                 title="Fix draft signatures/leaders, delete duplicate drafts, and move contaminated approved self-trainings back to draft"
               >
-                {syncRunning ? '⟳ Syncing…' : '⟳ Sync'}
+                {syncRunning ? '⟳ Syncing…' : '⟳ Sync & fix the data'}
               </button>
               {selectedDraftIds.size > 0 && (
                 <button
