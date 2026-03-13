@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getCorrectiveActionPhotoCount } from '../lib/correctiveActionPhotos'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import { getIncidentPhotoCount } from '../lib/incidentPhotos'
 import { downloadIncidentListPDF } from '../lib/pdfBulkGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import LocationMap from '../components/LocationMap'
@@ -87,7 +89,8 @@ export default function Incidents() {
       .from('incidents')
       .select(`
         *,
-        project:projects(name)
+        project:projects(name),
+        incident_photos(photo_url, display_order)
       `)
       .is('deleted_at', null)
       .order('date', { ascending: false })
@@ -101,7 +104,7 @@ export default function Incidents() {
       if (incidentIds.length > 0) {
         const { data: actions } = await supabase
           .from('corrective_actions')
-          .select('*')
+          .select('*, corrective_action_photos(photo_url, display_order)')
           .in('incident_id', incidentIds)
         
         if (actions) {
@@ -302,9 +305,9 @@ export default function Incidents() {
                     <p>{incident.notes}</p>
                   </div>
                 )}
-                {incident.photo_url && (
+                {getIncidentPhotoCount(incident) > 0 && (
                   <div className="incident-detail-item">
-                    <strong>Photo:</strong> Attached
+                    <strong>{getIncidentPhotoCount(incident) === 1 ? 'Photo' : 'Photos'}:</strong> {getIncidentPhotoCount(incident)} attached
                   </div>
                 )}
                 {incident.signature_url && (
@@ -337,6 +340,9 @@ export default function Incidents() {
                             )}
                             {action.due_date && (
                               <span className="ica-tag ica-tag--date">Due {new Date(action.due_date).toLocaleDateString()}</span>
+                            )}
+                            {getCorrectiveActionPhotoCount(action) > 0 && (
+                              <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
                             )}
                             {action.completion_date && (
                               <span className="ica-tag ica-tag--done">Completed {new Date(action.completion_date).toLocaleDateString()}</span>

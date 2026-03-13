@@ -1,7 +1,7 @@
 /**
  * csvImport.js
  * Utilities for parsing BusyBusy time-tracking exports and generating
- * draft Toolbox Meeting objects.
+ * draft meeting and safety survey objects.
  */
 
 // ─── Cost Code → Trade mapping ────────────────────────────────────────────────

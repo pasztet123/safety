@@ -81,7 +81,7 @@ export default function MeetingDetails() {
       <div>
         <h2 className="page-title">Meeting Not Found</h2>
         <button className="btn btn-secondary" onClick={() => navigate('/meetings')}>
-          Back to Toolbox Meetings
+          Back to Meetings & Safety Surveys
         </button>
       </div>
     )
@@ -290,7 +290,7 @@ export default function MeetingDetails() {
 
       <div className="form-actions">
         <button className="btn btn-secondary" onClick={() => navigate('/meetings')}>
-          Back to Toolbox Meetings
+          Back to Meetings & Safety Surveys
         </button>
       </div>
     </div>

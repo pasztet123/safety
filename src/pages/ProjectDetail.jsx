@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
+import { getCorrectiveActionPhotoCount } from '../lib/correctiveActionPhotos'
 import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
+import { getIncidentPhotoCount } from '../lib/incidentPhotos'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import LocationMap from '../components/LocationMap'
 import './ProjectDetail.css'
@@ -105,7 +107,7 @@ export default function ProjectDetail() {
   const fetchIncidents = async () => {
     const { data, error } = await supabase
       .from('incidents')
-      .select('*')
+      .select('*, incident_photos(photo_url, display_order)')
       .is('deleted_at', null)
       .eq('project_id', id)
       .order('date', { ascending: false })
@@ -117,7 +119,7 @@ export default function ProjectDetail() {
       if (incidentIds.length > 0) {
         const { data: actions } = await supabase
           .from('corrective_actions')
-          .select('*')
+          .select('*, corrective_action_photos(photo_url, display_order)')
           .in('incident_id', incidentIds)
 
         if (actions) {
@@ -319,7 +321,7 @@ export default function ProjectDetail() {
           className={`pd-tab-btn${activeTab === 'meetings' ? ' pd-tab-btn--active' : ''}`}
           onClick={() => setActiveTab('meetings')}
         >
-          Toolbox Meetings
+          Meetings & Safety Surveys
           <span className="pd-tab-count">{meetings.length}</span>
         </button>
         <button
@@ -343,7 +345,7 @@ export default function ProjectDetail() {
           <div className="meetings-list">
             {meetings.length === 0 ? (
               <div className="empty-state">
-                <p>No toolbox meetings for this project yet.</p>
+                <p>No meetings or safety surveys for this project yet.</p>
               </div>
             ) : (
               meetings.map(meeting => (
@@ -499,9 +501,9 @@ export default function ProjectDetail() {
                         <p>{incident.notes}</p>
                       </div>
                     )}
-                    {incident.photo_url && (
+                    {getIncidentPhotoCount(incident) > 0 && (
                       <div className="incident-detail-item">
-                        <strong>Photo:</strong> Attached
+                        <strong>{getIncidentPhotoCount(incident) === 1 ? 'Photo' : 'Photos'}:</strong> {getIncidentPhotoCount(incident)} attached
                       </div>
                     )}
                     {incident.signature_url && (
@@ -539,6 +541,9 @@ export default function ProjectDetail() {
                                   <span className="ica-tag ica-tag--date">
                                     Due {new Date(action.due_date).toLocaleDateString()}
                                   </span>
+                                )}
+                                {getCorrectiveActionPhotoCount(action) > 0 && (
+                                  <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
                                 )}
                                 {action.completion_date && (
                                   <span className="ica-tag ica-tag--done">

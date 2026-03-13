@@ -46,7 +46,7 @@ export default function Login() {
   return (
     <div className="login-container">
       <div className="login-card">
-        <h1 className="login-title">Toolbox Meetings</h1>
+        <h1 className="login-title">Meetings & Safety Surveys</h1>
         <p className="login-subtitle">Sign in to continue</p>
         
         <form onSubmit={handleLogin} className="login-form">

@@ -4,6 +4,7 @@ import { createPdfExportContext } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 import { LEGAL_CONFIRMATION_CLAUSE } from './legal'
 import { generateClientUuid } from './compliance'
+import { normalizeIncidentPhotos } from './incidentPhotos'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const ACCENT   = '#E53935'
@@ -492,7 +493,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
 
 export const generateMeetingPDF = async (meeting) => {
   const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains a toolbox meeting record.',
+    title: 'This export contains a meeting and safety survey record.',
     details: `${meeting.topic || 'Safety meeting'}${meeting.date ? ` · ${new Date(meeting.date).toLocaleDateString('en-US')}` : ''}`,
   })
   if (!confirmed) return
@@ -541,8 +542,9 @@ export const generateIncidentPDF = async (incident) => {
     ? `${pdfLegalClause()}<div style="margin-top:8px"><img src="${incident.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
     : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Reporter signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
 
-  const photoHTML = incident.photo_url
-    ? `<img src="${incident.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" />`
+  const incidentPhotos = normalizeIncidentPhotos(incident)
+  const photoHTML = incidentPhotos.length > 0
+    ? incidentPhotos.map((photo) => `<div style="margin-bottom:12px"><img src="${photo.photo_url}" crossorigin="anonymous" style="width:100%;border-radius:6px;display:block" /></div>`).join('')
     : ''
 
   const slug = (incident.type_name || 'incident').replace(/\s+/g, '-')
@@ -607,7 +609,7 @@ export const generateIncidentPDF = async (incident) => {
         </div>
       `) : ''}
       ${incident.notes ? section('Additional Notes', `<div class="pdf-text">${incident.notes}</div>`) : ''}
-      ${incident.photo_url ? section('Photo', photoHTML) : ''}
+      ${incidentPhotos.length > 0 ? section(incidentPhotos.length === 1 ? 'Photo' : 'Photos', photoHTML) : ''}
       ${section('Signature', sigHTML)}
     </div>
     ${footer(exportMeta)}

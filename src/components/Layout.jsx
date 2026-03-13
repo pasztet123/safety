@@ -16,7 +16,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    title: 'Toolbox Meetings',
+    title: 'Meetings & Safety Surveys',
     path: '/meetings',
     icon: (
       <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -284,7 +284,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v8.7.0</span>
+          <span className="app-footer-version">v8.9.1</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.

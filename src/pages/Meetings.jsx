@@ -785,7 +785,7 @@ export default function Meetings() {
     if (!filteredMeetings.length) return
     setExportListLoading(true)
     try {
-      await downloadMeetingListPDF(filteredMeetings, 'Toolbox Meetings Report', `${filteredMeetings.length} meetings`)
+      await downloadMeetingListPDF(filteredMeetings, 'Meetings & Safety Surveys Report', `${filteredMeetings.length} meetings`)
     } catch (e) { console.error(e) }
     finally { setExportListLoading(false) }
   }
@@ -925,7 +925,7 @@ export default function Meetings() {
       )}
 
       <div className="page-header">
-        <h2 className="page-title">Toolbox Meetings</h2>
+        <h2 className="page-title">Meetings & Safety Surveys</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           {isAdmin && (
             <Link className="btn btn-secondary" to="/bulk-import">

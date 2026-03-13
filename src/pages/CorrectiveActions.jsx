@@ -1,8 +1,24 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
 import { downloadCorrectiveActionsListPDF } from '../lib/pdfBulkGenerator'
 import './CorrectiveActions.css'
+
+const createEmptyAction = () => ({
+  incident_id: '',
+  description: '',
+  responsible_person_id: '',
+  declared_created_date: new Date().toISOString().split('T')[0],
+  due_date: '',
+  status: 'open',
+  photos: [],
+})
+
+const normalizeActionForState = (action) => ({
+  ...action,
+  photos: normalizeCorrectiveActionPhotos(action),
+})
 
 export default function CorrectiveActions() {
   const navigate = useNavigate()
@@ -21,14 +37,7 @@ export default function CorrectiveActions() {
   const [editingActionId, setEditingActionId] = useState(null)
   const [editForm, setEditForm] = useState({})
   
-  const [newAction, setNewAction] = useState({
-    incident_id: '',
-    description: '',
-    responsible_person_id: '',
-    declared_created_date: new Date().toISOString().split('T')[0],
-    due_date: '',
-    status: 'open'
-  })
+  const [newAction, setNewAction] = useState(createEmptyAction())
 
   useEffect(() => {
     checkAdminAndLoadActions()
@@ -93,12 +102,12 @@ export default function CorrectiveActions() {
     setLoading(true)
     const { data, error } = await supabase
       .from('corrective_actions')
-      .select('*')
+      .select('*, corrective_action_photos(id, photo_url, display_order)')
       .order('declared_created_date', { ascending: false })
       .order('due_date', { ascending: false })
     
     if (!error && data) {
-      setActions(data)
+      setActions(data.map(normalizeActionForState))
     }
     setLoading(false)
   }
@@ -173,7 +182,95 @@ export default function CorrectiveActions() {
       declared_created_date: action.declared_created_date || '',
       due_date: action.due_date || '',
       status: action.status,
+      photos: action.photos || [],
     })
+  }
+
+  const handleActionPhotoAdd = (target, event) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    const currentPhotos = target === 'new' ? (newAction.photos || []) : (editForm.photos || [])
+    const remainingSlots = MAX_CORRECTIVE_ACTION_PHOTOS - currentPhotos.length
+
+    if (remainingSlots <= 0) {
+      alert(`You can attach up to ${MAX_CORRECTIVE_ACTION_PHOTOS} photos to one corrective action.`)
+      event.target.value = ''
+      return
+    }
+
+    const filesToAdd = selectedFiles.slice(0, remainingSlots)
+    if (filesToAdd.length < selectedFiles.length) {
+      alert(`Only ${remainingSlots} more photo${remainingSlots === 1 ? '' : 's'} can be added. The limit is ${MAX_CORRECTIVE_ACTION_PHOTOS}.`)
+    }
+
+    filesToAdd.forEach(file => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const photo = { file, preview: reader.result }
+        if (target === 'new') {
+          setNewAction(prev => ({ ...prev, photos: [...(prev.photos || []), photo] }))
+          return
+        }
+
+        setEditForm(prev => ({ ...prev, photos: [...(prev.photos || []), photo] }))
+      }
+      reader.readAsDataURL(file)
+    })
+
+    event.target.value = ''
+  }
+
+  const handleRemoveActionPhoto = (target, photoIndex) => {
+    if (target === 'new') {
+      setNewAction(prev => ({ ...prev, photos: (prev.photos || []).filter((_, index) => index !== photoIndex) }))
+      return
+    }
+
+    setEditForm(prev => ({ ...prev, photos: (prev.photos || []).filter((_, index) => index !== photoIndex) }))
+  }
+
+  const syncCorrectiveActionPhotos = async (actionId, photos) => {
+    const { error: deletePhotosError } = await supabase
+      .from('corrective_action_photos')
+      .delete()
+      .eq('corrective_action_id', actionId)
+
+    if (deletePhotosError) {
+      throw deletePhotosError
+    }
+
+    const photoRows = []
+    for (const [photoIndex, photo] of (photos || []).entries()) {
+      if (photo.photo_url) {
+        photoRows.push({ photo_url: photo.photo_url, display_order: photoIndex })
+        continue
+      }
+
+      if (!photo.file) continue
+
+      const ext = photo.file.name.split('.').pop()
+      const fileName = `corrective-action-${actionId}-${Date.now()}-${photoIndex}.${ext}`
+      const { error: uploadPhotoError } = await supabase.storage.from('safety-photos').upload(fileName, photo.file)
+      if (uploadPhotoError) {
+        throw uploadPhotoError
+      }
+
+      const { data: urlData } = supabase.storage.from('safety-photos').getPublicUrl(fileName)
+      photoRows.push({ photo_url: urlData.publicUrl, display_order: photoIndex })
+    }
+
+    if (photoRows.length === 0) return
+
+    const { error: insertPhotosError } = await supabase.from('corrective_action_photos').insert(
+      photoRows.map(photo => ({
+        corrective_action_id: actionId,
+        photo_url: photo.photo_url,
+        display_order: photo.display_order,
+      }))
+    )
+
+    if (insertPhotosError) {
+      throw insertPhotosError
+    }
   }
 
   const handleSaveEdit = async (actionId) => {
@@ -192,8 +289,14 @@ export default function CorrectiveActions() {
       })
       .eq('id', actionId)
     if (!error) {
-      setEditingActionId(null)
-      await fetchActions()
+      try {
+        await syncCorrectiveActionPhotos(actionId, editForm.photos)
+        setEditingActionId(null)
+        await fetchActions()
+      } catch (photoError) {
+        console.error(photoError)
+        alert('Unable to save corrective action photos')
+      }
     }
   }
   
@@ -205,9 +308,9 @@ export default function CorrectiveActions() {
 
     const { data: { user } } = await supabase.auth.getUser()
     
-    const { error } = await supabase
+    const { data: insertedAction, error } = await supabase
       .from('corrective_actions')
-      .insert([{
+      .insert({
         incident_id: newAction.incident_id,
         description: newAction.description,
         responsible_person_id: newAction.responsible_person_id || null,
@@ -216,21 +319,23 @@ export default function CorrectiveActions() {
         status: newAction.status,
         created_by: user?.id || null,
         updated_by: user?.id || null,
-      }])
+      })
+      .select('*')
+      .single()
     
     if (error) {
       alert('Error adding corrective action')
       return
     }
+
+    try {
+      await syncCorrectiveActionPhotos(insertedAction.id, newAction.photos)
+    } catch (photoError) {
+      console.error(photoError)
+      alert('Corrective action was created, but photos could not be saved')
+    }
     
-    setNewAction({
-      incident_id: '',
-      description: '',
-      responsible_person_id: '',
-      declared_created_date: new Date().toISOString().split('T')[0],
-      due_date: '',
-      status: 'open'
-    })
+    setNewAction(createEmptyAction())
     setShowAddForm(false)
     await fetchActions()
   }
@@ -364,6 +469,24 @@ export default function CorrectiveActions() {
               </div>
             </div>
 
+            <div className="form-group">
+              <label>Photos <span className="ca-optional">optional, up to {MAX_CORRECTIVE_ACTION_PHOTOS}</span></label>
+              {newAction.photos?.length > 0 && (
+                <div className="ca-photo-grid">
+                  {newAction.photos.map((photo, index) => (
+                    <div key={photo.preview || photo.photo_url || index} className="ca-photo-item">
+                      <img src={photo.preview || photo.photo_url} alt={`Corrective action photo ${index + 1}`} />
+                      <button type="button" className="ca-photo-remove" onClick={() => handleRemoveActionPhoto('new', index)}>&#215;</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <label className="btn-secondary ca-upload-btn">
+                + Add Photos
+                <input type="file" accept="image/*" multiple onChange={(e) => handleActionPhotoAdd('new', e)} style={{ display: 'none' }} />
+              </label>
+            </div>
+
             <div className="form-actions">
               <button 
                 className="btn-primary"
@@ -375,14 +498,7 @@ export default function CorrectiveActions() {
                 className="btn-secondary"
                 onClick={() => {
                   setShowAddForm(false)
-                  setNewAction({
-                    incident_id: '',
-                    description: '',
-                    responsible_person_id: '',
-                    declared_created_date: new Date().toISOString().split('T')[0],
-                    due_date: '',
-                    status: 'open'
-                  })
+                  setNewAction(createEmptyAction())
                 }}
               >
                 Cancel
@@ -490,6 +606,23 @@ export default function CorrectiveActions() {
                         </select>
                       </div>
                     </div>
+                    <div className="form-group">
+                      <label className="form-label">Photos <span className="ca-optional">optional, up to {MAX_CORRECTIVE_ACTION_PHOTOS}</span></label>
+                      {editForm.photos?.length > 0 && (
+                        <div className="ca-photo-grid">
+                          {editForm.photos.map((photo, index) => (
+                            <div key={photo.id || photo.preview || photo.photo_url || index} className="ca-photo-item">
+                              <img src={photo.preview || photo.photo_url} alt={`Corrective action photo ${index + 1}`} />
+                              <button type="button" className="ca-photo-remove" onClick={() => handleRemoveActionPhoto('edit', index)}>&#215;</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <label className="btn-secondary ca-upload-btn">
+                        + Add Photos
+                        <input type="file" accept="image/*" multiple onChange={(e) => handleActionPhotoAdd('edit', e)} style={{ display: 'none' }} />
+                      </label>
+                    </div>
                     <div className="inline-edit-actions">
                       <button className="btn btn-primary btn-sm" onClick={() => handleSaveEdit(action.id)}>Save</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => setEditingActionId(null)}>Cancel</button>
@@ -564,7 +697,21 @@ export default function CorrectiveActions() {
                           Created on: {new Date(action.declared_created_date).toLocaleDateString()}
                         </span>
                       )}
+                      {(action.photos?.length || 0) > 0 && (
+                        <span className="meta-item meta-created">
+                          Photos: {action.photos.length}
+                        </span>
+                      )}
                     </div>
+                    {action.photos?.length > 0 && (
+                      <div className="ca-photo-grid ca-photo-grid--compact">
+                        {action.photos.map((photo, index) => (
+                          <a key={photo.id || photo.photo_url || index} href={photo.photo_url} target="_blank" rel="noreferrer" className="ca-photo-item ca-photo-item--readonly">
+                            <img src={photo.photo_url} alt={`Corrective action photo ${index + 1}`} />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

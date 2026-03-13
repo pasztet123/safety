@@ -324,7 +324,7 @@ export default function PersonDetail() {
                   to={`/meetings/${m.id}`}
                 >
                   <div className="person-activity-main">
-                    <span className="person-activity-title">{m.topic || 'Toolbox Meeting'}</span>
+                    <span className="person-activity-title">{m.topic || 'Meeting & Safety Survey'}</span>
                     {m.project && (
                       <span className="person-activity-sub">{m.project.name}</span>
                     )}

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { getCorrectiveActionPhotoCount, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
+import { normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import LocationMap from '../components/LocationMap'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
@@ -42,7 +44,7 @@ export default function IncidentDetails() {
     setLoading(true)
     const { data, error } = await supabase
       .from('incidents')
-      .select(`*, project:projects(name)`)
+      .select(`*, project:projects(name), incident_photos(id, photo_url, display_order)`)
       .is('deleted_at', null)
       .eq('id', id)
       .single()
@@ -52,7 +54,7 @@ export default function IncidentDetails() {
 
       const { data: actions } = await supabase
         .from('corrective_actions')
-        .select('*')
+        .select('*, corrective_action_photos(id, photo_url, display_order)')
         .eq('incident_id', id)
         .order('declared_created_date', { ascending: true })
         .order('due_date', { ascending: true })
@@ -130,6 +132,8 @@ export default function IncidentDetails() {
       </div>
     )
   }
+
+  const incidentPhotos = normalizeIncidentPhotos(incident)
 
   return (
     <div className="incident-form">
@@ -340,21 +344,21 @@ export default function IncidentDetails() {
         </div>
       )}
 
-      {/* ── Photo ── */}
-      {incident.photo_url && (
+      {/* ── Photos ── */}
+      {incidentPhotos.length > 0 && (
         <div className="card">
-          <h3 className="section-title">Photo</h3>
-          <img
-            src={incident.photo_url}
-            alt="Incident photo"
-            style={{
-              width: '100%',
-              maxHeight: '400px',
-              objectFit: 'contain',
-              borderRadius: '8px',
-              border: '1px solid var(--color-border)'
-            }}
-          />
+          <h3 className="section-title">Photos ({incidentPhotos.length})</h3>
+          <div className="if-photo-grid">
+            {incidentPhotos.map((photo, index) => (
+              <div key={photo.id || photo.photo_url} className="if-photo-item">
+                <img
+                  src={photo.photo_url}
+                  alt={`Incident photo ${index + 1}`}
+                  style={{ border: '1px solid var(--color-border)' }}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -411,10 +415,22 @@ export default function IncidentDetails() {
                     {action.due_date && (
                       <span className="ica-tag ica-tag--date">Due {new Date(action.due_date).toLocaleDateString()}</span>
                     )}
+                    {getCorrectiveActionPhotoCount(action) > 0 && (
+                      <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
+                    )}
                     {action.completion_date && (
                       <span className="ica-tag ica-tag--done">Completed {new Date(action.completion_date).toLocaleDateString()}</span>
                     )}
                   </div>
+                  {getCorrectiveActionPhotoCount(action) > 0 && (
+                    <div className="if-photo-grid" style={{ marginTop: '12px' }}>
+                      {normalizeCorrectiveActionPhotos(action).map((photo, index) => (
+                        <a key={photo.id || photo.photo_url || index} href={photo.photo_url} target="_blank" rel="noreferrer" className="if-photo-item">
+                          <img src={photo.photo_url} alt={`Corrective action photo ${index + 1}`} />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

@@ -132,12 +132,12 @@ const bulkBaseHTML = (content) => `
 /**
  * Generates a single PDF listing all provided meetings as compact cards.
  * @param {Array} meetings - basic meeting objects (attendees, project, trade, topic, date, time, leader_name, checklists)
- * @param {string} title - PDF title (e.g. "All Toolbox Meetings")
+ * @param {string} title - PDF title (e.g. "All Meetings & Safety Surveys")
  * @param {string} [subtitle] - optional subtitle / filter description
  */
-export const generateMeetingListPDF = async (meetings, title = 'Toolbox Meetings Report', subtitle = '') => {
+export const generateMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys Report', subtitle = '') => {
   const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains toolbox meeting records.',
+    title: 'This export contains meeting and safety survey records.',
     details: `${meetings.length} meeting${meetings.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
   })
   if (!confirmed) return null
@@ -186,7 +186,7 @@ export const generateMeetingListPDF = async (meetings, title = 'Toolbox Meetings
 
   const html = bulkBaseHTML(`
     <div class="ml-header">
-      <div class="ml-header-eyebrow">Export — Toolbox Safety Meetings</div>
+      <div class="ml-header-eyebrow">Export — Meetings & Safety Surveys</div>
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
@@ -676,7 +676,7 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
  */
 export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => {
   const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains individual toolbox meeting records in a ZIP archive.',
+    title: 'This export contains individual meeting and safety survey records in a ZIP archive.',
     details: `${meetings.length} meeting PDF${meetings.length === 1 ? '' : 's'}`,
   })
   if (!confirmed) return

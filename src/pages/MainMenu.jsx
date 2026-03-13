@@ -281,7 +281,7 @@ export default function MainMenu() {
 
   const menuItems = [
     { title: 'Projects',           subtitle: 'Active & archived jobs',     path: '/projects',           icon: <FolderIcon /> },
-    { title: 'Toolbox Meetings',   subtitle: 'Safety talks & sign-ins',    path: '/meetings',           icon: <ClipboardIcon />,
+    { title: 'Meetings & Safety Surveys',   subtitle: 'Safety talks & sign-ins',    path: '/meetings',           icon: <ClipboardIcon />,
       badge: extraStats.thisMonthMeetings > 0 ? `${extraStats.thisMonthMeetings} this month` : null, badgeVariant: 'info' },
     { title: 'Safety Topics',      subtitle: 'Training material library',  path: '/safety-topics',      icon: <BookIcon /> },
     { title: 'Incidents',          subtitle: 'Reports & investigations',   path: '/incidents',          icon: <AlertIcon />,
@@ -355,11 +355,11 @@ export default function MainMenu() {
                 ×
               </button>
             </div>
-            <h3 className="toolbox-reminder-title">A new toolbox meeting is due for {toolboxReminder.displayName}.</h3>
+            <h3 className="toolbox-reminder-title">A new meeting and safety survey is due for {toolboxReminder.displayName}.</h3>
             <p className="toolbox-reminder-copy">
               {toolboxReminder.latestMeetingAt
-                ? `The last non-deleted toolbox meeting linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${new Date(toolboxReminder.latestMeetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}.`
-                : 'No previous non-deleted toolbox meeting was found for this linked user.'}
+                ? `The last non-deleted meeting and safety survey linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${new Date(toolboxReminder.latestMeetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}.`
+                : 'No previous non-deleted meeting and safety survey was found for this linked user.'}
             </p>
             <div className="toolbox-reminder-stats">
               <div className="toolbox-reminder-stat">
@@ -377,7 +377,7 @@ export default function MainMenu() {
                 dismissToolboxReminder()
                 navigate('/meetings/new')
               }}>
-                Schedule Toolbox Meeting
+                Schedule Meeting & Safety Survey
               </button>
             </div>
           </div>

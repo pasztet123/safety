@@ -5,6 +5,8 @@ import { LegalClauseNotice } from '../components/LegalNotice'
 import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
+import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
+import { MAX_INCIDENT_PHOTOS, normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import './IncidentForm.css'
 
 const SEVERITY_OPTIONS = [
@@ -94,6 +96,20 @@ const MEDICAL_TREATMENT = [
   { value: 'emergency', label: 'Emergency / hospitalization' },
 ]
 
+const createEmptyCorrectiveAction = () => ({
+  description: '',
+  responsible_person_id: '',
+  declared_created_date: new Date().toISOString().split('T')[0],
+  due_date: '',
+  status: 'open',
+  photos: [],
+})
+
+const normalizeCorrectiveActionForState = (action) => ({
+  ...action,
+  photos: normalizeCorrectiveActionPhotos(action),
+})
+
 export default function IncidentForm() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -151,14 +167,14 @@ export default function IncidentForm() {
   const [showPropertyDamage, setShowPropertyDamage] = useState(false)
 
   const [photos, setPhotos] = useState([])
-  const [existingPhotoUrl, setExistingPhotoUrl] = useState(null)
+  const [existingPhotos, setExistingPhotos] = useState([])
 
   const [witnesses, setWitnesses] = useState([])
   const [witnessSearch, setWitnessSearch] = useState('')
   const [witnessDropdownOpen, setWitnessDropdownOpen] = useState(false)
 
   const [correctiveActions, setCorrectiveActions] = useState([])
-  const [newAction, setNewAction] = useState({ description: '', responsible_person_id: '', declared_created_date: new Date().toISOString().split('T')[0], due_date: '', status: 'open' })
+  const [newAction, setNewAction] = useState(createEmptyCorrectiveAction())
   const [deletedActionIds, setDeletedActionIds] = useState([])
   const [disciplinaryActions, setDisciplinaryActions] = useState([])
   const [newDisciplinaryAction, setNewDisciplinaryAction] = useState(createEmptyDisciplinaryAction())
@@ -238,7 +254,12 @@ export default function IncidentForm() {
 
   const fetchIncident = async () => {
     setLoading(true)
-    const { data, error } = await supabase.from('incidents').select('*').is('deleted_at', null).eq('id', id).single()
+    const { data, error } = await supabase
+      .from('incidents')
+      .select('*, incident_photos(id, photo_url, display_order)')
+      .is('deleted_at', null)
+      .eq('id', id)
+      .single()
     if (!error && data) {
       setFormData({
         project_id: data.project_id || '',
@@ -271,13 +292,17 @@ export default function IncidentForm() {
         report_mode: data.report_mode || 'full',
       })
       setReportMode(data.report_mode || 'full')
-      if (data.photo_url) setExistingPhotoUrl(data.photo_url)
+      setExistingPhotos(normalizeIncidentPhotos(data))
+      setPhotos([])
       if (data.signature_url) {
         setExistingSignatureUrl(data.signature_url)
         setShowSignaturePanel(true)
       }
-      const { data: acts } = await supabase.from('corrective_actions').select('*').eq('incident_id', id)
-      if (acts) setCorrectiveActions(acts)
+      const { data: acts } = await supabase
+        .from('corrective_actions')
+        .select('*, corrective_action_photos(id, photo_url, display_order)')
+        .eq('incident_id', id)
+      if (acts) setCorrectiveActions(acts.map(normalizeCorrectiveActionForState))
       const { data: disciplinary } = await supabase
         .from('disciplinary_actions')
         .select('*')
@@ -328,11 +353,27 @@ export default function IncidentForm() {
   }
 
   const handlePhotoAdd = (e) => {
-    Array.from(e.target.files).forEach(file => {
+    const selectedFiles = Array.from(e.target.files || [])
+    const remainingSlots = MAX_INCIDENT_PHOTOS - existingPhotos.length - photos.length
+
+    if (remainingSlots <= 0) {
+      alert(`You can attach up to ${MAX_INCIDENT_PHOTOS} photos to one incident.`)
+      e.target.value = ''
+      return
+    }
+
+    const filesToAdd = selectedFiles.slice(0, remainingSlots)
+    if (filesToAdd.length < selectedFiles.length) {
+      alert(`Only ${remainingSlots} more photo${remainingSlots === 1 ? '' : 's'} can be added. The limit is ${MAX_INCIDENT_PHOTOS}.`)
+    }
+
+    filesToAdd.forEach(file => {
       const reader = new FileReader()
       reader.onloadend = () => setPhotos(prev => [...prev, { file, preview: reader.result }])
       reader.readAsDataURL(file)
     })
+
+    e.target.value = ''
   }
 
   const filteredWitnessOptions = involvedPersons.filter(p =>
@@ -360,12 +401,67 @@ export default function IncidentForm() {
   const addAction = () => {
     if (!newAction.description.trim()) return
     setCorrectiveActions(prev => [...prev, { ...newAction, isNew: true }])
-    setNewAction({ description: '', responsible_person_id: '', declared_created_date: new Date().toISOString().split('T')[0], due_date: '', status: 'open' })
+    setNewAction(createEmptyCorrectiveAction())
     setShowAddAction(false)
   }
 
   const updateAction = (idx, field, val) => {
     setCorrectiveActions(prev => prev.map((a, i) => i === idx ? { ...a, [field]: val } : a))
+  }
+
+  const handleCorrectiveActionPhotoAdd = (target, event) => {
+    const selectedFiles = Array.from(event.target.files || [])
+    const currentPhotos = target === 'new'
+      ? newAction.photos || []
+      : correctiveActions[target]?.photos || []
+    const remainingSlots = MAX_CORRECTIVE_ACTION_PHOTOS - currentPhotos.length
+
+    if (remainingSlots <= 0) {
+      alert(`You can attach up to ${MAX_CORRECTIVE_ACTION_PHOTOS} photos to one corrective action.`)
+      event.target.value = ''
+      return
+    }
+
+    const filesToAdd = selectedFiles.slice(0, remainingSlots)
+    if (filesToAdd.length < selectedFiles.length) {
+      alert(`Only ${remainingSlots} more photo${remainingSlots === 1 ? '' : 's'} can be added. The limit is ${MAX_CORRECTIVE_ACTION_PHOTOS}.`)
+    }
+
+    filesToAdd.forEach(file => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const photo = { file, preview: reader.result }
+        if (target === 'new') {
+          setNewAction(prev => ({ ...prev, photos: [...(prev.photos || []), photo] }))
+          return
+        }
+
+        setCorrectiveActions(prev => prev.map((action, index) => (
+          index === target
+            ? { ...action, photos: [...(action.photos || []), photo] }
+            : action
+        )))
+      }
+      reader.readAsDataURL(file)
+    })
+
+    event.target.value = ''
+  }
+
+  const removeCorrectiveActionPhoto = (target, photoIndex) => {
+    if (target === 'new') {
+      setNewAction(prev => ({
+        ...prev,
+        photos: (prev.photos || []).filter((_, index) => index !== photoIndex),
+      }))
+      return
+    }
+
+    setCorrectiveActions(prev => prev.map((action, index) => (
+      index === target
+        ? { ...action, photos: (action.photos || []).filter((_, currentPhotoIndex) => currentPhotoIndex !== photoIndex) }
+        : action
+    )))
   }
 
   const removeAction = (idx) => setCorrectiveActions(prev => {
@@ -423,17 +519,28 @@ export default function IncidentForm() {
     }
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
-    let photoUrl = existingPhotoUrl
-    if (photos.length > 0) {
-      const first = photos[0]
-      const ext = first.file.name.split('.').pop()
-      const fname = `incident-${Date.now()}.${ext}`
-      const { error: upErr } = await supabase.storage.from('safety-photos').upload(fname, first.file)
-      if (!upErr) {
-        const { data: ud } = supabase.storage.from('safety-photos').getPublicUrl(fname)
-        photoUrl = ud.publicUrl
+    const uploadedPhotoRows = []
+    for (const [index, photo] of photos.entries()) {
+      const ext = photo.file.name.split('.').pop()
+      const fname = `incident-${Date.now()}-${index}.${ext}`
+      const { error: upErr } = await supabase.storage.from('safety-photos').upload(fname, photo.file)
+
+      if (upErr) {
+        console.error(upErr)
+        alert('Unable to upload one of the incident photos. Please try again.')
+        setLoading(false)
+        return
       }
+
+      const { data: ud } = supabase.storage.from('safety-photos').getPublicUrl(fname)
+      uploadedPhotoRows.push({ photo_url: ud.publicUrl })
     }
+
+    const incidentPhotoRows = [
+      ...existingPhotos.map(photo => ({ photo_url: photo.photo_url })),
+      ...uploadedPhotoRows,
+    ]
+    const photoUrl = incidentPhotoRows[0]?.photo_url || null
     let signatureUrl = id ? undefined : null
     if (removeExistingSig) {
       signatureUrl = null
@@ -503,6 +610,7 @@ export default function IncidentForm() {
 
       const existingActions = correctiveActions.filter(action => action.id)
       const newActions = correctiveActions.filter(action => !action.id)
+      const syncedActions = []
 
       if (existingActions.length > 0) {
         const updateResults = await Promise.all(existingActions.map(action => (
@@ -526,27 +634,94 @@ export default function IncidentForm() {
           setLoading(false)
           return
         }
+
+        syncedActions.push(...existingActions)
       }
 
       if (newActions.length > 0) {
-        const { error: insertActionsError } = await supabase.from('corrective_actions').insert(newActions.map(action => ({
-          incident_id: incidentId,
-          description: action.description,
-          responsible_person_id: action.responsible_person_id || null,
-          declared_created_date: action.declared_created_date || null,
-          due_date: action.due_date || null,
-          status: action.status || 'open',
-          completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
-          created_by: user.id,
-          updated_by: user.id,
-        })))
+        for (const action of newActions) {
+          const { data: insertedAction, error: insertActionsError } = await supabase
+            .from('corrective_actions')
+            .insert({
+              incident_id: incidentId,
+              description: action.description,
+              responsible_person_id: action.responsible_person_id || null,
+              declared_created_date: action.declared_created_date || null,
+              due_date: action.due_date || null,
+              status: action.status || 'open',
+              completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
+              created_by: user.id,
+              updated_by: user.id,
+            })
+            .select('*')
+            .single()
 
-        if (insertActionsError) {
-          console.error(insertActionsError)
+          if (insertActionsError) {
+            console.error(insertActionsError)
+            setLoading(false)
+            return
+          }
+
+          syncedActions.push({
+            ...insertedAction,
+            photos: action.photos || [],
+          })
+        }
+      }
+
+      for (const action of syncedActions) {
+        const { error: deleteActionPhotosError } = await supabase
+          .from('corrective_action_photos')
+          .delete()
+          .eq('corrective_action_id', action.id)
+
+        if (deleteActionPhotosError) {
+          console.error(deleteActionPhotosError)
           setLoading(false)
           return
         }
+
+        const actionPhotoRows = []
+        for (const [photoIndex, photo] of (action.photos || []).entries()) {
+          if (photo.photo_url) {
+            actionPhotoRows.push({ photo_url: photo.photo_url, display_order: photoIndex })
+            continue
+          }
+
+          if (!photo.file) continue
+
+          const ext = photo.file.name.split('.').pop()
+          const fileName = `corrective-action-${action.id}-${Date.now()}-${photoIndex}.${ext}`
+          const { error: uploadActionPhotoError } = await supabase.storage.from('safety-photos').upload(fileName, photo.file)
+
+          if (uploadActionPhotoError) {
+            console.error(uploadActionPhotoError)
+            alert('Unable to upload one of the corrective action photos. Please try again.')
+            setLoading(false)
+            return
+          }
+
+          const { data: urlData } = supabase.storage.from('safety-photos').getPublicUrl(fileName)
+          actionPhotoRows.push({ photo_url: urlData.publicUrl, display_order: photoIndex })
+        }
+
+        if (actionPhotoRows.length > 0) {
+          const { error: insertActionPhotosError } = await supabase.from('corrective_action_photos').insert(
+            actionPhotoRows.map(photo => ({
+              corrective_action_id: action.id,
+              photo_url: photo.photo_url,
+              display_order: photo.display_order,
+            }))
+          )
+
+          if (insertActionPhotosError) {
+            console.error(insertActionPhotosError)
+            setLoading(false)
+            return
+          }
+        }
       }
+
       await supabase.from('disciplinary_actions').delete().eq('incident_id', incidentId)
       if (formData.type_name === 'Safety violation' && disciplinaryActions.length > 0) {
         const { error: insertDisciplinaryError } = await supabase.from('disciplinary_actions').insert(
@@ -576,6 +751,33 @@ export default function IncidentForm() {
           person_id: w.person_id || null,
           name: w.name,
         })))
+      }
+
+      const { error: deletePhotosError } = await supabase
+        .from('incident_photos')
+        .delete()
+        .eq('incident_id', incidentId)
+
+      if (deletePhotosError) {
+        console.error(deletePhotosError)
+        setLoading(false)
+        return
+      }
+
+      if (incidentPhotoRows.length > 0) {
+        const { error: insertPhotosError } = await supabase.from('incident_photos').insert(
+          incidentPhotoRows.map((photo, index) => ({
+            incident_id: incidentId,
+            photo_url: photo.photo_url,
+            display_order: index,
+          }))
+        )
+
+        if (insertPhotosError) {
+          console.error(insertPhotosError)
+          setLoading(false)
+          return
+        }
       }
     }
     setLoading(false)
@@ -772,12 +974,17 @@ export default function IncidentForm() {
           )}
           <div className="if-evidence-block">
             <div className="if-evidence-title">Photos / Evidence</div>
-            {existingPhotoUrl && (
+            <div className="if-optional" style={{ marginBottom: 10 }}>
+              Up to {MAX_INCIDENT_PHOTOS} photos per incident.
+            </div>
+            {existingPhotos.length > 0 && (
               <div className="if-photo-grid" style={{ marginBottom: 10 }}>
-                <div className="if-photo-item">
-                  <img src={existingPhotoUrl} alt="Existing" />
-                  <button type="button" className="btn-remove-photo" onClick={() => setExistingPhotoUrl(null)}>&#215;</button>
-                </div>
+                {existingPhotos.map((photo, index) => (
+                  <div key={photo.id || photo.photo_url} className="if-photo-item">
+                    <img src={photo.photo_url} alt={`Existing photo ${index + 1}`} />
+                    <button type="button" className="btn-remove-photo" onClick={() => setExistingPhotos(prev => prev.filter((_, photoIndex) => photoIndex !== index))}>&#215;</button>
+                  </div>
+                ))}
               </div>
             )}
             {photos.length > 0 && (
@@ -948,6 +1155,23 @@ export default function IncidentForm() {
                     <input type="date" className="form-input" value={newAction.due_date} onChange={e => setNewAction(prev => ({ ...prev, due_date: e.target.value }))} />
                   </div>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Photos <span className="if-optional">optional, up to {MAX_CORRECTIVE_ACTION_PHOTOS}</span></label>
+                  {newAction.photos?.length > 0 && (
+                    <div className="if-photo-grid" style={{ marginBottom: 10 }}>
+                      {newAction.photos.map((photo, photoIndex) => (
+                        <div key={photo.photo_url || photo.preview || photoIndex} className="if-photo-item">
+                          <img src={photo.preview || photo.photo_url} alt={`Corrective action photo ${photoIndex + 1}`} />
+                          <button type="button" className="btn-remove-photo" onClick={() => removeCorrectiveActionPhoto('new', photoIndex)}>&#215;</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label className="btn btn-secondary if-upload-btn">
+                    + Add Photos
+                    <input type="file" accept="image/*" multiple onChange={e => handleCorrectiveActionPhotoAdd('new', e)} style={{ display: 'none' }} />
+                  </label>
+                </div>
                 <button type="button" className="btn btn-primary" onClick={addAction}>Add Action</button>
               </div>
             )}
@@ -963,10 +1187,27 @@ export default function IncidentForm() {
                           {responsible && <span>Responsible: {responsible.name}</span>}
                           {a.declared_created_date && <span>Created on: {new Date(a.declared_created_date).toLocaleDateString()}</span>}
                           {a.due_date && <span>Due: {new Date(a.due_date).toLocaleDateString()}</span>}
+                          {(a.photos?.length || 0) > 0 && <span>{a.photos.length} photo{a.photos.length === 1 ? '' : 's'}</span>}
                           <select className="form-select if-action-status-select" value={a.status} onChange={e => updateAction(i, 'status', e.target.value)}>
                             <option value="open">Open</option>
                             <option value="completed">Completed</option>
                           </select>
+                        </div>
+                        <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
+                          {a.photos?.length > 0 && (
+                            <div className="if-photo-grid" style={{ marginBottom: 10 }}>
+                              {a.photos.map((photo, photoIndex) => (
+                                <div key={photo.id || photo.photo_url || photo.preview || photoIndex} className="if-photo-item">
+                                  <img src={photo.preview || photo.photo_url} alt={`Corrective action photo ${photoIndex + 1}`} />
+                                  <button type="button" className="btn-remove-photo" onClick={() => removeCorrectiveActionPhoto(i, photoIndex)}>&#215;</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <label className="btn btn-secondary if-upload-btn" style={{ alignSelf: 'flex-start' }}>
+                            + Add Photos
+                            <input type="file" accept="image/*" multiple onChange={e => handleCorrectiveActionPhotoAdd(i, e)} style={{ display: 'none' }} />
+                          </label>
                         </div>
                       </div>
                       <button type="button" className="btn-remove" onClick={() => removeAction(i)}>&#215;</button>

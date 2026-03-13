@@ -23,12 +23,12 @@ const ACCESS_VARIANTS = {
 const guideSections = [
   {
     id: 'toolbox-meetings',
-    title: 'Toolbox Meetings',
-    shortDescription: 'Run safety talks, collect attendance, attach evidence, and keep the meeting history audit-ready.',
+    title: 'Meetings & Safety Surveys',
+    shortDescription: 'Run safety talks and surveys, collect attendance, attach evidence, and keep the history audit-ready.',
     route: '/meetings',
     access: 'mixed',
     purpose:
-      'Use Toolbox Meetings to document daily or recurring safety talks, prove attendance, connect the talk with a project and trade, and store the evidence needed for supervision, compliance, and internal review.',
+      'Use Meetings & Safety Surveys to document daily or recurring safety talks and surveys, prove attendance, connect the record with a project and trade, and store the evidence needed for supervision, compliance, and internal review.',
     outcomes: [
       'Create a traceable history of safety communication on the job.',
       'Show who attended, who led the talk, what topic was covered, and when it happened.',
@@ -48,7 +48,7 @@ const guideSections = [
       {
         title: 'Method A: Create a meeting manually',
         steps: [
-          'Open Toolbox Meetings and choose the action to create a new meeting.',
+          'Open Meetings & Safety Surveys and choose the action to create a new meeting.',
           'Select the project, date, time, and location. The form can prefill location using device GPS, and you can adjust it manually.',
           'Choose the worker performing the meeting, trade, and safety topic. If needed, use the topic content panel to guide the discussion live during the meeting.',
           'Add attendees from the worker list or type names manually when a person is not yet in the directory.',
@@ -66,7 +66,7 @@ const guideSections = [
           'Upload a BusyBusy CSV export. The system parses time-entry rows and groups them into draft meetings by date and related attendance data.',
           'Review the generated draft list before saving. At this stage you can spot duplicate dates, skip selected dates, refresh suggested topics, change trade values, and fine-tune draft fields.',
           'Confirm the import. The system saves each draft with an import batch id, marks the source as BusyBusy CSV, and can create missing people in the worker directory when needed.',
-          'Go back to Toolbox Meetings and open the draft area. Use filters, pagination, batch selection, and batch editing to prepare the drafts for approval.',
+          'Go back to Meetings & Safety Surveys and open the draft area. Use filters, pagination, batch selection, and batch editing to prepare the drafts for approval.',
           'Launch the draft approval flow. In the approval modal, confirm or correct the worker performing the meeting, verify the meeting contents, and provide the signature or signature mode required for finalization.',
           'Approve the draft. The meeting is converted from draft to finalized record and becomes part of the normal meeting history, exports, and project view.',
         ],
@@ -91,7 +91,7 @@ const guideSections = [
       'Users must not sign on behalf of another person or create attendance evidence in bad faith.',
     ],
     includeInHandbook: true,
-    pdfExportLabel: 'Export Toolbox Meetings guide',
+    pdfExportLabel: 'Export Meetings & Safety Surveys guide',
   },
   {
     id: 'safety-topics',

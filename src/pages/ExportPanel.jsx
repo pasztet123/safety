@@ -187,7 +187,7 @@ export default function ExportPanel() {
     setProgress(p => ({ ...p, label: `Building PDF for ${meetings.length} meetings…` }))
     const projectName = mProject ? projects.find(p => p.id === mProject)?.name : ''
     const parts = [mDateFrom && mDateTo ? `${mDateFrom} – ${mDateTo}` : (mDateFrom ? `from ${mDateFrom}` : (mDateTo ? `to ${mDateTo}` : '')), projectName, mTrade, mLeader ? `Worker performing the meeting: ${mLeader}` : '', mAttendee ? `Attendee: ${mAttendee}` : '', mTopic ? `Topic: ${mTopic}` : '']
-    await downloadMeetingListPDF(meetings, 'Toolbox Meetings Report', filterDesc(parts))
+    await downloadMeetingListPDF(meetings, 'Meetings & Safety Surveys Report', filterDesc(parts))
   })
 
   // ── Meetings: individual PDFs as ZIP ──────────────────────────────────────
@@ -298,11 +298,11 @@ export default function ExportPanel() {
       </div>
 
       {/* ══════════════════════════════════════════════════════
-          1. TOOLBOX MEETINGS
+          1. MEETINGS & SAFETY SURVEYS
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Toolbox Meetings">
+      <ExportSection title="Meetings & Safety Surveys">
         <p className="ep-desc">
-          Export a list PDF of all toolbox meetings, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
+          Export a list PDF of all meetings and safety surveys, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
           Or download all filtered meetings as individual PDFs packed into a ZIP file.
         </p>
 

@@ -94,7 +94,7 @@ export const fetchMeetingsFull = async (filters = {}) => {
 export const fetchIncidentsFull = async (filters = {}) => {
   let q = supabase
     .from('incidents')
-    .select('*, project:projects(name)')
+    .select('*, project:projects(name), incident_photos(photo_url, display_order)')
     .is('deleted_at', null)
     .order('date', { ascending: false })
     .order('time', { ascending: false })

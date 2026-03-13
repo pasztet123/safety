@@ -218,7 +218,7 @@ const fetchLimitedRows = async (queryFactory, limit) => {
 }
 
 const ENTITY_LABELS = {
-  meetings: 'Toolbox Meetings',
+  meetings: 'Meetings & Safety Surveys',
   incidents: 'Incidents',
   corrective_actions: 'Corrective Actions',
   checklist_completions: 'Checklist Completions',
@@ -229,7 +229,7 @@ const ENTITY_LABELS = {
 const HISTORY_SOURCES = [
   {
     key: 'meetings',
-    label: 'Toolbox Meetings',
+    label: 'Meetings & Safety Surveys',
     table: 'meeting_history',
     idColumn: 'meeting_id',
   },
@@ -289,7 +289,7 @@ const summarizeHistoryRecord = (entry, checklistNames) => {
   const snapshot = entry.row_after || entry.row_before || {}
 
   if (entry.entity === 'meetings') {
-    return snapshot.topic || 'Toolbox meeting'
+    return snapshot.topic || 'Meeting & safety survey'
   }
 
   if (entry.entity === 'incidents') {
@@ -533,7 +533,7 @@ export default function SystemRecords() {
             onChange={(event) => setEntityFilter(event.target.value)}
           >
             <option value="all">All entities</option>
-            <option value="meetings">Toolbox Meetings</option>
+            <option value="meetings">Meetings & Safety Surveys</option>
             <option value="incidents">Incidents</option>
             <option value="corrective_actions">Corrective Actions</option>
             <option value="checklist_completions">Checklist Completions</option>

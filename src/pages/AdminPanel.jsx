@@ -605,7 +605,7 @@ export default function AdminPanel() {
                     <strong>{candidate.involvedPersons.length}</strong>
                   </div>
                   <div className="person-link-summary-item">
-                    <span className="person-link-summary-label">Toolbox Meetings</span>
+                    <span className="person-link-summary-label">Meetings & Safety Surveys</span>
                     <strong>{candidate.totalMeetingCount}</strong>
                   </div>
                 </div>
