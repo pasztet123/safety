@@ -100,7 +100,7 @@ export const fetchAdminAnalyticsDataset = async ({ dateFrom, dateTo }) => {
 
   const correctiveActionsQuery = supabase
     .from('corrective_actions')
-    .select('id, description, status, due_date, completion_date, declared_created_date, responsible_person_id, incident_id')
+    .select('id, description, status, due_date, completion_date, declared_completion_date, declared_created_date, responsible_person_id, incident_id')
     .order('due_date', { ascending: false, nullsFirst: false })
 
   const disciplinaryActionsQuery = supabase
@@ -356,7 +356,7 @@ const buildIncidentEvents = (incidents, lookups) => {
 const buildCorrectiveActionEvents = (correctiveActions, lookups) => {
   return correctiveActions
     .map((action) => {
-      const start = parseDateTime(action.completion_date || action.due_date || action.declared_created_date, null)
+      const start = parseDateTime(action.declared_completion_date || action.completion_date || action.due_date || action.declared_created_date, null)
       if (!start) return null
 
       const personTokens = action.responsible_person_id ? [`person:${action.responsible_person_id}`] : []

@@ -231,13 +231,13 @@ const buildIncidentsCSV = (incidents) => {
 const buildCorrectiveActionsCSV = (actions, persons = [], incidents = []) => {
   const personMap   = Object.fromEntries(persons.map(p => [p.id, p.name]))
   const incidentMap = Object.fromEntries(incidents.map(i => [i.id, i]))
-  const lines = [csvHeader('Description','Status','Responsible Person','Due Date','Completion Date','Incident Type','Incident Date')]
+  const lines = [csvHeader('Description','Status','Responsible Person','Due Date','Declared Completion Date','Marked Completed Date','Incident Type','Incident Date')]
   for (const a of actions) {
     const inc = a.incident_id ? incidentMap[a.incident_id] : null
     lines.push(csvRow([
       a.description || '', a.status || '',
       a.responsible_person_id ? (personMap[a.responsible_person_id] || '') : '',
-      fmtCSVDate(a.due_date), fmtCSVDate(a.completion_date),
+      fmtCSVDate(a.due_date), fmtCSVDate(a.declared_completion_date || a.completion_date), fmtCSVDate(a.completion_date),
       inc?.type_name || '', fmtCSVDate(inc?.date),
     ]))
   }

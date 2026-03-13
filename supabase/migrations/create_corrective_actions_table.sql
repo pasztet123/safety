@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS corrective_actions (
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'completed')),
   completion_date DATE,
+  declared_completion_date DATE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );

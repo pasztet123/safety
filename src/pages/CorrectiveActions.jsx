@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
+import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString, promptForDeclaredCompletionDate } from '../lib/correctiveActionDates'
 import { downloadCorrectiveActionsListPDF } from '../lib/pdfBulkGenerator'
 import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import './CorrectiveActions.css'
@@ -10,9 +11,11 @@ const createEmptyAction = () => ({
   incident_id: '',
   description: '',
   responsible_person_id: '',
-  declared_created_date: new Date().toISOString().split('T')[0],
+  declared_created_date: getTodayDateString(),
+  declared_completion_date: '',
   due_date: '',
   status: 'open',
+  completion_date: null,
   photos: [],
 })
 
@@ -157,22 +160,33 @@ export default function CorrectiveActions() {
     return involvedPersons.find(p => p.id === personId)?.name || 'Unassigned'
   }
 
-  const handleToggleStatus = async (actionId, currentStatus) => {
+  const handleToggleStatus = async (action) => {
     if (!isAdmin) return
 
     const { data: { user } } = await supabase.auth.getUser()
-    
-    const newStatus = currentStatus === 'open' ? 'completed' : 'open'
+    const newStatus = action.status === 'open' ? 'completed' : 'open'
+    const declaredCompletionDate = newStatus === 'completed'
+      ? promptForDeclaredCompletionDate(getDeclaredCompletionDate(action) || getTodayDateString())
+      : null
+
+    if (newStatus === 'completed' && !declaredCompletionDate) return
+
     const updateData = {
       status: newStatus,
-      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+      ...buildCompletionStatusFields({
+        currentStatus: action.status,
+        nextStatus: newStatus,
+        currentCompletionDate: action.completion_date,
+        currentDeclaredCompletionDate: action.declared_completion_date,
+        declaredCompletionDate,
+      }),
       updated_by: user?.id || null,
     }
-    
+
     const { error } = await supabase
       .from('corrective_actions')
       .update(updateData)
-      .eq('id', actionId)
+      .eq('id', action.id)
     
     if (!error) {
       await fetchActions()
@@ -195,8 +209,10 @@ export default function CorrectiveActions() {
       description: action.description,
       responsible_person_id: action.responsible_person_id || '',
       declared_created_date: action.declared_created_date || '',
+      declared_completion_date: getDeclaredCompletionDate(action) || '',
       due_date: action.due_date || '',
       status: action.status,
+      completion_date: action.completion_date || null,
       photos: action.photos || [],
     })
   }
@@ -290,6 +306,7 @@ export default function CorrectiveActions() {
 
   const handleSaveEdit = async (actionId) => {
     const { data: { user } } = await supabase.auth.getUser()
+    const existingAction = actions.find((action) => action.id === actionId)
 
     let responsiblePersonId = null
     let syncedPerson = null
@@ -318,7 +335,13 @@ export default function CorrectiveActions() {
         declared_created_date: editForm.declared_created_date || null,
         due_date: editForm.due_date || null,
         status: editForm.status,
-        completion_date: editForm.status === 'completed' ? (editForm.due_date || new Date().toISOString().split('T')[0]) : null,
+        ...buildCompletionStatusFields({
+          currentStatus: existingAction?.status,
+          nextStatus: editForm.status,
+          currentCompletionDate: existingAction?.completion_date,
+          currentDeclaredCompletionDate: existingAction?.declared_completion_date,
+          declaredCompletionDate: editForm.declared_completion_date || null,
+        }),
         updated_by: user?.id || null,
       })
       .eq('id', actionId)
@@ -603,7 +626,7 @@ export default function CorrectiveActions() {
                 <input
                   type="checkbox"
                   checked={action.status === 'completed'}
-                  onChange={() => handleToggleStatus(action.id, action.status)}
+                  onChange={() => handleToggleStatus(action)}
                   disabled={!isAdmin}
                   title={isAdmin ? 'Click to toggle status' : 'Only admins can change status'}
                 />
@@ -663,6 +686,17 @@ export default function CorrectiveActions() {
                           <option value="completed">Completed</option>
                         </select>
                       </div>
+                      {editForm.status === 'completed' && (
+                        <div className="form-group">
+                          <label className="form-label">Declared Completed Date</label>
+                          <input
+                            type="date"
+                            className="form-input"
+                            value={editForm.declared_completion_date}
+                            onChange={e => setEditForm({ ...editForm, declared_completion_date: e.target.value })}
+                          />
+                        </div>
+                      )}
                     </div>
                     <div className="form-group">
                       <label className="form-label">Photos <span className="ca-optional">optional, up to {MAX_CORRECTIVE_ACTION_PHOTOS}</span></label>
@@ -745,9 +779,14 @@ export default function CorrectiveActions() {
                           <strong>Due:</strong> {new Date(action.due_date).toLocaleDateString()}
                         </span>
                       )}
+                      {getDeclaredCompletionDate(action) && (
+                        <span className="meta-item">
+                          <strong>Completed:</strong> {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}
+                        </span>
+                      )}
                       {action.completion_date && (
                         <span className="meta-item">
-                          <strong>Completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
+                          <strong>Marked completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
                         </span>
                       )}
                       {action.declared_created_date && (

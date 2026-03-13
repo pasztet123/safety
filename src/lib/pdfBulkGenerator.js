@@ -514,7 +514,8 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
         <div class="act-meta">
           ${person ? `Assigned to: <strong>${esc(person)}</strong> · ` : ''}
           ${act.due_date ? `Due: ${fmtDateShort(act.due_date)}` : ''}
-          ${isComplete && act.completion_date ? ` · Completed: ${fmtDateShort(act.completion_date)}` : ''}
+          ${isComplete && (act.declared_completion_date || act.completion_date) ? ` · Completed: ${fmtDateShort(act.declared_completion_date || act.completion_date)}` : ''}
+          ${isComplete && act.declared_completion_date && act.completion_date ? ` · Marked completed: ${fmtDateShort(act.completion_date)}` : ''}
           ${inc ? ` · Incident: ${esc(inc.type_name||(inc.id||''))} (${fmtDateShort(inc.date)})` : ''}
         </div>
       </div>

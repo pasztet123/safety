@@ -379,7 +379,13 @@ export const fetchPersonLinkCandidates = async () => {
       const totalMeetingCount =
         group.attendee.count + group.leaders.reduce((count, leader) => count + (leader._meetingCount || 0), 0)
       const overallLastMeetingAt = maxByTimestamp([group.attendee.lastMeetingAt, lastLeaderMeetingAt])
-      const needsReview = Boolean(group.users.length && (group.leaders.length || group.involvedPersons.length || group.attendee.count))
+      const hasUser = group.users.length > 0
+      const hasLeader = group.leaders.length > 0
+      const hasAttendee = group.involvedPersons.length > 0 || group.attendee.count > 0
+      const needsReview =
+        (hasUser && hasLeader) ||
+        (hasUser && hasAttendee) ||
+        (hasLeader && hasAttendee)
 
       return {
         ...group,

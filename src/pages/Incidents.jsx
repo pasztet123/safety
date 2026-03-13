@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { getCorrectiveActionPhotoCount } from '../lib/correctiveActionPhotos'
+import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString, promptForDeclaredCompletionDate } from '../lib/correctiveActionDates'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { getIncidentPhotoCount } from '../lib/incidentPhotos'
 import { downloadIncidentListPDF } from '../lib/pdfBulkGenerator'
@@ -147,20 +148,32 @@ export default function Incidents() {
     await fetchIncidents()
   }
   
-  const handleToggleActionStatus = async (actionId, currentStatus) => {
+  const handleToggleActionStatus = async (action) => {
     const { data: { user } } = await supabase.auth.getUser()
 
-    const newStatus = currentStatus === 'open' ? 'completed' : 'open'
+    const newStatus = action.status === 'open' ? 'completed' : 'open'
+    const declaredCompletionDate = newStatus === 'completed'
+      ? promptForDeclaredCompletionDate(getDeclaredCompletionDate(action) || getTodayDateString())
+      : null
+
+    if (newStatus === 'completed' && !declaredCompletionDate) return
+
     const updateData = {
       status: newStatus,
-      completion_date: newStatus === 'completed' ? new Date().toISOString().split('T')[0] : null,
+      ...buildCompletionStatusFields({
+        currentStatus: action.status,
+        nextStatus: newStatus,
+        currentCompletionDate: action.completion_date,
+        currentDeclaredCompletionDate: action.declared_completion_date,
+        declaredCompletionDate,
+      }),
       updated_by: user?.id || null,
     }
     
     const { error } = await supabase
       .from('corrective_actions')
       .update(updateData)
-      .eq('id', actionId)
+      .eq('id', action.id)
     
     if (!error) {
       // Refresh corrective actions
@@ -327,7 +340,7 @@ export default function Incidents() {
                           type="checkbox"
                           className="ica-checkbox"
                           checked={action.status === 'completed'}
-                          onChange={() => handleToggleActionStatus(action.id, action.status)}
+                          onChange={() => handleToggleActionStatus(action)}
                           disabled={!isAdmin}
                         />
                         <div className="ica-body">
@@ -344,8 +357,8 @@ export default function Incidents() {
                             {getCorrectiveActionPhotoCount(action) > 0 && (
                               <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
                             )}
-                            {action.completion_date && (
-                              <span className="ica-tag ica-tag--done">Completed {new Date(action.completion_date).toLocaleDateString()}</span>
+                            {getDeclaredCompletionDate(action) && (
+                              <span className="ica-tag ica-tag--done">Completed {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}</span>
                             )}
                           </div>
                         </div>

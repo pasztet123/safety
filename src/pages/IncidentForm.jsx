@@ -6,6 +6,7 @@ import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
+import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString } from '../lib/correctiveActionDates'
 import { MAX_INCIDENT_PHOTOS, normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import './IncidentForm.css'
@@ -100,9 +101,11 @@ const MEDICAL_TREATMENT = [
 const createEmptyCorrectiveAction = () => ({
   description: '',
   responsible_person_id: '',
-  declared_created_date: new Date().toISOString().split('T')[0],
+  declared_created_date: getTodayDateString(),
+  declared_completion_date: '',
   due_date: '',
   status: 'open',
+  completion_date: null,
   photos: [],
 })
 
@@ -416,7 +419,28 @@ export default function IncidentForm() {
   }
 
   const updateAction = (idx, field, val) => {
-    setCorrectiveActions(prev => prev.map((a, i) => i === idx ? { ...a, [field]: val } : a))
+    setCorrectiveActions(prev => prev.map((action, actionIndex) => {
+      if (actionIndex !== idx) return action
+
+      if (field !== 'status') {
+        return { ...action, [field]: val }
+      }
+
+      if (val === 'completed') {
+        return {
+          ...action,
+          status: val,
+          declared_completion_date: action.declared_completion_date || getDeclaredCompletionDate(action) || getTodayDateString(),
+        }
+      }
+
+      return {
+        ...action,
+        status: val,
+        declared_completion_date: '',
+        completion_date: null,
+      }
+    }))
   }
 
   const handleCorrectiveActionPhotoAdd = (target, event) => {
@@ -664,7 +688,13 @@ export default function IncidentForm() {
               declared_created_date: action.declared_created_date || null,
               due_date: action.due_date || null,
               status: action.status || 'open',
-              completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
+              ...buildCompletionStatusFields({
+                currentStatus: action.status,
+                nextStatus: action.status || 'open',
+                currentCompletionDate: action.completion_date,
+                currentDeclaredCompletionDate: action.declared_completion_date,
+                declaredCompletionDate: action.declared_completion_date || null,
+              }),
               updated_by: user.id,
             })
             .eq('id', action.id)
@@ -691,7 +721,13 @@ export default function IncidentForm() {
               declared_created_date: action.declared_created_date || null,
               due_date: action.due_date || null,
               status: action.status || 'open',
-              completion_date: action.status === 'completed' ? (action.completion_date || new Date().toISOString().split('T')[0]) : null,
+              ...buildCompletionStatusFields({
+                currentStatus: 'open',
+                nextStatus: action.status || 'open',
+                currentCompletionDate: null,
+                currentDeclaredCompletionDate: null,
+                declaredCompletionDate: action.declared_completion_date || null,
+              }),
               created_by: user.id,
               updated_by: user.id,
             })
@@ -1229,12 +1265,24 @@ export default function IncidentForm() {
                           {responsible && <span>Responsible: {responsible}</span>}
                           {a.declared_created_date && <span>Created on: {new Date(a.declared_created_date).toLocaleDateString()}</span>}
                           {a.due_date && <span>Due: {new Date(a.due_date).toLocaleDateString()}</span>}
+                          {a.status === 'completed' && (a.declared_completion_date || getDeclaredCompletionDate(a)) && <span>Completed: {new Date(a.declared_completion_date || getDeclaredCompletionDate(a)).toLocaleDateString()}</span>}
                           {(a.photos?.length || 0) > 0 && <span>{a.photos.length} photo{a.photos.length === 1 ? '' : 's'}</span>}
                           <select className="form-select if-action-status-select" value={a.status} onChange={e => updateAction(i, 'status', e.target.value)}>
                             <option value="open">Open</option>
                             <option value="completed">Completed</option>
                           </select>
                         </div>
+                        {a.status === 'completed' && (
+                          <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
+                            <label className="form-label">Declared completed date</label>
+                            <input
+                              type="date"
+                              className="form-input"
+                              value={a.declared_completion_date || getDeclaredCompletionDate(a) || ''}
+                              onChange={e => updateAction(i, 'declared_completion_date', e.target.value)}
+                            />
+                          </div>
+                        )}
                         <div className="form-group" style={{ marginTop: 10, marginBottom: 0 }}>
                           {a.photos?.length > 0 && (
                             <div className="if-photo-grid" style={{ marginBottom: 10 }}>
