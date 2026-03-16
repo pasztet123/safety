@@ -6,7 +6,7 @@ import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import { SAFETY_VIOLATION_OPTIONS, DISCIPLINARY_ACTION_TYPES, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
-import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString } from '../lib/correctiveActionDates'
+import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString, resolveCorrectiveActionStatus } from '../lib/correctiveActionDates'
 import { MAX_INCIDENT_PHOTOS, normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import { getCurrentDateInputValue, getCurrentTimeInputValue } from '../lib/dateTime'
@@ -423,6 +423,17 @@ export default function IncidentForm() {
     setCorrectiveActions(prev => prev.map((action, actionIndex) => {
       if (actionIndex !== idx) return action
 
+      if (field === 'declared_completion_date') {
+        return {
+          ...action,
+          declared_completion_date: val,
+          status: resolveCorrectiveActionStatus({
+            status: action.status,
+            declaredCompletionDate: val,
+          }),
+        }
+      }
+
       if (field !== 'status') {
         return { ...action, [field]: val }
       }
@@ -681,24 +692,31 @@ export default function IncidentForm() {
 
       if (existingActions.length > 0) {
         const updateResults = await Promise.all(existingActions.map(action => (
-          supabase
-            .from('corrective_actions')
-            .update({
-              description: action.description,
-              responsible_person_id: action.responsible_person_id || null,
-              declared_created_date: action.declared_created_date || null,
-              due_date: action.due_date || null,
+          (() => {
+            const nextStatus = resolveCorrectiveActionStatus({
               status: action.status || 'open',
-              ...buildCompletionStatusFields({
-                currentStatus: action.status,
-                nextStatus: action.status || 'open',
-                currentCompletionDate: action.completion_date,
-                currentDeclaredCompletionDate: action.declared_completion_date,
-                declaredCompletionDate: action.declared_completion_date || null,
-              }),
-              updated_by: user.id,
+              declaredCompletionDate: action.declared_completion_date || null,
             })
-            .eq('id', action.id)
+
+            return supabase
+              .from('corrective_actions')
+              .update({
+                description: action.description,
+                responsible_person_id: action.responsible_person_id || null,
+                declared_created_date: action.declared_created_date || null,
+                due_date: action.due_date || null,
+                status: nextStatus,
+                ...buildCompletionStatusFields({
+                  currentStatus: action.status,
+                  nextStatus,
+                  currentCompletionDate: action.completion_date,
+                  currentDeclaredCompletionDate: action.declared_completion_date,
+                  declaredCompletionDate: action.declared_completion_date || null,
+                }),
+                updated_by: user.id,
+              })
+              .eq('id', action.id)
+          })()
         )))
 
         const updateError = updateResults.find(result => result.error)?.error
@@ -713,6 +731,11 @@ export default function IncidentForm() {
 
       if (newActions.length > 0) {
         for (const action of newActions) {
+          const nextStatus = resolveCorrectiveActionStatus({
+            status: action.status || 'open',
+            declaredCompletionDate: action.declared_completion_date || null,
+          })
+
           const { data: insertedAction, error: insertActionsError } = await supabase
             .from('corrective_actions')
             .insert({
@@ -721,10 +744,10 @@ export default function IncidentForm() {
               responsible_person_id: action.responsible_person_id || null,
               declared_created_date: action.declared_created_date || null,
               due_date: action.due_date || null,
-              status: action.status || 'open',
+              status: nextStatus,
               ...buildCompletionStatusFields({
                 currentStatus: 'open',
-                nextStatus: action.status || 'open',
+                nextStatus,
                 currentCompletionDate: null,
                 currentDeclaredCompletionDate: null,
                 declaredCompletionDate: action.declared_completion_date || null,

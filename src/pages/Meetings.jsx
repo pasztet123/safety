@@ -25,6 +25,7 @@ const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
 const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
 const MEETINGS_EXPORT_CHUNK_STORAGE_KEY = 'meetings:export-chunk-size'
 const MEETING_ZIP_EXPORT_LIMIT = 100
+const SERVER_FILTER_DEBOUNCE_MS = 350
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
@@ -195,6 +196,20 @@ const getStoredOption = (storageKey, allowedValues, fallback) => {
   return allowedValues.includes(storedValue) ? storedValue : fallback
 }
 
+const useDebouncedValue = (value, delay = SERVER_FILTER_DEBOUNCE_MS) => {
+  const [debouncedValue, setDebouncedValue] = useState(value)
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedValue(value)
+    }, delay)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [value, delay])
+
+  return debouncedValue
+}
+
 const FilterField = ({ label, span = '', children }) => (
   <div className={[
     'filter-field',
@@ -235,20 +250,26 @@ export default function Meetings() {
   const [meetingPageSize, setMeetingPageSize] = useState(() => getStoredPageSize(MEETINGS_PAGE_SIZE_STORAGE_KEY, 50))
   const [exportChunkSize, setExportChunkSize] = useState(() => getStoredOption(MEETINGS_EXPORT_CHUNK_STORAGE_KEY, MEETING_CHUNK_SIZE_OPTIONS, DEFAULT_MEETING_CHUNK_SIZE))
   const [selectedMeetingIds, setSelectedMeetingIds] = useState(new Set())
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
+
+  const debouncedFilterPerson = useDebouncedValue(filterPerson)
+  const debouncedFilterLeader = useDebouncedValue(filterLeader)
+  const debouncedFilterTopic = useDebouncedValue(filterTopic)
+  const debouncedFilterLocation = useDebouncedValue(filterLocation)
 
   const meetingQueryFilters = useMemo(() => ({
     dateFrom: filterDateFrom,
     dateTo: filterDateTo,
     projectId: filterProject,
     trade: filterTrade,
-    attendeeName: filterPerson,
-    leaderName: filterLeader,
-    topic: filterTopic,
-    location: filterLocation,
+    attendeeName: debouncedFilterPerson,
+    leaderName: debouncedFilterLeader,
+    topic: debouncedFilterTopic,
+    location: debouncedFilterLocation,
     timeRange: filterTimeRange,
     selfTraining: filterSelfTraining,
     sortBy,
-  }), [filterDateFrom, filterDateTo, filterProject, filterTrade, filterPerson, filterLeader, filterTopic, filterLocation, filterTimeRange, filterSelfTraining, sortBy])
+  }), [filterDateFrom, filterDateTo, filterProject, filterTrade, debouncedFilterPerson, debouncedFilterLeader, debouncedFilterTopic, debouncedFilterLocation, filterTimeRange, filterSelfTraining, sortBy])
 
   const filteredMeetings = useMemo(() => {
     let result = [...meetings]
@@ -271,6 +292,7 @@ export default function Meetings() {
   )
 
   const [draftMeetings, setDraftMeetings] = useState([])
+  const [draftsExpanded, setDraftsExpanded] = useState(false)
   const [selectedDraftIds, setSelectedDraftIds] = useState(new Set())
   const [showApproveModal, setShowApproveModal] = useState(false)
   const [draftSearchText, setDraftSearchText] = useState('')
@@ -374,7 +396,7 @@ export default function Meetings() {
   }, [meetingPage, meetingPageSize, meetingQueryFilters, meetingLeaderLookups])
 
   // Reset meeting page when server-side filters change
-  useEffect(() => { setMeetingPage(1) }, [filterTrade, filterPerson, filterLeader, filterProject, filterTopic, filterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
+  useEffect(() => { setMeetingPage(1) }, [filterTrade, debouncedFilterPerson, debouncedFilterLeader, filterProject, debouncedFilterTopic, debouncedFilterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
   // Reset draft page when draft filters/sort change
   useEffect(() => { setDraftPage(1) }, [draftSearchText, draftFilterLeader, draftFilterAttendee, draftFilterTrade, draftFilterProject, draftFilterLocation, draftFilterTimeRange, draftFilterSelfTraining, draftDateFrom, draftDateTo, draftSortBy, draftPageSize])
   useEffect(() => {
@@ -494,6 +516,7 @@ export default function Meetings() {
       setMeetings([])
       setMeetingTotalCount(0)
     } finally {
+      setHasLoadedOnce(true)
       setLoading(false)
     }
   }
@@ -1046,7 +1069,7 @@ export default function Meetings() {
     }
   }
 
-  if (loading) return <div className="spinner"></div>
+  if (loading && !hasLoadedOnce) return <div className="spinner"></div>
 
   const buildMeetingExportScopeLabel = () => {
     const parts = []
@@ -1305,41 +1328,64 @@ export default function Meetings() {
       </div>
 
       {/* ── DRAFTS SECTION (admin only) ── */}
-      {isAdmin && (draftMeetings.length > 0 || meetings.length > 0) && (
+      {isAdmin && (
         <div className="drafts-section">
-          <div className="drafts-header">
+          <div className={`drafts-header ${draftsExpanded ? '' : 'drafts-header--collapsed'}`.trim()}>
             <h3 className="drafts-title">
               Drafts
               <span className="drafts-badge">{draftMeetings.length}</span>
             </h3>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {syncResult && (
-                <span style={{ fontSize: '12px', color: '#6b7280' }}>{syncResult}</span>
-              )}
               <button
-                className="btn btn-secondary btn-sm"
-                onClick={handleSyncDrafts}
-                disabled={syncRunning}
-                title="Fix draft signatures/leaders, delete duplicate drafts, and move contaminated approved self-trainings back to draft"
+                type="button"
+                className="drafts-toggle-btn"
+                onClick={() => setDraftsExpanded(prev => !prev)}
+                aria-expanded={draftsExpanded}
+                aria-controls="meetings-drafts-panel"
+                aria-label={draftsExpanded ? 'Collapse drafts' : 'Expand drafts'}
+                title={draftsExpanded ? 'Collapse drafts' : 'Expand drafts'}
               >
-                {syncRunning ? '⟳ Syncing…' : '⟳ Sync & fix the data'}
-              </button>
-              {selectedDraftIds.size > 0 && (
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={handleApproveSelected}
-                >
-                  Approve Selected ({selectedDraftIds.size})
-                </button>
-              )}
-              <button className="btn btn-primary btn-sm" onClick={handleApproveAll}>
-                Approve All
+                <svg viewBox="0 0 20 20" aria-hidden="true" className={`drafts-toggle-icon ${draftsExpanded ? 'is-expanded' : ''}`.trim()}>
+                  <path d="M5 7.5 10 12.5 15 7.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </button>
             </div>
           </div>
 
+          {draftsExpanded && (
+            <>
           {/* Draft filter bar */}
-          <div className="draft-filter-bar draft-filter-bar--stacked">
+          <div id="meetings-drafts-panel" className="draft-filter-bar draft-filter-bar--stacked">
+            <div className="drafts-panel-actions">
+              <div className="drafts-panel-actions-group">
+                <button
+                  className="btn btn-secondary btn-sm drafts-sync-btn"
+                  onClick={handleSyncDrafts}
+                  disabled={syncRunning}
+                  title="Fix draft signatures/leaders, delete duplicate drafts, and move contaminated approved self-trainings back to draft"
+                >
+                  <svg viewBox="0 0 20 20" aria-hidden="true" className={`drafts-sync-icon ${syncRunning ? 'is-spinning' : ''}`.trim()}>
+                    <path d="M16.8 10a6.8 6.8 0 1 1-2-4.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M13 3.2h3.8V7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <span>{syncRunning ? 'Syncing…' : 'Sync & fix the data'}</span>
+                </button>
+                {selectedDraftIds.size > 0 && draftMeetings.length > 0 && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={handleApproveSelected}
+                  >
+                    Approve Selected ({selectedDraftIds.size})
+                  </button>
+                )}
+                <button className="btn btn-primary btn-sm" onClick={handleApproveAll} disabled={draftMeetings.length === 0}>
+                  Approve All
+                </button>
+              </div>
+              {syncResult && (
+                <span className="drafts-sync-result">{syncResult}</span>
+              )}
+            </div>
             <div className="filter-grid filter-grid--top filter-grid--draft-top">
               <FilterField label="Search">
                 <input
@@ -1459,6 +1505,9 @@ export default function Meetings() {
             </div>
           </div>
 
+          {draftMeetings.length === 0 ? (
+            <div className="drafts-empty-state">No draft meetings.</div>
+          ) : (
           <div className="drafts-table-wrap">
             <table className="drafts-table">
               <thead>
@@ -1537,8 +1586,9 @@ export default function Meetings() {
               </tbody>
             </table>
           </div>
+          )}
 
-          {draftTotalPages > 1 && (
+          {draftMeetings.length > 0 && draftTotalPages > 1 && (
             <div className="pagination-bar">
               <span className="pagination-info">Page {draftPage} of {draftTotalPages}</span>
               <div className="pagination-controls">
@@ -1548,6 +1598,8 @@ export default function Meetings() {
                 <button className="btn btn-secondary btn-sm" onClick={() => setDraftPage(draftTotalPages)} disabled={draftPage === draftTotalPages}>Last »</button>
               </div>
             </div>
+          )}
+            </>
           )}
         </div>
       )}
@@ -1694,7 +1746,7 @@ export default function Meetings() {
             )}
           </div>
           <span className="pagination-info meetings-filter-summary filter-summary-pill">
-            {getPageRangeLabel(meetingPage, meetingPageSize, meetingTotalCount)} total
+            {getPageRangeLabel(meetingPage, meetingPageSize, meetingTotalCount)} total{loading ? ' · Updating…' : ''}
           </span>
         </div>
         {searchText && (

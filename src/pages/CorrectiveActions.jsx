@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '../lib/correctiveActionPhotos'
-import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString, promptForDeclaredCompletionDate } from '../lib/correctiveActionDates'
+import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString, promptForDeclaredCompletionDate, resolveCorrectiveActionStatus } from '../lib/correctiveActionDates'
 import { downloadCorrectiveActionsListPDF } from '../lib/pdfBulkGenerator'
 import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
 import './CorrectiveActions.css'
@@ -21,6 +21,10 @@ const createEmptyAction = () => ({
 
 const normalizeActionForState = (action) => ({
   ...action,
+  status: resolveCorrectiveActionStatus({
+    status: action.status,
+    declaredCompletionDate: getDeclaredCompletionDate(action),
+  }),
   photos: normalizeCorrectiveActionPhotos(action),
 })
 
@@ -164,7 +168,11 @@ export default function CorrectiveActions() {
     if (!isAdmin) return
 
     const { data: { user } } = await supabase.auth.getUser()
-    const newStatus = action.status === 'open' ? 'completed' : 'open'
+    const currentStatus = resolveCorrectiveActionStatus({
+      status: action.status,
+      declaredCompletionDate: getDeclaredCompletionDate(action),
+    })
+    const newStatus = currentStatus === 'open' ? 'completed' : 'open'
     const declaredCompletionDate = newStatus === 'completed'
       ? promptForDeclaredCompletionDate(getDeclaredCompletionDate(action) || getTodayDateString())
       : null
@@ -174,7 +182,7 @@ export default function CorrectiveActions() {
     const updateData = {
       status: newStatus,
       ...buildCompletionStatusFields({
-        currentStatus: action.status,
+        currentStatus,
         nextStatus: newStatus,
         currentCompletionDate: action.completion_date,
         currentDeclaredCompletionDate: action.declared_completion_date,
@@ -204,14 +212,18 @@ export default function CorrectiveActions() {
   }
 
   const handleStartEdit = (action) => {
+    const declaredCompletionDate = getDeclaredCompletionDate(action) || ''
     setEditingActionId(action.id)
     setEditForm({
       description: action.description,
       responsible_person_id: action.responsible_person_id || '',
       declared_created_date: action.declared_created_date || '',
-      declared_completion_date: getDeclaredCompletionDate(action) || '',
+      declared_completion_date: declaredCompletionDate,
       due_date: action.due_date || '',
-      status: action.status,
+      status: resolveCorrectiveActionStatus({
+        status: action.status,
+        declaredCompletionDate,
+      }),
       completion_date: action.completion_date || null,
       photos: action.photos || [],
     })
@@ -307,6 +319,10 @@ export default function CorrectiveActions() {
   const handleSaveEdit = async (actionId) => {
     const { data: { user } } = await supabase.auth.getUser()
     const existingAction = actions.find((action) => action.id === actionId)
+    const nextStatus = resolveCorrectiveActionStatus({
+      status: editForm.status,
+      declaredCompletionDate: editForm.declared_completion_date || null,
+    })
 
     let responsiblePersonId = null
     let syncedPerson = null
@@ -334,10 +350,10 @@ export default function CorrectiveActions() {
         responsible_person_id: responsiblePersonId,
         declared_created_date: editForm.declared_created_date || null,
         due_date: editForm.due_date || null,
-        status: editForm.status,
+        status: nextStatus,
         ...buildCompletionStatusFields({
           currentStatus: existingAction?.status,
-          nextStatus: editForm.status,
+          nextStatus,
           currentCompletionDate: existingAction?.completion_date,
           currentDeclaredCompletionDate: existingAction?.declared_completion_date,
           declaredCompletionDate: editForm.declared_completion_date || null,
@@ -680,7 +696,17 @@ export default function CorrectiveActions() {
                         <select
                           className="form-select"
                           value={editForm.status}
-                          onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                          onChange={e => {
+                            const nextStatus = e.target.value
+                            setEditForm({
+                              ...editForm,
+                              status: nextStatus,
+                              declared_completion_date: nextStatus === 'completed'
+                                ? (editForm.declared_completion_date || getTodayDateString())
+                                : '',
+                              completion_date: nextStatus === 'completed' ? editForm.completion_date : null,
+                            })
+                          }}
                         >
                           <option value="open">Open</option>
                           <option value="completed">Completed</option>
@@ -779,12 +805,12 @@ export default function CorrectiveActions() {
                           <strong>Due:</strong> {new Date(action.due_date).toLocaleDateString()}
                         </span>
                       )}
-                      {getDeclaredCompletionDate(action) && (
+                      {action.status === 'completed' && getDeclaredCompletionDate(action) && (
                         <span className="meta-item">
                           <strong>Completed:</strong> {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}
                         </span>
                       )}
-                      {action.completion_date && (
+                      {action.status === 'completed' && action.completion_date && (
                         <span className="meta-item">
                           <strong>Marked completed:</strong> {new Date(action.completion_date).toLocaleDateString()}
                         </span>

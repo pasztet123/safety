@@ -15,6 +15,11 @@ export const isValidDateInput = (value) => {
 
 export const getDeclaredCompletionDate = (action) => action?.declared_completion_date || action?.completion_date || null
 
+export const resolveCorrectiveActionStatus = ({ status, declaredCompletionDate }) => {
+  if (declaredCompletionDate) return 'completed'
+  return status || 'open'
+}
+
 export const buildCompletionStatusFields = ({
   currentStatus,
   nextStatus,

@@ -1555,6 +1555,7 @@ tbody tr:last-child td {
   padding: 24px;
   background: rgba(15, 23, 42, 0.42);
   backdrop-filter: blur(2px);
+  overflow-y: auto;
 }
 
 .analytics-day-modal {
@@ -1562,12 +1563,14 @@ tbody tr:last-child td {
   max-height: min(78vh, 720px);
   overflow: hidden;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
   background: #fff;
   border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 16px;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
   padding: 20px;
+  min-height: 0;
 }
 
 .analytics-day-modal-header {
@@ -1604,6 +1607,9 @@ tbody tr:last-child td {
   gap: 10px;
   overflow-y: auto;
   padding-right: 4px;
+  min-height: 0;
+  max-height: 100%;
+  overscroll-behavior: contain;
 }
 
 .analytics-day-meeting-item {
@@ -1740,6 +1746,8 @@ tbody tr:last-child td {
   }
 
   .analytics-day-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
     padding: 16px;
   }
 
