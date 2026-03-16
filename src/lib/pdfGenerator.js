@@ -4,7 +4,7 @@ import { createPdfExportContext } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
 import { LEGAL_CONFIRMATION_CLAUSE, getMeetingTopicAttestationClause } from './legal'
 import { generateClientUuid } from './compliance'
-import { formatDateOnly, formatDateTimeInTimeZone } from './dateTime'
+import { formatDateOnly, formatDateTimeInTimeZone, normalizeDateOnlyValue } from './dateTime'
 import { normalizeIncidentPhotos } from './incidentPhotos'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
@@ -506,12 +506,12 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
 export const generateMeetingPDF = async (meeting) => {
   const confirmed = await confirmEvidencePdfExport({
     title: 'This export contains a meeting and safety survey record.',
-    details: `${meeting.topic || 'Safety meeting'}${meeting.date ? ` · ${new Date(meeting.date).toLocaleDateString('en-US')}` : ''}`,
+    details: `${meeting.topic || 'Safety meeting'}${meeting.date ? ` · ${formatDateOnly(meeting.date, { locale: 'en-US', fallback: meeting.date })}` : ''}`,
   })
   if (!confirmed) return
 
   const slug = (meeting.topic || 'meeting').replace(/\s+/g, '-')
-  const datePart = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : 'nodate'
+  const datePart = meeting.date ? normalizeDateOnlyValue(meeting.date, { fallback: 'nodate' }) : 'nodate'
   const fileName = 'meeting-' + slug + '-' + datePart + '.pdf'
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.meeting',
@@ -536,7 +536,7 @@ export const generateIncidentPDF = async (incident) => {
   })
   if (!confirmed) return
 
-  const dateStr = incident.date ? new Date(incident.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
+  const dateStr = incident.date ? formatDateOnly(incident.date, { locale: 'en-US', options: { year:'numeric', month:'long', day:'numeric' }, fallback: incident.date }) : ''
   const sev = incident.severity || ''
   const sevClass = 'sev-' + (sev.toLowerCase() || 'medium')
   const SEV_LABELS = {
@@ -560,7 +560,7 @@ export const generateIncidentPDF = async (incident) => {
     : ''
 
   const slug = (incident.type_name || 'incident').replace(/\s+/g, '-')
-  const datePart = incident.date ? new Date(incident.date).toISOString().split('T')[0] : 'nodate'
+  const datePart = incident.date ? normalizeDateOnlyValue(incident.date, { fallback: 'nodate' }) : 'nodate'
   const fileName = 'incident-' + slug + '-' + datePart + '.pdf'
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.incident',

@@ -426,13 +426,13 @@ export default function IncidentDetails() {
                       </span>
                     )}
                     {action.due_date && (
-                      <span className="ica-tag ica-tag--date">Due {new Date(action.due_date).toLocaleDateString()}</span>
+                      <span className="ica-tag ica-tag--date">Due {formatDateOnly(action.due_date, { fallback: action.due_date })}</span>
                     )}
                     {getCorrectiveActionPhotoCount(action) > 0 && (
                       <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
                     )}
                     {getDeclaredCompletionDate(action) && (
-                      <span className="ica-tag ica-tag--done">Completed {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}</span>
+                      <span className="ica-tag ica-tag--done">Completed {formatDateOnly(getDeclaredCompletionDate(action), { fallback: getDeclaredCompletionDate(action) })}</span>
                     )}
                   </div>
                   {getCorrectiveActionPhotoCount(action) > 0 && (
@@ -476,7 +476,7 @@ export default function IncidentDetails() {
                     <div className="if-action-meta">
                       <span>Recipient: {involvedPersons.find(person => person.id === action.recipient_person_id)?.name || 'Unknown'}</span>
                       <span>Worker performing the meeting: {leaders.find(leader => leader.id === action.responsible_leader_id)?.name || 'Unknown'}</span>
-                      <span>Date: {new Date(action.action_date).toLocaleDateString()}</span>
+                      <span>Date: {formatDateOnly(action.action_date, { fallback: action.action_date })}</span>
                       <span>Time: {(action.action_time || '').slice(0, 5)}</span>
                     </div>
                     {action.action_notes && (

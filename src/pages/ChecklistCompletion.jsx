@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { LegalClauseNotice } from '../components/LegalNotice'
 import { supabase } from '../lib/supabase'
+import { dateTimeInputToUtcIsoString, getDateTimeInputValueForTimeZone } from '../lib/dateTime'
 import SignaturePad from '../components/SignaturePad'
 import './ChecklistCompletion.css'
 
@@ -32,13 +33,7 @@ export default function ChecklistCompletion() {
 
   // Set default datetime to current date/time
   useEffect(() => {
-    const now = new Date()
-    const year = now.getFullYear()
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    const day = String(now.getDate()).padStart(2, '0')
-    const hours = String(now.getHours()).padStart(2, '0')
-    const minutes = String(now.getMinutes()).padStart(2, '0')
-    setCompletionDateTime(`${year}-${month}-${day}T${hours}:${minutes}`)
+    setCompletionDateTime(getDateTimeInputValueForTimeZone(new Date()))
   }, [])
 
   useEffect(() => {
@@ -225,7 +220,7 @@ export default function ChecklistCompletion() {
         checklist_id: id,
         project_id: projectId || null,
         completed_by: user.id,
-        completion_datetime: completionDateTime,
+        completion_datetime: dateTimeInputToUtcIsoString(completionDateTime),
         notes: notes,
         signer_name: selectedPersonName || null,
         signer_type: selectedPersonName ? signerType : null,

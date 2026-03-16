@@ -16,7 +16,7 @@ import {
 } from './pdfGenerator'
 import { createPdfExportContext, generateClientUuid } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
-import { formatDateOnly, formatDateTimeInTimeZone } from './dateTime'
+import { formatDateOnly, formatDateTimeInTimeZone, getCurrentDateInputValue, getDateOnlyParts } from './dateTime'
 import { getMeetingTopicAttestationClause } from './legal'
 import { supabase } from './supabase'
 
@@ -31,7 +31,10 @@ const fmtDateShort = (d) =>
   d ? formatDateOnly(d, { locale: 'en-US', options: { year:'numeric', month:'short', day:'numeric' } }) : '—'
 
 const todayStr = () =>
-  new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
+  formatDateTimeInTimeZone(new Date(), {
+    locale: 'en-US',
+    options: { year:'numeric', month:'long', day:'numeric' },
+  })
 
 const SEV_LABELS = {
   lost_time: 'Lost Time', first_aid: 'First Aid', near_miss: 'Near Miss',
@@ -166,7 +169,7 @@ const downloadChunkedListPDFZIP = async ({
   if (!confirmed) return
 
   const zip = new JSZip()
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
 
   for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
     if (shouldCancel()) throw new Error('Cancelled')
@@ -232,7 +235,7 @@ const downloadRecordsAsZIP = async ({
   if (!confirmed) return
 
   const zip = new JSZip()
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
 
   for (let index = 0; index < safeRecords.length; index += 1) {
     if (shouldCancel()) throw new Error('Cancelled')
@@ -287,7 +290,7 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
   }
 
   const slug = title.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'')
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `meetings-${slug}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.meetings_list',
@@ -301,9 +304,11 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
   })
 
   const cardsHTML = meetings.map(m => {
-    const d = m.date ? new Date(m.date) : null
-    const day = d ? d.getDate().toString().padStart(2,'0') : '??'
-    const mon = d ? d.toLocaleDateString('en-US',{month:'short',year:'2-digit'}).toUpperCase() : ''
+    const dateParts = getDateOnlyParts(m.date)
+    const day = dateParts ? String(dateParts.day).padStart(2, '0') : '??'
+    const mon = m.date
+      ? formatDateOnly(m.date, { locale: 'en-US', options: { month:'short', year:'2-digit' }, fallback: '' }).toUpperCase()
+      : ''
     const attendeeNames = (m.attendees || []).map(a => esc(a.name)).filter(Boolean)
     const checklistNames = (m.checklists || []).map(c => esc(c.name)).filter(Boolean)
 
@@ -377,7 +382,7 @@ export const downloadChunkedMeetingListPDFZIP = async ({
   if (!confirmed) return
 
   const zip = new JSZip()
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
 
   for (let chunkIndex = 0; chunkIndex < chunkCount; chunkIndex += 1) {
     if (shouldCancel()) throw new Error('Cancelled')
@@ -563,7 +568,7 @@ const _renderChunkIntoDoc = async (html, doc, addPageBeforeFirstSlice) => {
  * Each topic is rendered independently (prevents canvas-size overflow → black pages).
  */
 export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety Topics Brochure') => {
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `safety-topics-brochure-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.safety_topics_brochure',
@@ -658,7 +663,7 @@ const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subti
     if (!confirmed) return null
   }
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.incidents_list',
@@ -793,7 +798,7 @@ const buildCorrectiveActionsListPDF = async (actions, persons = [], incidents = 
     if (!confirmed) return null
   }
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.corrective_actions_list',
@@ -939,7 +944,7 @@ const buildDisciplinaryActionsListPDF = async (
     if (!confirmed) return null
   }
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.disciplinary_actions_list',
@@ -973,7 +978,6 @@ const buildDisciplinaryActionsListPDF = async (
         <div class="act-meta">
           ${recipient ? `Recipient: <strong>${esc(recipient)}</strong>` : 'Recipient: —'}
           ${leader ? ` · Worker performing the meeting: <strong>${esc(leader)}</strong>` : ''}
-          ${incident?.employee_name ? ` · Violator: ${esc(incident.employee_name)}` : ''}
         </div>
         ${action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}
       </div>
@@ -1091,7 +1095,7 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
   })
   if (!confirmed) return
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const filename = `checklist-history-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.checklist_history_list',
@@ -1257,7 +1261,7 @@ export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => 
 
   onProgress(total, total)
 
-  const dateStr = new Date().toISOString().split('T')[0]
+  const dateStr = getCurrentDateInputValue()
   const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } })
   saveAs(blob, `export_${dateStr}.zip`)
 }

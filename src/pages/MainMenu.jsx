@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { formatDateOnly, formatDateTimeInTimeZone } from '../lib/dateTime'
 import { formatElapsedSince, getToolboxMeetingReminderForCurrentUser } from '../lib/personProfiles'
 import './MainMenu.css'
 
@@ -240,14 +241,14 @@ export default function MainMenu() {
         ...(acts.data || []).map(a => ({
           type: 'action',
           label: (a.description || '').slice(0, 55) + ((a.description || '').length > 55 ? '…' : ''),
-          sub: a.due_date ? `Due ${new Date(a.due_date).toLocaleDateString('en-US')}` : (a.status === 'completed' ? 'Completed' : 'Open'),
+          sub: a.due_date ? `Due ${formatDateOnly(a.due_date, { locale: 'en-US', fallback: a.due_date })}` : (a.status === 'completed' ? 'Completed' : 'Open'),
           ts: a.declared_created_date || a.due_date,
           path: '/corrective-actions',
         })),
         ...(disciplinary.data || []).map(a => ({
           type: 'disciplinary',
           label: a.action_type,
-          sub: a.action_date ? `Action date ${new Date(a.action_date).toLocaleDateString('en-US')}` : 'Disciplinary action',
+          sub: a.action_date ? `Action date ${formatDateOnly(a.action_date, { locale: 'en-US', fallback: a.action_date })}` : 'Disciplinary action',
           ts: a.action_date, path: '/disciplinary-actions',
         })),
       ].filter(item => item.ts).sort((a, b) => new Date(b.ts) - new Date(a.ts)).slice(0, 5)
@@ -358,7 +359,7 @@ export default function MainMenu() {
             <h3 className="toolbox-reminder-title">A new meeting and safety survey is due for {toolboxReminder.displayName}.</h3>
             <p className="toolbox-reminder-copy">
               {toolboxReminder.latestMeetingAt
-                ? `The last non-deleted meeting and safety survey linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${new Date(toolboxReminder.latestMeetingAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}.`
+                ? `The last non-deleted meeting and safety survey linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${formatDateTimeInTimeZone(toolboxReminder.latestMeetingAt, { locale: 'en-US', options: { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }, fallback: toolboxReminder.latestMeetingAt })}.`
                 : 'No previous non-deleted meeting and safety survey was found for this linked user.'}
             </p>
             <div className="toolbox-reminder-stats">

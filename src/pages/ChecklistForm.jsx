@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchTrades, ensureTrade } from '../lib/trades'
 import { SAFETY_CATEGORIES } from '../lib/categories'
+import { formatDateTimeInTimeZone } from '../lib/dateTime'
 import './ChecklistForm.css'
 
 export default function ChecklistForm() {
@@ -515,7 +516,17 @@ export default function ChecklistForm() {
                       <div className="completion-header">
                         <div>
                           <p className="completion-date">
-                            {new Date(completion.completed_at).toLocaleString()}
+                            {formatDateTimeInTimeZone(completion.completed_at, {
+                              locale: 'en-US',
+                              options: {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              },
+                              fallback: completion.completed_at,
+                            })}
                           </p>
                           {completion.project && (
                             <p className="completion-project">Project: {completion.project.name}</p>

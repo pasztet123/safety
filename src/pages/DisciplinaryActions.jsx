@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { DISCIPLINARY_ACTION_TYPES, SAFETY_VIOLATION_OPTIONS, createEmptyDisciplinaryAction } from '../lib/disciplinary'
 import { downloadDisciplinaryActionsListPDF } from '../lib/pdfBulkGenerator'
+import { formatDateOnly } from '../lib/dateTime'
 import './DisciplinaryActions.css'
 
 export default function DisciplinaryActions() {
@@ -337,7 +338,7 @@ export default function DisciplinaryActions() {
                 <option value="">Select incident</option>
                 {incidents.map(incident => (
                   <option key={incident.id} value={incident.id}>
-                    {incident.safety_violation_type || 'Safety violation'} - {incident.employee_name} - {new Date(incident.date).toLocaleDateString()}
+                      {incident.safety_violation_type || 'Safety violation'} - {incident.employee_name} - {formatDateOnly(incident.date, { fallback: incident.date })}
                   </option>
                 ))}
               </select>
@@ -440,7 +441,7 @@ export default function DisciplinaryActions() {
                       </p>
                     </div>
                     <div className="disciplinary-date-block">
-                      <strong>{new Date(action.action_date).toLocaleDateString()}</strong>
+                      <strong>{formatDateOnly(action.action_date, { fallback: action.action_date })}</strong>
                       <span>{(action.action_time || '').slice(0, 5)}</span>
                     </div>
                   </div>
@@ -528,7 +529,7 @@ export default function DisciplinaryActions() {
                       <div className="action-meta-grid disciplinary-meta-grid">
                         <div><strong>Recipient:</strong> {getPersonName(action.recipient_person_id)}</div>
                         <div><strong>Worker performing the meeting:</strong> {getLeaderName(action.responsible_leader_id)}</div>
-                        <div><strong>Incident:</strong> {incident ? `${incident.employee_name} on ${new Date(incident.date).toLocaleDateString()}` : 'Unknown'}</div>
+                        <div><strong>Incident:</strong> {incident ? `${incident.employee_name} on ${formatDateOnly(incident.date, { fallback: incident.date })}` : 'Unknown'}</div>
                         <div><strong>Violation:</strong> {incident?.safety_violation_type || 'Unknown'}</div>
                       </div>
                       {action.action_notes && <p className="disciplinary-notes">{action.action_notes}</p>}

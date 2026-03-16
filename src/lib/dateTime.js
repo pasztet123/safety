@@ -85,6 +85,26 @@ export const formatDateOnly = (value, {
   return getFormatter(locale, 'UTC', options).format(dateFromDateOnlyParts(parts))
 }
 
+export const normalizeDateOnlyValue = (value, { fallback = '' } = {}) => {
+  if (!value) return fallback
+
+  const parts = extractDateOnlyParts(value)
+  if (!parts) return fallback || String(value)
+
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`
+}
+
+export const getDateOnlyParts = (value) => {
+  const parts = extractDateOnlyParts(value)
+  if (!parts) return null
+
+  return {
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+  }
+}
+
 export const formatDateTimeInTimeZone = (value, {
   locale = 'en-US',
   timeZone,
