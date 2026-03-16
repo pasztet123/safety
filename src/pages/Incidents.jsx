@@ -215,7 +215,7 @@ export default function Incidents() {
         <input
           className="filter-search-input"
           type="text"
-          placeholder="Search type, employee, location..."
+          placeholder="Search type, worker, location..."
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
         />
@@ -224,7 +224,7 @@ export default function Incidents() {
           {typesInIncidents.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
         <select value={filterPerson} onChange={e => setFilterPerson(e.target.value)} className="filter-select">
-          <option value="">All employees</option>
+          <option value="">All workers</option>
           {personsInIncidents.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
         <select value={sortBy} onChange={e => setSortBy(e.target.value)} className="filter-select">
@@ -288,7 +288,7 @@ export default function Incidents() {
 
               <div className="incident-details">
                 <div className="incident-detail-item">
-                  <strong>Employee:</strong> {incident.employee_name}
+                  <strong>Worker:</strong> {incident.employee_name}
                 </div>
                 {incident.safety_violation_type && (
                   <div className="incident-detail-item">

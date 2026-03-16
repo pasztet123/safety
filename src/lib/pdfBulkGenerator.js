@@ -129,6 +129,136 @@ const bulkBaseHTML = (content) => `
   <div class="pdf-wrap">${content}</div>
 `
 
+const createSlug = (value, fallback = 'report') => {
+  const normalized = String(value || fallback).toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+  return normalized || fallback
+}
+
+const splitIntoChunks = (items = [], chunkSize = 100) => {
+  const result = []
+  for (let index = 0; index < items.length; index += chunkSize) {
+    result.push(items.slice(index, index + chunkSize))
+  }
+  return result
+}
+
+const downloadChunkedListPDFZIP = async ({
+  records = [],
+  chunkSize = 100,
+  title,
+  subtitle = '',
+  zipBaseName,
+  entityLabel = 'record',
+  confirmTitle,
+  buildChunkPdf,
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  const safeRecords = Array.isArray(records) ? records : []
+  const safeChunkSize = Math.max(1, Number(chunkSize) || 1)
+  if (safeRecords.length === 0 || typeof buildChunkPdf !== 'function') return
+
+  const chunks = splitIntoChunks(safeRecords, safeChunkSize)
+  const confirmed = await confirmEvidencePdfExport({
+    title: confirmTitle,
+    details: `${safeRecords.length} ${entityLabel}${safeRecords.length === 1 ? '' : 's'} · ${chunks.length} PDF part${chunks.length === 1 ? '' : 's'}`,
+  })
+  if (!confirmed) return
+
+  const zip = new JSZip()
+  const dateStr = new Date().toISOString().split('T')[0]
+
+  for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex += 1) {
+    if (shouldCancel()) throw new Error('Cancelled')
+
+    const chunk = chunks[chunkIndex]
+    const recordStart = (chunkIndex * safeChunkSize) + 1
+    const recordEnd = recordStart + chunk.length - 1
+
+    onProgress({
+      done: chunkIndex,
+      total: chunks.length,
+      label: `Preparing ${entityLabel} ${recordStart}-${recordEnd} of ${safeRecords.length}...`,
+    })
+
+    const result = await buildChunkPdf({
+      chunk,
+      chunkIndex,
+      chunkCount: chunks.length,
+      recordStart,
+      recordEnd,
+      totalCount: safeRecords.length,
+      title,
+      subtitle,
+    })
+
+    if (result?.buffer && result?.filename) {
+      zip.file(result.filename, result.buffer)
+    }
+
+    onProgress({
+      done: chunkIndex + 1,
+      total: chunks.length,
+      label: `Built part ${chunkIndex + 1} of ${chunks.length}`,
+    })
+  }
+
+  onProgress({
+    done: chunks.length,
+    total: chunks.length,
+    label: 'Finalizing ZIP...',
+  })
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } })
+  saveAs(blob, `${zipBaseName}-${dateStr}.zip`)
+}
+
+const downloadRecordsAsZIP = async ({
+  records = [],
+  zipBaseName,
+  entityLabel = 'record',
+  confirmTitle,
+  buildRecordPdf,
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  const safeRecords = Array.isArray(records) ? records : []
+  if (safeRecords.length === 0 || typeof buildRecordPdf !== 'function') return
+
+  const confirmed = await confirmEvidencePdfExport({
+    title: confirmTitle,
+    details: `${safeRecords.length} ${entityLabel} PDF${safeRecords.length === 1 ? '' : 's'}`,
+  })
+  if (!confirmed) return
+
+  const zip = new JSZip()
+  const dateStr = new Date().toISOString().split('T')[0]
+
+  for (let index = 0; index < safeRecords.length; index += 1) {
+    if (shouldCancel()) throw new Error('Cancelled')
+
+    onProgress({
+      done: index,
+      total: safeRecords.length,
+      label: `Building ${entityLabel} ${index + 1} of ${safeRecords.length}...`,
+    })
+
+    const result = await buildRecordPdf(safeRecords[index], index)
+    if (result?.buffer && result?.filename) {
+      zip.file(result.filename, result.buffer)
+    }
+  }
+
+  onProgress({
+    done: safeRecords.length,
+    total: safeRecords.length,
+    label: 'Finalizing ZIP...',
+  })
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } })
+  saveAs(blob, `${zipBaseName}-${dateStr}.zip`)
+}
+
 // ─── Meeting List PDF ─────────────────────────────────────────────────────────
 
 /**
@@ -512,15 +642,24 @@ export const downloadSafetyTopicsBrochurePDF = async (topics, title = 'Safety To
   saveAs(new Blob([doc.output('arraybuffer')], { type: 'application/pdf' }), filename)
 }
 
-export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {
-  const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains incident records.',
-    details: `${incidents.length} incident${incidents.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
-  })
-  if (!confirmed) return
+const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '', options = {}) => {
+  const {
+    confirmExport = true,
+    fileNameSuffix = '',
+    metadata = {},
+    fileNameBase = 'incidents-report',
+  } = options
+
+  if (confirmExport) {
+    const confirmed = await confirmEvidencePdfExport({
+      title: 'This export contains incident records.',
+      details: `${incidents.length} incident${incidents.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+    })
+    if (!confirmed) return null
+  }
 
   const dateStr = new Date().toISOString().split('T')[0]
-  const filename = `incidents-report-${dateStr}.pdf`
+  const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.incidents_list',
     fileName: filename,
@@ -528,6 +667,7 @@ export const downloadIncidentListPDF = async (incidents, title = 'Incidents Repo
       report_title: title,
       report_subtitle: subtitle || null,
       record_count: incidents.length,
+      ...metadata,
     },
   })
 
@@ -570,20 +710,91 @@ export const downloadIncidentListPDF = async (incidents, title = 'Incidents Repo
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
+  return { buffer: buf, filename }
+}
+
+export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {
+  const result = await buildIncidentListPDF(incidents, title, subtitle)
+  if (!result?.buffer || !result?.filename) return
+  saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
+}
+
+export const downloadChunkedIncidentListPDFZIP = async ({
+  incidents = [],
+  chunkSize = 100,
+  title = 'Incidents Report',
+  subtitle = '',
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  await downloadChunkedListPDFZIP({
+    records: incidents,
+    chunkSize,
+    title,
+    subtitle,
+    zipBaseName: `incidents-${createSlug(title, 'report')}-chunked`,
+    entityLabel: 'incident',
+    confirmTitle: 'This export contains incident records split across multiple list PDFs.',
+    onProgress,
+    shouldCancel,
+    buildChunkPdf: ({ chunk, chunkIndex, chunkCount, recordStart, recordEnd, totalCount, title: chunkTitle, subtitle: chunkSubtitle }) => buildIncidentListPDF(
+      chunk,
+      chunkTitle,
+      [chunkSubtitle, `Part ${chunkIndex + 1} of ${chunkCount}`, `${recordStart}-${recordEnd} of ${totalCount}`].filter(Boolean).join(' · '),
+      {
+        confirmExport: false,
+        fileNameSuffix: `part-${String(chunkIndex + 1).padStart(2, '0')}`,
+        metadata: {
+          chunk_index: chunkIndex + 1,
+          chunk_total: chunkCount,
+          chunk_start: recordStart,
+          chunk_end: recordEnd,
+        },
+      },
+    ),
+  })
+}
+
+export const downloadIncidentsAsZIP = async (incidents, { onProgress = () => {}, shouldCancel = () => false } = {}) => {
+  await downloadRecordsAsZIP({
+    records: incidents,
+    zipBaseName: 'incident-records',
+    entityLabel: 'incident',
+    confirmTitle: 'This export contains incident records in a ZIP archive.',
+    onProgress,
+    shouldCancel,
+    buildRecordPdf: (incident, index) => buildIncidentListPDF(
+      [incident],
+      incident.type_name || `Incident ${index + 1}`,
+      incident.employee_name || '',
+      {
+        confirmExport: false,
+        fileNameBase: `${String(index + 1).padStart(3, '0')}-${createSlug(incident.type_name || incident.employee_name || 'incident', 'incident')}`,
+      },
+    ),
+  })
 }
 
 // ─── Corrective Actions List PDF ──────────────────────────────────────────────
 
-export const downloadCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '') => {
-  const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains corrective action records.',
-    details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
-  })
-  if (!confirmed) return
+const buildCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '', options = {}) => {
+  const {
+    confirmExport = true,
+    fileNameSuffix = '',
+    metadata = {},
+    fileNameBase = 'corrective-actions',
+  } = options
+
+  if (confirmExport) {
+    const confirmed = await confirmEvidencePdfExport({
+      title: 'This export contains corrective action records.',
+      details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+    })
+    if (!confirmed) return null
+  }
 
   const dateStr = new Date().toISOString().split('T')[0]
-  const filename = `corrective-actions-${dateStr}.pdf`
+  const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.corrective_actions_list',
     fileName: filename,
@@ -591,6 +802,7 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
       report_title: title,
       report_subtitle: subtitle || null,
       record_count: actions.length,
+      ...metadata,
     },
   })
 
@@ -611,7 +823,6 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
           ${person ? `Assigned to: <strong>${esc(person)}</strong> · ` : ''}
           ${act.due_date ? `Due: ${fmtDateShort(act.due_date)}` : ''}
           ${isComplete && (act.declared_completion_date || act.completion_date) ? ` · Completed: ${fmtDateShort(act.declared_completion_date || act.completion_date)}` : ''}
-          ${isComplete && act.declared_completion_date && act.completion_date ? ` · Marked completed: ${fmtDateShort(act.completion_date)}` : ''}
           ${inc ? ` · Incident: ${esc(inc.type_name||(inc.id||''))} (${fmtDateShort(inc.date)})` : ''}
         </div>
       </div>
@@ -633,25 +844,103 @@ export const downloadCorrectiveActionsListPDF = async (actions, persons = [], in
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
+  return { buffer: buf, filename }
 }
 
-export const downloadDisciplinaryActionsListPDF = async (
+export const downloadCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '') => {
+  const result = await buildCorrectiveActionsListPDF(actions, persons, incidents, title, subtitle)
+  if (!result?.buffer || !result?.filename) return
+  saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
+}
+
+export const downloadChunkedCorrectiveActionsListPDFZIP = async ({
+  actions = [],
+  persons = [],
+  incidents = [],
+  chunkSize = 100,
+  title = 'Corrective Actions Report',
+  subtitle = '',
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  await downloadChunkedListPDFZIP({
+    records: actions,
+    chunkSize,
+    title,
+    subtitle,
+    zipBaseName: `corrective-actions-${createSlug(title, 'report')}-chunked`,
+    entityLabel: 'action',
+    confirmTitle: 'This export contains corrective action records split across multiple list PDFs.',
+    onProgress,
+    shouldCancel,
+    buildChunkPdf: ({ chunk, chunkIndex, chunkCount, recordStart, recordEnd, totalCount, title: chunkTitle, subtitle: chunkSubtitle }) => buildCorrectiveActionsListPDF(
+      chunk,
+      persons,
+      incidents,
+      chunkTitle,
+      [chunkSubtitle, `Part ${chunkIndex + 1} of ${chunkCount}`, `${recordStart}-${recordEnd} of ${totalCount}`].filter(Boolean).join(' · '),
+      {
+        confirmExport: false,
+        fileNameSuffix: `part-${String(chunkIndex + 1).padStart(2, '0')}`,
+        metadata: {
+          chunk_index: chunkIndex + 1,
+          chunk_total: chunkCount,
+          chunk_start: recordStart,
+          chunk_end: recordEnd,
+        },
+      },
+    ),
+  })
+}
+
+export const downloadCorrectiveActionsAsZIP = async (actions, persons = [], incidents = [], { onProgress = () => {}, shouldCancel = () => false } = {}) => {
+  await downloadRecordsAsZIP({
+    records: actions,
+    zipBaseName: 'corrective-actions-records',
+    entityLabel: 'action',
+    confirmTitle: 'This export contains corrective action records in a ZIP archive.',
+    onProgress,
+    shouldCancel,
+    buildRecordPdf: (action, index) => buildCorrectiveActionsListPDF(
+      [action],
+      persons,
+      incidents,
+      action.description || `Corrective Action ${index + 1}`,
+      '',
+      {
+        confirmExport: false,
+        fileNameBase: `${String(index + 1).padStart(3, '0')}-${createSlug(action.description || 'corrective-action', 'corrective-action')}`,
+      },
+    ),
+  })
+}
+
+const buildDisciplinaryActionsListPDF = async (
   actions,
   persons = [],
   leaders = [],
   incidents = [],
   title = 'Disciplinary Actions Report',
-  subtitle = ''
+  subtitle = '',
+  options = {}
 ) => {
-  const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains disciplinary action records.',
-    details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
-  })
-  if (!confirmed) return
+  const {
+    confirmExport = true,
+    fileNameSuffix = '',
+    metadata = {},
+    fileNameBase = 'disciplinary-actions',
+  } = options
+
+  if (confirmExport) {
+    const confirmed = await confirmEvidencePdfExport({
+      title: 'This export contains disciplinary action records.',
+      details: `${actions.length} action${actions.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+    })
+    if (!confirmed) return null
+  }
 
   const dateStr = new Date().toISOString().split('T')[0]
-  const filename = `disciplinary-actions-${dateStr}.pdf`
+  const filename = `${fileNameBase}${fileNameSuffix ? `-${fileNameSuffix}` : ''}-${dateStr}.pdf`
   const exportMeta = await createPdfExportContext({
     eventType: 'pdf_export.disciplinary_actions_list',
     fileName: filename,
@@ -659,6 +948,7 @@ export const downloadDisciplinaryActionsListPDF = async (
       report_title: title,
       report_subtitle: subtitle || null,
       record_count: actions.length,
+      ...metadata,
     },
   })
 
@@ -675,6 +965,7 @@ export const downloadDisciplinaryActionsListPDF = async (
         <div class="act-desc">${esc(action.action_type)}</div>
         <div class="act-meta">
           ${incident?.safety_violation_type ? `Violation: <strong>${esc(incident.safety_violation_type)}</strong>` : 'Violation: —'}
+          ${incident?.project?.name ? ` · Project: <strong>${esc(incident.project.name)}</strong>` : ''}
           ${incident?.date ? ` · Incident: ${fmtDateShort(incident.date)}` : ''}
           ${action.action_date ? ` · Action date: ${fmtDateShort(action.action_date)}` : ''}
           ${action.action_time ? ` · Time: ${esc(String(action.action_time).slice(0, 5))}` : ''}
@@ -682,7 +973,7 @@ export const downloadDisciplinaryActionsListPDF = async (
         <div class="act-meta">
           ${recipient ? `Recipient: <strong>${esc(recipient)}</strong>` : 'Recipient: —'}
           ${leader ? ` · Worker performing the meeting: <strong>${esc(leader)}</strong>` : ''}
-          ${incident?.employee_name ? ` · Employee: ${esc(incident.employee_name)}` : ''}
+          ${incident?.employee_name ? ` · Violator: ${esc(incident.employee_name)}` : ''}
         </div>
         ${action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}
       </div>
@@ -704,7 +995,91 @@ export const downloadDisciplinaryActionsListPDF = async (
   `)
 
   const buf = await renderHTMLtoPDFBuffer(html)
-  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
+  return { buffer: buf, filename }
+}
+
+export const downloadDisciplinaryActionsListPDF = async (
+  actions,
+  persons = [],
+  leaders = [],
+  incidents = [],
+  title = 'Disciplinary Actions Report',
+  subtitle = ''
+) => {
+  const result = await buildDisciplinaryActionsListPDF(actions, persons, leaders, incidents, title, subtitle)
+  if (!result?.buffer || !result?.filename) return
+  saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
+}
+
+export const downloadChunkedDisciplinaryActionsListPDFZIP = async ({
+  actions = [],
+  persons = [],
+  leaders = [],
+  incidents = [],
+  chunkSize = 100,
+  title = 'Disciplinary Actions Report',
+  subtitle = '',
+  onProgress = () => {},
+  shouldCancel = () => false,
+}) => {
+  await downloadChunkedListPDFZIP({
+    records: actions,
+    chunkSize,
+    title,
+    subtitle,
+    zipBaseName: `disciplinary-actions-${createSlug(title, 'report')}-chunked`,
+    entityLabel: 'action',
+    confirmTitle: 'This export contains disciplinary action records split across multiple list PDFs.',
+    onProgress,
+    shouldCancel,
+    buildChunkPdf: ({ chunk, chunkIndex, chunkCount, recordStart, recordEnd, totalCount, title: chunkTitle, subtitle: chunkSubtitle }) => buildDisciplinaryActionsListPDF(
+      chunk,
+      persons,
+      leaders,
+      incidents,
+      chunkTitle,
+      [chunkSubtitle, `Part ${chunkIndex + 1} of ${chunkCount}`, `${recordStart}-${recordEnd} of ${totalCount}`].filter(Boolean).join(' · '),
+      {
+        confirmExport: false,
+        fileNameSuffix: `part-${String(chunkIndex + 1).padStart(2, '0')}`,
+        metadata: {
+          chunk_index: chunkIndex + 1,
+          chunk_total: chunkCount,
+          chunk_start: recordStart,
+          chunk_end: recordEnd,
+        },
+      },
+    ),
+  })
+}
+
+export const downloadDisciplinaryActionsAsZIP = async (
+  actions,
+  persons = [],
+  leaders = [],
+  incidents = [],
+  { onProgress = () => {}, shouldCancel = () => false } = {}
+) => {
+  await downloadRecordsAsZIP({
+    records: actions,
+    zipBaseName: 'disciplinary-actions-records',
+    entityLabel: 'action',
+    confirmTitle: 'This export contains disciplinary action records in a ZIP archive.',
+    onProgress,
+    shouldCancel,
+    buildRecordPdf: (action, index) => buildDisciplinaryActionsListPDF(
+      [action],
+      persons,
+      leaders,
+      incidents,
+      action.action_type || `Disciplinary Action ${index + 1}`,
+      '',
+      {
+        confirmExport: false,
+        fileNameBase: `${String(index + 1).padStart(3, '0')}-${createSlug(action.action_type || 'disciplinary-action', 'disciplinary-action')}`,
+      },
+    ),
+  })
 }
 
 // ─── Checklist History List PDF ───────────────────────────────────────────────

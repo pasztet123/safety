@@ -34,11 +34,11 @@ export const buildCompletionStatusFields = ({
     }
   }
 
+  const resolvedDeclaredCompletionDate = declaredCompletionDate || currentDeclaredCompletionDate || currentCompletionDate || getTodayDateString()
+
   return {
-    completion_date: currentStatus === 'completed' && currentCompletionDate
-      ? currentCompletionDate
-      : getTodayDateString(),
-    declared_completion_date: declaredCompletionDate || currentDeclaredCompletionDate || getTodayDateString(),
+    completion_date: resolvedDeclaredCompletionDate,
+    declared_completion_date: resolvedDeclaredCompletionDate,
   }
 }
 
