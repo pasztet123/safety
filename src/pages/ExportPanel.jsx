@@ -28,8 +28,6 @@ import {
 } from '../lib/exportHelpers'
 import './ExportPanel.css'
 
-const MEETING_ZIP_EXPORT_LIMIT = 100
-
 // ─── Section skeleton ─────────────────────────────────────────────────────────
 function ExportSection({ title, children }) {
   return (
@@ -280,20 +278,20 @@ export default function ExportPanel() {
         const filters = buildMeetingFilters()
         const { count } = await fetchMeetingExportChunk(filters, { offset: 0, limit: 1 })
         if (!count) { alert('No meetings found for the selected filters.'); setProgress({ visible: false, done: 0, total: 0, label: '' }); return }
-        if (count > MEETING_ZIP_EXPORT_LIMIT) {
-          alert(`ZIP with individual PDFs is limited to ${MEETING_ZIP_EXPORT_LIMIT} meetings. Narrow the filters or use the chunked list export instead.`)
-          setProgress({ visible: false, done: 0, total: 0, label: '' })
-          return
-        }
 
-        const meetings = await fetchMeetingsFull(filters)
-        if (!meetings.length) { alert('No meetings found for the selected filters.'); setProgress({ visible: false }); return }
+        setProgress({ visible: true, done: 0, total: count, label: 'Preparing ZIP export…' })
 
-        setProgress({ visible: true, done: 0, total: meetings.length, label: 'Generating PDFs…' })
-
-        await downloadMeetingsAsZIP(meetings, (done, total) => {
-          if (cancelRef.current) throw new Error('Cancelled')
-          setProgress({ visible: true, done, total, label: `Generating PDF ${done + 1} of ${total}…` })
+        await downloadMeetingsAsZIP({
+          totalCount: count,
+          chunkSize: mChunkSize,
+          shouldCancel: () => cancelRef.current,
+          getChunk: async ({ offset, limit }) => {
+            const { rows } = await fetchMeetingExportChunk(filters, { offset, limit })
+            return rows
+          },
+          onProgress: (done, total) => {
+            setProgress({ visible: true, done, total, label: `Generating PDF ${done + 1} of ${total}…` })
+          },
         })
       } catch (err) {
         if (!cancelRef.current) {
@@ -489,7 +487,7 @@ export default function ExportPanel() {
 
         <div className="ep-hint">
           The <strong>List PDF</strong> is best for smaller result sets. <strong>Chunked List ZIP</strong> splits a large result into multiple list PDFs.
-          The <strong>Individual ZIP</strong> generates one full PDF per meeting and is intended only for smaller batches.
+          The <strong>Individual ZIP</strong> generates one full PDF per meeting and processes large exports in batches.
         </div>
       </ExportSection>
 

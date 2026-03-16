@@ -262,6 +262,47 @@ const downloadRecordsAsZIP = async ({
   saveAs(blob, `${zipBaseName}-${dateStr}.zip`)
 }
 
+const resolveMeetingZipSource = (source, options = {}) => {
+  const fallbackOnProgress = typeof options === 'function'
+    ? options
+    : (typeof options?.onProgress === 'function' ? options.onProgress : () => {})
+  const fallbackShouldCancel = typeof options?.shouldCancel === 'function' ? options.shouldCancel : () => false
+
+  if (Array.isArray(source)) {
+    return {
+      total: source.length,
+      onProgress: fallbackOnProgress,
+      shouldCancel: fallbackShouldCancel,
+      getMeetingAt: async (index) => source[index] || null,
+    }
+  }
+
+  const total = Math.max(0, Number(source?.totalCount) || 0)
+  const chunkSize = Math.max(1, Number(source?.chunkSize) || 100)
+  const onProgress = typeof source?.onProgress === 'function' ? source.onProgress : fallbackOnProgress
+  const shouldCancel = typeof source?.shouldCancel === 'function' ? source.shouldCancel : fallbackShouldCancel
+  let cachedChunk = []
+  let cachedOffset = -1
+
+  return {
+    total,
+    onProgress,
+    shouldCancel,
+    getMeetingAt: async (index) => {
+      if (typeof source?.getChunk !== 'function') return null
+
+      const isChunkCached = cachedOffset >= 0 && index >= cachedOffset && index < cachedOffset + cachedChunk.length
+      if (!isChunkCached) {
+        cachedOffset = index
+        const nextChunk = await source.getChunk({ offset: index, limit: chunkSize })
+        cachedChunk = Array.isArray(nextChunk) ? nextChunk : []
+      }
+
+      return cachedChunk[index - cachedOffset] || null
+    },
+  }
+}
+
 // ─── Meeting List PDF ─────────────────────────────────────────────────────────
 
 /**
@@ -694,7 +735,7 @@ const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subti
         ${inc.osha_recordable ? '<span class="osha-pill">OSHA Recordable</span>' : ''}
         ${inc.project?.name ? `<span class="inc-pill">${esc(inc.project.name)}</span>` : ''}
       </div>
-      ${inc.employee_name ? `<div class="inc-detail">Employee: <strong>${esc(inc.employee_name)}</strong>${inc.reporter_name ? ' · Reporter: ' + esc(inc.reporter_name) : ''}</div>` : ''}
+      ${inc.employee_name ? `<div class="inc-detail">Worker: <strong>${esc(inc.employee_name)}</strong>${inc.reporter_name ? ' · Reporter: ' + esc(inc.reporter_name) : ''}</div>` : ''}
       ${inc.location ? `<div class="inc-detail">Location: ${esc(inc.location)}</div>` : ''}
       ${inc.details ? `<div class="inc-detail" style="margin-top:4px;font-style:italic">${esc(inc.details.substring(0,160))}${inc.details.length>160?'…':''}</div>` : ''}
     </div>
@@ -1147,22 +1188,28 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
  * renders an individual PDF (same format as the single "PDF" button on Meetings page),
  * packs all PDFs into a ZIP, and triggers download.
  *
- * @param {Array} meetings - basic meeting list (needs at least .id, .topic, .date)
- * @param {function} onProgress - callback (done, total)
+ * @param {Array|Object} source - array of meetings or paged config with totalCount/getChunk
+ * @param {function|Object} options - progress callback or options object
  */
-export const downloadMeetingsAsZIP = async (meetings, onProgress = () => {}) => {
+export const downloadMeetingsAsZIP = async (source, options = {}) => {
+  const { total, onProgress, shouldCancel, getMeetingAt } = resolveMeetingZipSource(source, options)
+  if (!total) return
+
   const confirmed = await confirmEvidencePdfExport({
     title: 'This export contains individual meeting and safety survey records in a ZIP archive.',
-    details: `${meetings.length} meeting PDF${meetings.length === 1 ? '' : 's'}`,
+    details: `${total} meeting PDF${total === 1 ? '' : 's'}`,
   })
   if (!confirmed) return
 
   const zip = new JSZip()
-  const total = meetings.length
   const zipBatchId = generateClientUuid()
 
   for (let i = 0; i < total; i++) {
-    const m = meetings[i]
+    if (shouldCancel()) throw new Error('Cancelled')
+
+    const m = await getMeetingAt(i)
+    if (!m?.id) continue
+
     onProgress(i, total)
 
     try {

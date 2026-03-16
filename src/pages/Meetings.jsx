@@ -24,7 +24,6 @@ const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
 const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
 const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
 const MEETINGS_EXPORT_CHUNK_STORAGE_KEY = 'meetings:export-chunk-size'
-const MEETING_ZIP_EXPORT_LIMIT = 100
 const SERVER_FILTER_DEBOUNCE_MS = 350
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
@@ -1138,20 +1137,23 @@ export default function Meetings() {
 
   const handleExportZIP = async () => {
     if (!meetingTotalCount) return
-    if (meetingTotalCount > MEETING_ZIP_EXPORT_LIMIT) {
-      alert(`ZIP with individual PDFs is limited to ${MEETING_ZIP_EXPORT_LIMIT} meetings. Narrow the filters or use the chunked list export instead.`)
-      return
-    }
 
     if (meetingTotalCount > 20 && !confirm(`This will generate ${meetingTotalCount} individual PDFs packed into a ZIP. This may take several minutes. Continue?`)) return
 
     cancelExportRef.current = false
-    setZipProgress({ visible: true, done: 0, total: meetingTotalCount, label: 'Fetching meetings for ZIP export…' })
+    setZipProgress({ visible: true, done: 0, total: meetingTotalCount, label: 'Preparing ZIP export…' })
     try {
-      const meetingsForExport = await fetchMeetingsFull(meetingQueryFilters)
-      await downloadMeetingsAsZIP(meetingsForExport, (done, total) => {
-        if (cancelExportRef.current) throw new Error('Cancelled')
-        setZipProgress({ visible: true, done, total, label: `Generating PDF ${done + 1} of ${total}…` })
+      await downloadMeetingsAsZIP({
+        totalCount: meetingTotalCount,
+        chunkSize: exportChunkSize,
+        shouldCancel: () => cancelExportRef.current,
+        getChunk: async ({ offset, limit }) => {
+          const { rows } = await fetchMeetingExportChunk(meetingQueryFilters, { offset, limit })
+          return rows
+        },
+        onProgress: (done, total) => {
+          setZipProgress({ visible: true, done, total, label: `Generating PDF ${done + 1} of ${total}…` })
+        },
       })
     } catch (e) {
       if (!cancelExportRef.current) console.error(e)
@@ -1315,7 +1317,7 @@ export default function Meetings() {
               <button
                 className="btn btn-secondary"
                 onClick={handleExportZIP}
-                title="Download each meeting as its own PDF inside a ZIP for smaller filtered result sets"
+                title="Download each meeting as its own PDF inside a ZIP"
               >
                 ↓ ZIP PDFs
               </button>
