@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { downloadChecklistHistoryPDF } from '../lib/pdfBulkGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
+import { formatDateTimeInTimeZone } from '../lib/dateTime'
 import './ChecklistHistory.css'
 
 export default function ChecklistHistory() {
@@ -75,13 +76,15 @@ export default function ChecklistHistory() {
   }
 
   const formatDateTime = (datetime) => {
-    const date = new Date(datetime)
-    return date.toLocaleString('pl-PL', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
+    return formatDateTimeInTimeZone(datetime, {
+      locale: 'pl-PL',
+      options: {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      },
     })
   }
 

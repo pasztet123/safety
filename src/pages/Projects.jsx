@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { fetchTrades, ensureTrade } from '../lib/trades'
 import { NEW_TAB_LINK_PROPS, followAppPath } from '../lib/navigation'
+import { formatDateOnly, getDateTimeSortKey } from '../lib/dateTime'
 import './Projects.css'
 
 const EMPTY_FORM = {
@@ -194,7 +195,7 @@ export default function Projects() {
         {displayedProjects.map((project) => {
           const isExpanded = expandedProjects.has(project.id)
           const meetings = project.meetings || []
-          const sortedMeetings = [...meetings].sort((a, b) => new Date(b.date) - new Date(a.date))
+          const sortedMeetings = [...meetings].sort((a, b) => getDateTimeSortKey(b.date) - getDateTimeSortKey(a.date))
 
           return (
             <div
@@ -282,7 +283,7 @@ export default function Projects() {
                       sortedMeetings.map(m => (
                         <div key={m.id} className="project-meeting-item">
                           <span className="pmeet-date">
-                            {new Date(m.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {formatDateOnly(m.date, { locale: 'en-US', options: { month: 'short', day: 'numeric', year: 'numeric' }, fallback: m.date })}
                           </span>
                           {m.topic && <span className="pmeet-topic">{m.topic}</span>}
                           {m.trade && <span className="pmeet-trade">{m.trade}</span>}

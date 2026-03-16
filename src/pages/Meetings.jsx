@@ -17,6 +17,7 @@ import {
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
+import { formatDateOnly, getDateTimeSortKey } from '../lib/dateTime'
 import './Meetings.css'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
@@ -62,12 +63,12 @@ const getTimestampValue = (meeting, field = 'date-time-desc') => {
 
   if (!baseValue) return 0
 
-  const timeValue = field === 'created-asc' || field === 'created-desc'
-    ? ''
-    : (meeting?.time || '00:00')
+  if (field === 'created-asc' || field === 'created-desc') {
+    const parsed = new Date(baseValue)
+    return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+  }
 
-  const parsed = new Date(`${baseValue}${timeValue ? `T${timeValue}` : ''}`)
-  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+  return getDateTimeSortKey(baseValue, meeting?.time || '00:00')
 }
 
 const compareText = (left, right, direction = 'asc') => {
@@ -171,8 +172,7 @@ const getPageRangeLabel = (page, pageSize, total) => {
 
 const formatMeetingDate = (value) => {
   if (!value) return 'No date'
-  const parsed = new Date(value)
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString()
+  return formatDateOnly(value, { fallback: value })
 }
 
 const summarizeList = (items, limit = 3) => {

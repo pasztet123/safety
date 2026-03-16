@@ -1,5 +1,5 @@
 import React from 'react'
-import { LEGAL_CONFIRMATION_CLAUSE } from '../lib/legal'
+import { LEGAL_CONFIRMATION_CLAUSE, getMeetingTopicAttestationClause } from '../lib/legal'
 import './LegalNotice.css'
 
 export default function LegalNotice({ title, children, tone = 'neutral', className = '' }) {
@@ -17,6 +17,14 @@ export function LegalClauseNotice({ className = '' }) {
   return (
     <LegalNotice title="Legal Attestation" className={className}>
       {LEGAL_CONFIRMATION_CLAUSE}
+    </LegalNotice>
+  )
+}
+
+export function MeetingTopicAttestationNotice({ className = '', plural = false }) {
+  return (
+    <LegalNotice title="Topic Alignment Attestation" className={className}>
+      {getMeetingTopicAttestationClause({ plural })}
     </LegalNotice>
   )
 }

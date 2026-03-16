@@ -28,6 +28,7 @@ import PersonDetail from './pages/PersonDetail'
 import ExportPanel from './pages/ExportPanel'
 import SystemRecords from './pages/SystemRecords'
 import UserManual from './pages/UserManual'
+import { fetchAppSettings } from './lib/appSettings'
 
 function App() {
   const [session, setSession] = useState(null)
@@ -36,6 +37,7 @@ function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session)
+      if (session) fetchAppSettings().catch((error) => console.error('Error preloading app settings:', error))
       setLoading(false)
     })
 
@@ -43,6 +45,7 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      if (session) fetchAppSettings().catch((error) => console.error('Error preloading app settings:', error))
     })
 
     return () => subscription.unsubscribe()

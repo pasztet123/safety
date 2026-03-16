@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from '../lib/supabase'
+import { formatDateOnly } from '../lib/dateTime'
 import './People.css'
 
 export default function PersonDetail() {
@@ -330,8 +331,10 @@ export default function PersonDetail() {
                     )}
                   </div>
                   <span className="person-activity-date">
-                    {m.date ? new Date(m.date).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
+                    {m.date ? formatDateOnly(m.date, {
+                      locale: 'en-US',
+                      options: { month: 'short', day: 'numeric', year: 'numeric' },
+                      fallback: m.date,
                     }) : '—'}
                   </span>
                 </Link>
@@ -412,8 +415,10 @@ export default function PersonDetail() {
                       </div>
                     </div>
                     <span className="person-activity-date">
-                      {inc.date ? new Date(inc.date).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
+                      {inc.date ? formatDateOnly(inc.date, {
+                        locale: 'en-US',
+                        options: { month: 'short', day: 'numeric', year: 'numeric' },
+                        fallback: inc.date,
                       }) : '—'}
                     </span>
                   </Link>
@@ -470,15 +475,17 @@ export default function PersonDetail() {
                     <span className="person-activity-sub">
                       {action.incident?.safety_violation_type || 'Safety violation'}
                       {type === 'leader' && action.recipient?.name ? ` · Recipient: ${action.recipient.name}` : ''}
-                      {action.incident?.date ? ` · Incident date: ${new Date(action.incident.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}
+                      {action.incident?.date ? ` · Incident date: ${formatDateOnly(action.incident.date, { locale: 'en-US', options: { month: 'short', day: 'numeric', year: 'numeric' }, fallback: action.incident.date })}` : ''}
                     </span>
                     {action.action_notes && (
                       <span className="person-activity-sub">{action.action_notes.substring(0, 90)}{action.action_notes.length > 90 ? '…' : ''}</span>
                     )}
                   </div>
                   <span className="person-ca-status person-ca-status--open">
-                    {new Date(action.action_date).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric',
+                    {formatDateOnly(action.action_date, {
+                      locale: 'en-US',
+                      options: { month: 'short', day: 'numeric', year: 'numeric' },
+                      fallback: action.action_date,
                     })}
                   </span>
                 </Link>

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { LegalClauseNotice } from '../components/LegalNotice'
 import { supabase } from '../lib/supabase'
+import { dateTimeInputToUtcIsoString, getDateTimeInputValueForTimeZone } from '../lib/dateTime'
 import SignaturePad from '../components/SignaturePad'
 import './ChecklistCompletion.css'
 
@@ -93,14 +94,7 @@ export default function ChecklistHistoryEdit() {
     if (completionData.signer_type) setSignerType(completionData.signer_type)
     if (completionData.signature_url) setExistingSignatureUrl(completionData.signature_url)
     
-    // Format datetime for input
-    const dt = new Date(completionData.completion_datetime)
-    const year = dt.getFullYear()
-    const month = String(dt.getMonth() + 1).padStart(2, '0')
-    const day = String(dt.getDate()).padStart(2, '0')
-    const hours = String(dt.getHours()).padStart(2, '0')
-    const minutes = String(dt.getMinutes()).padStart(2, '0')
-    setCompletionDateTime(`${year}-${month}-${day}T${hours}:${minutes}`)
+    setCompletionDateTime(getDateTimeInputValueForTimeZone(completionData.completion_datetime))
 
     // Fetch checklist
     const { data: checklistData } = await supabase
@@ -255,7 +249,7 @@ export default function ChecklistHistoryEdit() {
       .from('checklist_completions')
       .update({
         project_id: projectId || null,
-        completion_datetime: completionDateTime,
+        completion_datetime: dateTimeInputToUtcIsoString(completionDateTime),
         notes: notes
       })
       .eq('id', id)

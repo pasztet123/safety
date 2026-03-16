@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { applyResolvedMeetingLeader } from '../lib/meetingLeader'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
+import { formatDateOnly } from '../lib/dateTime'
 import LocationMap from '../components/LocationMap'
 import './MeetingForm.css'
 
@@ -109,7 +110,7 @@ export default function MeetingDetails() {
         <div className="form-row">
           <div className="form-group">
             <label className="form-label">Date</label>
-            <p className="detail-value">{new Date(meeting.date).toLocaleDateString()}</p>
+            <p className="detail-value">{formatDateOnly(meeting.date, { fallback: meeting.date })}</p>
           </div>
 
           <div className="form-group">

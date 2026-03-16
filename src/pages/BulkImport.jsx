@@ -5,8 +5,8 @@ import {
   parseBusyBusyCsv,
   groupIntoDraftMeetings,
   detectDuplicateDates,
-  pickRandomTopic,
   ALL_TRADES,
+  getSuggestedTopicForTrade,
 } from '../lib/csvImport'
 import './BulkImport.css'
 
@@ -114,7 +114,7 @@ export default function BulkImport() {
       .eq('project_id', projectId)
     const existing = existingData || []
 
-    const drafts = groupIntoDraftMeetings(rows, projectId, safetyTopics, projLocation)
+    const drafts = groupIntoDraftMeetings(rows, projectId, projLocation)
     const dupDates = detectDuplicateDates(drafts, existing)
 
     // Find attendee names that don't exist in involved_persons
@@ -140,21 +140,11 @@ export default function BulkImport() {
     })
   }
 
-  // Refresh a random topic for a single draft
-  const refreshTopic = (index) => {
-    setDraftMeetings(prev => {
-      const next = [...prev]
-      next[index] = { ...next[index], topic: pickRandomTopic(next[index].trade, safetyTopics) || next[index].topic }
-      return next
-    })
-  }
-
-  // Update trade and auto-pick a matching topic in one render
+  // Update trade without changing the topic automatically.
   const updateTrade = (index, newTrade) => {
-    const newTopic = pickRandomTopic(newTrade, safetyTopics)
     setDraftMeetings(prev => {
       const next = [...prev]
-      next[index] = { ...next[index], trade: newTrade, ...(newTopic ? { topic: newTopic } : {}) }
+      next[index] = { ...next[index], trade: newTrade }
       return next
     })
   }
@@ -223,7 +213,7 @@ export default function BulkImport() {
             // Drafts can be imported without a resolved leader, but the DB column is NOT NULL.
             leader_name: '',
             trade: draft.trade || null,
-            topic: draft.topic,
+            topic: draft.topic || null,
             notes: null,
             completed: false,
             is_draft: true,
@@ -427,6 +417,7 @@ export default function BulkImport() {
                 {draftMeetings.map((d, idx) => {
                   const isDup = duplicateDates.has(d.date)
                   const isSkipped = skippedDates.has(d.date)
+                  const suggestedTopic = getSuggestedTopicForTrade(d.trade, safetyTopics)
                   return (
                     <tr
                       key={d.date}
@@ -473,24 +464,34 @@ export default function BulkImport() {
                         </select>
                       </td>
                       <td className="bi-cell-topic">
-                        <select
-                          className="bi-select bi-select--topic"
-                          value={d.topic || ''}
-                          onChange={e => updateDraftField(idx, 'topic', e.target.value)}
-                          disabled={isSkipped}
-                        >
-                          <option value="">— none —</option>
-                          {topicsForTrade(d.trade).map(t => (
-                            <option key={t.id} value={t.name}>{t.name}</option>
-                          ))}
-                        </select>
-                        <button
-                          type="button"
-                          className="btn-icon bi-refresh-btn"
-                          title="Pick another random topic"
-                          onClick={() => refreshTopic(idx)}
-                          disabled={isSkipped}
-                        >↺</button>
+                        <div className="bi-topic-field">
+                          <select
+                            className="bi-select bi-select--topic"
+                            value={d.topic || ''}
+                            onChange={e => updateDraftField(idx, 'topic', e.target.value)}
+                            disabled={isSkipped}
+                          >
+                            <option value="">— none —</option>
+                            {topicsForTrade(d.trade).map(t => (
+                              <option key={t.id} value={t.name}>{t.name}</option>
+                            ))}
+                          </select>
+                          {suggestedTopic && (
+                            <div className="bi-topic-suggestion">
+                              <span>Suggested: <strong>{suggestedTopic.name}</strong></span>
+                              {d.topic !== suggestedTopic.name && (
+                                <button
+                                  type="button"
+                                  className="bi-topic-suggestion-btn"
+                                  onClick={() => updateDraftField(idx, 'topic', suggestedTopic.name)}
+                                  disabled={isSkipped}
+                                >
+                                  Use suggested
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )

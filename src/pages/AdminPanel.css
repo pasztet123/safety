@@ -1182,6 +1182,26 @@ tbody tr:last-child td {
   transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.analytics-person-pill-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analytics-person-pill-swatch {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--person-accent, var(--color-primary));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
 .analytics-person-pill:hover {
   background: #fff;
 }
@@ -1194,8 +1214,42 @@ tbody tr:last-child td {
 }
 
 .analytics-person-pill.is-selected {
-  border-color: var(--color-primary);
-  background: rgba(31, 78, 121, 0.08);
+  border-color: var(--person-accent, var(--color-primary));
+  background: color-mix(in srgb, var(--person-accent, var(--color-primary)) 12%, #ffffff);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--person-accent, var(--color-primary)) 26%, transparent);
+}
+
+.analytics-people-legend {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.analytics-people-legend-item,
+.analytics-agenda-meeting-colors,
+.analytics-day-meeting-colors {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.analytics-people-legend-item span,
+.analytics-agenda-meeting-colors span,
+.analytics-day-meeting-colors span {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.analytics-people-legend-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
 }
 
 .analytics-note {
@@ -1366,6 +1420,24 @@ tbody tr:last-child td {
   gap: 4px;
 }
 
+.analytics-meeting-preview {
+  width: 42px;
+  min-width: 42px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--meeting-preview-gradient, var(--color-primary));
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.analytics-meeting-preview--calendar {
+  width: 100%;
+  min-width: 0;
+  height: 4px;
+  border-radius: 999px;
+  margin-bottom: 4px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
 .analytics-agenda-title-cell span {
   color: var(--color-text-secondary);
 }
@@ -1419,6 +1491,12 @@ tbody tr:last-child td {
   display: grid;
   gap: 2px;
   line-height: 1.2;
+}
+
+.analytics-calendar-event strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .analytics-calendar-event span {
@@ -1558,10 +1636,10 @@ tbody tr:last-child td {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
 
 .analytics-day-meeting-actions {
   margin-top: 4px;
-}
 }
 
 .analytics-day-meeting-content strong {

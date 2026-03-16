@@ -2,8 +2,9 @@ import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 import { createPdfExportContext } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
-import { LEGAL_CONFIRMATION_CLAUSE } from './legal'
+import { LEGAL_CONFIRMATION_CLAUSE, getMeetingTopicAttestationClause } from './legal'
 import { generateClientUuid } from './compliance'
+import { formatDateOnly, formatDateTimeInTimeZone } from './dateTime'
 import { normalizeIncidentPhotos } from './incidentPhotos'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
@@ -300,6 +301,9 @@ export const BASE_CSS = `
   .pdf-disclaimer{padding:6px 36px 10px;background:#f9fafb;
                   font-size:8.5px;color:#9ca3af;text-align:center;line-height:1.5;
                   border-top:1px solid #f0f0f0}
+  .pdf-disclaimer-note{display:block;margin-top:4px;font-size:7.5px;line-height:1.45;color:#9ca3af}
+  .pdf-last-page-attestation{margin-top:18px;padding-top:10px;border-top:1px solid #f0f0f0;
+                             font-size:7.5px;line-height:1.45;color:#9ca3af}
 
   /* severity badge for incidents */
   .sev-low{background:#dcfce7;color:#15803d}
@@ -341,7 +345,8 @@ export const exportSummary = (exportMeta) => {
   `
 }
 
-export const footer = (exportMeta) => {
+export const footer = (exportMeta, options = {}) => {
+  const { attestationText = '' } = options
   const exportedAtLabel = exportMeta?.generatedAtLabel || `${new Date().toISOString()} UTC`
   const exportId = exportMeta?.exportId || generateClientUuid()
   return `
@@ -352,6 +357,7 @@ export const footer = (exportMeta) => {
       </div>
       <div class="pdf-disclaimer">
         ${escapeHtml(LEGAL_CONFIRMATION_CLAUSE)}
+        ${attestationText ? `<span class="pdf-disclaimer-note">${escapeHtml(attestationText)}</span>` : ''}
         <div style="font-size:4px;line-height:1.2;margin-top:4px;color:#9ca3af">Print UUID: ${escapeHtml(exportId)}</div>
       </div>
     </div>
@@ -359,6 +365,12 @@ export const footer = (exportMeta) => {
 }
 
 export const pdfLegalClause = () => `<div class="pdf-legal-clause">${escapeHtml(LEGAL_CONFIRMATION_CLAUSE)}</div>`
+
+export const pdfLastPageAttestation = (attestationText) => (
+  attestationText
+    ? `<div class="pdf-last-page-attestation">${escapeHtml(attestationText)}</div>`
+    : ''
+)
 
 export const field = (label, value) => {
   if (!value) return ''
@@ -388,7 +400,7 @@ export const toDataURL = (url) => new Promise((resolve) => {
 
 /** Builds the full HTML string for a meeting PDF (used by both single-PDF and ZIP export). */
 export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
-  const dateStr = meeting.date ? new Date(meeting.date).toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'}) : ''
+  const dateStr = meeting.date ? formatDateOnly(meeting.date, { locale: 'en-US', options: { year:'numeric', month:'long', day:'numeric' } }) : ''
   const timeStr = meeting.time ? meeting.time.substring(0, 5) : ''
 
   const attendeesHTML = meeting.attendees && meeting.attendees.length > 0 ? `
@@ -487,7 +499,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
       ${meeting.photos && meeting.photos.length > 0 ? section('Photos', photosHTML) : ''}
       ${section('Worker Performing the Meeting Signature', leaderSigHTML)}
     </div>
-    ${footer(exportMeta)}
+    ${footer(exportMeta, { attestationText: getMeetingTopicAttestationClause() })}
   `)
 }
 
@@ -751,9 +763,12 @@ export const generateChecklistCompletionPDF = async (data) => {
   if (!confirmed) return
 
   const dateStr = completion?.completion_datetime
-    ? new Date(completion.completion_datetime).toLocaleString('en-US', {
-        year: 'numeric', month: 'long', day: 'numeric',
-        hour: '2-digit', minute: '2-digit'
+    ? formatDateTimeInTimeZone(completion.completion_datetime, {
+        locale: 'en-US',
+        options: {
+          year: 'numeric', month: 'long', day: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        },
       })
     : ''
 
@@ -823,7 +838,10 @@ export const generateChecklistCompletionPDF = async (data) => {
 
   const slug = (checklist?.name || 'checklist').replace(/\s+/g, '-').toLowerCase()
   const datePart = completion?.completion_datetime
-    ? new Date(completion.completion_datetime).toISOString().split('T')[0]
+    ? formatDateTimeInTimeZone(completion.completion_datetime, {
+        locale: 'en-CA',
+        options: { year: 'numeric', month: '2-digit', day: '2-digit' },
+      }).replaceAll('/', '-')
     : 'nodate'
   const fileName = `checklist-completion-${slug}-${datePart}.pdf`
   const exportMeta = await createPdfExportContext({

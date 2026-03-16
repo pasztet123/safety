@@ -7,6 +7,7 @@ import { normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import LocationMap from '../components/LocationMap'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
+import { formatDateOnly } from '../lib/dateTime'
 import './IncidentForm.css'
 
 export default function IncidentDetails() {
@@ -208,7 +209,7 @@ export default function IncidentDetails() {
         <div className="if-row-2">
           <div className="form-group">
             <label className="form-label">Date</label>
-            <p className="detail-value">{new Date(incident.date).toLocaleDateString()}</p>
+            <p className="detail-value">{formatDateOnly(incident.date, { fallback: incident.date })}</p>
           </div>
           <div className="form-group">
             <label className="form-label">Time</label>

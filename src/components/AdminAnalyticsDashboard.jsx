@@ -117,18 +117,81 @@ function AnalyticsCalendarToolbar({ currentDate, currentView, onNavigate, onChan
 const formatAgendaDate = (date) => format(date, 'd.M.yyyy')
 const formatAgendaTime = (date) => format(date, 'HH:mm')
 
-function AnalyticsCalendarEvent({ event }) {
+const ANALYTICS_PERSON_COLOR_PALETTE = [
+  '#2563eb',
+  '#16a34a',
+  '#dc2626',
+  '#ca8a04',
+  '#7c3aed',
+  '#db2777',
+  '#0891b2',
+  '#ea580c',
+  '#475569',
+  '#0f766e',
+  '#be123c',
+  '#4338ca',
+]
+
+const buildExtendedPersonColor = (index) => {
+  const hue = Math.round((index * 137.508) % 360)
+  return `hsl(${hue} 72% 44%)`
+}
+
+const getAnalyticsPersonColor = (index) => ANALYTICS_PERSON_COLOR_PALETTE[index] || buildExtendedPersonColor(index)
+
+const buildMeetingSegmentsGradient = (colors) => {
+  if (colors.length === 0) return ''
+  if (colors.length === 1) return colors[0]
+
+  const step = 100 / colors.length
+  const stops = colors.map((color, index) => {
+    const start = (step * index).toFixed(2)
+    const end = (step * (index + 1)).toFixed(2)
+    return `${color} ${start}%, ${color} ${end}%`
+  })
+
+  return `linear-gradient(90deg, ${stops.join(', ')})`
+}
+
+const getMeetingMatchedPeople = (event, selectedPeople) => {
+  if (event?.resource?.type !== ANALYTICS_TYPE_META.meetings.key) return []
+  if (!selectedPeople.length) return []
+
+  const eventTokenSet = new Set(event.resource.personTokens || [])
+  const eventNameSet = new Set(event.resource.normalizedNames || [])
+
+  return selectedPeople.filter((person) => (
+    eventTokenSet.has(person.id) || eventNameSet.has(person.normalizedName)
+  ))
+}
+
+function MeetingColorPreview({ matchedPeople, className = '' }) {
+  if (!matchedPeople.length) return null
+
+  const gradient = buildMeetingSegmentsGradient(matchedPeople.map((person) => person.color))
+
+  return (
+    <span
+      className={`analytics-meeting-preview ${className}`.trim()}
+      style={{ '--meeting-preview-gradient': gradient }}
+      aria-hidden="true"
+    />
+  )
+}
+
+function AnalyticsCalendarEvent({ event, matchedPeople }) {
   const showLocation = event.resource.type === ANALYTICS_TYPE_META.meetings.key && event.resource.location
 
   return (
     <div className="analytics-calendar-event">
+      <MeetingColorPreview matchedPeople={matchedPeople} className="analytics-meeting-preview--calendar" />
       <strong>{event.title}</strong>
       {showLocation && <span>{event.resource.location}</span>}
     </div>
   )
 }
 
-function AnalyticsAgendaTable({ events }) {
+function AnalyticsAgendaTable({ events, getMeetingColoring }) {
   if (events.length === 0) {
     return <p className="analytics-empty">No events in the current filter set.</p>
   }
@@ -154,6 +217,7 @@ function AnalyticsAgendaTable({ events }) {
             const leaderName = event.resource.leaderName || '—'
             const location = event.resource.location || '—'
             const path = event.resource.sourcePath
+            const meetingColoring = getMeetingColoring(event)
 
             return (
               <tr key={event.id}>
@@ -166,6 +230,14 @@ function AnalyticsAgendaTable({ events }) {
                 </td>
                 <td>
                   <div className="analytics-agenda-title-cell">
+                    {meetingColoring.matchedPeople.length > 0 && (
+                      <div className="analytics-agenda-meeting-colors">
+                        <MeetingColorPreview matchedPeople={meetingColoring.matchedPeople} />
+                        <span>
+                          {meetingColoring.matchedPeople.map((person) => person.label).join(' · ')}
+                        </span>
+                      </div>
+                    )}
                     <strong>{event.title}</strong>
                     <span>{event.resource.subtitle || '—'}</span>
                   </div>
@@ -243,6 +315,25 @@ export default function AdminAnalyticsDashboard() {
     if (!query) return analytics.personOptions
     return analytics.personOptions.filter((person) => person.label.toLowerCase().includes(query))
   }, [analytics, filters.personSearch])
+
+  const selectedPeople = useMemo(() => {
+    if (!analytics) return []
+
+    const personById = new Map(analytics.personOptions.map((person) => [person.id, person]))
+
+    return filters.selectedPersonIds
+      .map((personId, index) => {
+        const person = personById.get(personId)
+        if (!person) return null
+
+        return {
+          ...person,
+          order: index + 1,
+          color: getAnalyticsPersonColor(index),
+        }
+      })
+      .filter(Boolean)
+  }, [analytics, filters.selectedPersonIds])
 
   const selectedDayMeetings = useMemo(() => {
     if (!analytics || !selectedCalendarDate) return []
@@ -334,20 +425,39 @@ export default function AdminAnalyticsDashboard() {
     setSelectedCalendarDate(null)
   }
 
+  const getMeetingColoring = (event) => {
+    const matchedPeople = getMeetingMatchedPeople(event, selectedPeople)
+    return {
+      matchedPeople,
+      gradient: buildMeetingSegmentsGradient(matchedPeople.map((person) => person.color)),
+    }
+  }
+
   const eventStyleGetter = (event) => {
     const meta = ANALYTICS_TYPE_META[event.resource.type]
     const isDraftMeeting = event.resource.type === ANALYTICS_TYPE_META.meetings.key && event.resource.isDraft
+    const meetingColoring = getMeetingColoring(event)
+    const hasMeetingColors = meetingColoring.matchedPeople.length > 0
+
     return {
       style: {
-        backgroundColor: isDraftMeeting ? meta.lightColor : meta.color,
-        borderColor: meta.color,
-        color: isDraftMeeting ? meta.color : '#fff',
+        background: hasMeetingColors
+          ? meetingColoring.gradient
+          : (isDraftMeeting ? meta.lightColor : meta.color),
+        backgroundColor: hasMeetingColors
+          ? meetingColoring.matchedPeople[0].color
+          : (isDraftMeeting ? meta.lightColor : meta.color),
+        borderColor: hasMeetingColors
+          ? meetingColoring.matchedPeople[0].color
+          : meta.color,
+        color: hasMeetingColors ? '#fff' : (isDraftMeeting ? meta.color : '#fff'),
         borderRadius: '8px',
         boxShadow: 'none',
         fontSize: '12px',
         borderStyle: isDraftMeeting ? 'dashed' : 'solid',
         borderWidth: '1px',
         fontWeight: isDraftMeeting ? 700 : 600,
+        overflow: 'hidden',
       },
     }
   }
@@ -514,18 +624,43 @@ export default function AdminAnalyticsDashboard() {
           />
         </div>
         <div className="analytics-people-list">
-          {filteredPersonOptions.map((person) => (
-            <button
-              key={person.id}
-              type="button"
-              className={`analytics-person-pill ${filters.selectedPersonIds.includes(person.id) ? 'is-selected' : ''}`}
-              onClick={() => togglePerson(person.id)}
-            >
-              <span>{person.label}</span>
-              <small>{person.kind === 'leader' ? 'Performs the meetings' : 'Person'}</small>
-            </button>
-          ))}
+          {filteredPersonOptions.map((person) => {
+            const selectedPerson = selectedPeople.find((item) => item.id === person.id)
+
+            return (
+              <button
+                key={person.id}
+                type="button"
+                className={`analytics-person-pill ${selectedPerson ? 'is-selected' : ''}`}
+                onClick={() => togglePerson(person.id)}
+                style={selectedPerson ? { '--person-accent': selectedPerson.color } : undefined}
+              >
+                <div className="analytics-person-pill-title-row">
+                  {selectedPerson && (
+                    <span className="analytics-person-pill-swatch" aria-hidden="true">
+                      {selectedPerson.order}
+                    </span>
+                  )}
+                  <span>{person.label}</span>
+                </div>
+                <small>{person.kind === 'leader' ? 'Performs the meetings' : 'Person'}</small>
+              </button>
+            )
+          })}
         </div>
+        {selectedPeople.length > 0 && (
+          <div className="analytics-people-legend">
+            {selectedPeople.map((person) => (
+              <div key={person.id} className="analytics-people-legend-item">
+                <MeetingColorPreview matchedPeople={[person]} />
+                <span>{person.order}. {person.label}</span>
+              </div>
+            ))}
+            <p className="analytics-people-legend-note">
+              Meetings shared by multiple selected people use split colors to expose overlaps and suspicious records.
+            </p>
+          </div>
+        )}
       </div>
 
       {analytics.allModeNoteVisible && (
@@ -564,7 +699,7 @@ export default function AdminAnalyticsDashboard() {
           />
           <div className="analytics-calendar-shell">
             {calendarView === 'agenda' ? (
-              <AnalyticsAgendaTable events={agendaEvents} />
+              <AnalyticsAgendaTable events={agendaEvents} getMeetingColoring={getMeetingColoring} />
             ) : (
               <Calendar
                 localizer={localizer}
@@ -579,7 +714,11 @@ export default function AdminAnalyticsDashboard() {
                 toolbar={false}
                 popup
                 selectable
-                components={{ event: AnalyticsCalendarEvent }}
+                components={{
+                  event: (props) => (
+                    <AnalyticsCalendarEvent {...props} matchedPeople={getMeetingColoring(props.event).matchedPeople} />
+                  ),
+                }}
                 eventPropGetter={eventStyleGetter}
                 onSelectEvent={handleSelectEvent}
                 onSelectSlot={(slotInfo) => openDayModal(slotInfo.start)}
@@ -721,11 +860,18 @@ export default function AdminAnalyticsDashboard() {
                   (() => {
                     const leaderName = event.resource.leaderName || '—'
                     const attendeeNames = (event.resource.personNames || []).filter((name) => name && name !== event.resource.leaderName)
+                    const meetingColoring = getMeetingColoring(event)
 
                     return (
                       <div key={event.id} className="analytics-day-meeting-item">
                         <div className="analytics-day-meeting-time">{format(event.start, 'HH:mm')}</div>
                         <div className="analytics-day-meeting-content">
+                          {meetingColoring.matchedPeople.length > 0 && (
+                            <div className="analytics-day-meeting-colors">
+                              <MeetingColorPreview matchedPeople={meetingColoring.matchedPeople} />
+                              <span>{meetingColoring.matchedPeople.map((person) => person.label).join(' · ')}</span>
+                            </div>
+                          )}
                           <strong>{event.title}</strong>
                           <span>
                             {event.resource.projectName || 'No project'}

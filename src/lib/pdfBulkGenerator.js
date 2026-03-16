@@ -11,11 +11,13 @@ import html2canvas from 'html2canvas'
 import {
   renderHTMLtoPDFBuffer,
   buildMeetingHTMLForExport,
-  BASE_CSS, baseHTML, exportSummary, footer, field, section,
+  BASE_CSS, baseHTML, exportSummary, footer, field, pdfLastPageAttestation, section,
   ACCENT, PRIMARY, GRAY, BORDER,
 } from './pdfGenerator'
 import { createPdfExportContext, generateClientUuid } from './compliance'
 import { confirmEvidencePdfExport } from './exportAttestation.jsx'
+import { formatDateOnly, formatDateTimeInTimeZone } from './dateTime'
+import { getMeetingTopicAttestationClause } from './legal'
 import { supabase } from './supabase'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -23,10 +25,10 @@ import { supabase } from './supabase'
 const esc = (s) => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : ''
 
 const fmtDate = (d) =>
-  d ? new Date(d).toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' }) : '—'
+  d ? formatDateOnly(d, { locale: 'en-US', options: { year:'numeric', month:'long', day:'numeric' } }) : '—'
 
 const fmtDateShort = (d) =>
-  d ? new Date(d).toLocaleDateString('en-US', { year:'numeric', month:'short', day:'numeric' }) : '—'
+  d ? formatDateOnly(d, { locale: 'en-US', options: { year:'numeric', month:'short', day:'numeric' } }) : '—'
 
 const todayStr = () =>
   new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' })
@@ -207,6 +209,7 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
     <div class="ml-body">
       <div class="ml-count-bar">${meetings.length} meeting${meetings.length !== 1 ? 's' : ''}</div>
       ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No meetings found for the selected filters.</p>'}
+      ${meetings.length > 0 ? pdfLastPageAttestation(getMeetingTopicAttestationClause({ plural: true })) : ''}
     </div>
     ${footer(exportMeta)}
   `)
@@ -726,7 +729,7 @@ export const downloadChecklistHistoryPDF = async (completions, title = 'Checklis
   })
 
   const cardsHTML = completions.map(c => {
-    const dt = c.completion_datetime ? new Date(c.completion_datetime).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric'}) : '—'
+    const dt = c.completion_datetime ? formatDateTimeInTimeZone(c.completion_datetime, { locale: 'en-US', options: { year:'numeric', month:'short', day:'numeric' } }) : '—'
     return `
       <div class="cl-card">
         <div class="cl-name">${esc(c.checklist?.name || c.checklist_name || 'Checklist')}</div>

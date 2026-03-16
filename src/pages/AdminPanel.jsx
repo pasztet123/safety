@@ -13,6 +13,8 @@ import {
 } from '../lib/personProfiles'
 import SignaturePad from '../components/SignaturePad'
 import AdminAnalyticsDashboard from '../components/AdminAnalyticsDashboard'
+import { formatDateOnly, formatDateTimeInTimeZone } from '../lib/dateTime'
+import { formatTimeZoneLabel, getTimeZoneOptions, saveAppSettings, useAppSettings } from '../lib/appSettings'
 import './AdminPanel.css'
 
 const ADMIN_TABS = [
@@ -132,6 +134,8 @@ export default function AdminPanel() {
   const [settingsAllTrades, setSettingsAllTrades] = useState([]) // all trade names from trades table
   const [settingsFeaturedTrades, setSettingsFeaturedTrades] = useState([]) // [{id, trade, display_order}]
   const [settingsTradesSaving, setSettingsTradesSaving] = useState(false)
+  const [settingsTimezoneDraft, setSettingsTimezoneDraft] = useState('America/Chicago')
+  const [settingsTimezoneSaving, setSettingsTimezoneSaving] = useState(false)
   const [meetings, setMeetings] = useState([])
   const [incidents, setIncidents] = useState([])
   const [users, setUsers] = useState([])
@@ -174,6 +178,12 @@ export default function AdminPanel() {
   const [editInvolvedPersonShowSignature, setEditInvolvedPersonShowSignature] = useState(false)
   const [editInvolvedPersonSignatureDataUrl, setEditInvolvedPersonSignatureDataUrl] = useState(null)
   const [newCompany, setNewCompany] = useState({ name: '', address: '', city: '', state: '', zip: '', phone: '', email: '', website: '' })
+  const appSettings = useAppSettings()
+  const timeZoneOptions = getTimeZoneOptions()
+
+  useEffect(() => {
+    setSettingsTimezoneDraft(appSettings.timezone || 'America/Chicago')
+  }, [appSettings.timezone])
 
   // ── Draft leader migration ──
   const [draftMigrationRunning, setDraftMigrationRunning] = useState(false)
@@ -533,15 +543,29 @@ export default function AdminPanel() {
 
   const formatAdminDateTime = (value) => {
     if (!value) return 'Never'
-    const parsed = new Date(value)
-    if (Number.isNaN(parsed.getTime())) return 'Unknown'
-    return parsed.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
+    return formatDateTimeInTimeZone(value, {
+      locale: 'en-US',
+      options: {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      },
+      fallback: 'Unknown',
     })
+  }
+
+  const settingsSaveTimezone = async () => {
+    setSettingsTimezoneSaving(true)
+    try {
+      await saveAppSettings({ timezone: settingsTimezoneDraft })
+      alert('Application timezone saved!')
+    } catch (error) {
+      alert(`Error saving timezone: ${error.message}`)
+    } finally {
+      setSettingsTimezoneSaving(false)
+    }
   }
 
   const togglePersonLinkSection = (sectionKey) => {
@@ -1719,7 +1743,7 @@ export default function AdminPanel() {
                     <tbody>
                       {meetings.map((meeting) => (
                         <tr key={meeting.id}>
-                          <td>{new Date(meeting.date).toLocaleDateString()}</td>
+                          <td>{formatDateOnly(meeting.date, { fallback: meeting.date })}</td>
                           <td>{meeting.topic}</td>
                           <td>{meeting.leader_name}</td>
                           <td>{meeting.project?.name || '-'}</td>
@@ -1767,7 +1791,7 @@ export default function AdminPanel() {
                     <tbody>
                       {incidents.map((incident) => (
                         <tr key={incident.id}>
-                          <td>{new Date(incident.date).toLocaleDateString()}</td>
+                          <td>{formatDateOnly(incident.date, { fallback: incident.date })}</td>
                           <td>
                             <span className="type-badge">{incident.type_name}</span>
                           </td>
@@ -2862,6 +2886,43 @@ export default function AdminPanel() {
           {/* ── Settings tab ── */}
           {activeTab === 'settings' && (
             <div>
+
+              <div style={{ marginBottom: '40px', padding: '20px', background: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#1d4ed8' }}>Application Timezone</h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#1e3a8a' }}>
+                  This timezone is the single source of truth for business dates and times across the application.
+                  Change it rarely and intentionally, because it affects how records are interpreted and displayed.
+                </p>
+
+                <div style={{ display: 'flex', alignItems: 'end', gap: '12px', flexWrap: 'wrap' }}>
+                  <div style={{ minWidth: '280px', flex: '1 1 320px' }}>
+                    <label className="form-label" htmlFor="app-timezone">Timezone</label>
+                    <select
+                      id="app-timezone"
+                      className="form-select"
+                      value={settingsTimezoneDraft}
+                      onChange={(event) => setSettingsTimezoneDraft(event.target.value)}
+                    >
+                      {timeZoneOptions.map((timeZone) => (
+                        <option key={timeZone} value={timeZone}>{formatTimeZoneLabel(timeZone)}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={settingsSaveTimezone}
+                    disabled={settingsTimezoneSaving || settingsTimezoneDraft === (appSettings.timezone || 'America/Chicago')}
+                  >
+                    {settingsTimezoneSaving ? 'Saving…' : 'Save Timezone'}
+                  </button>
+                </div>
+
+                <p style={{ margin: '12px 0 0 0', fontSize: '12px', color: '#475569' }}>
+                  Current timezone: <strong>{formatTimeZoneLabel(appSettings.timezone)}</strong>
+                </p>
+              </div>
 
               {/* ── Maintenance ── */}
               <div style={{ marginBottom: '40px', padding: '20px', background: '#fef9f0', border: '1.5px solid #fcd34d', borderRadius: '12px' }}>

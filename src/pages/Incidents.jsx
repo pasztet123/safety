@@ -7,6 +7,7 @@ import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { getIncidentPhotoCount } from '../lib/incidentPhotos'
 import { downloadIncidentListPDF } from '../lib/pdfBulkGenerator'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
+import { formatDateOnly } from '../lib/dateTime'
 import LocationMap from '../components/LocationMap'
 import './IncidentForm.css'
 
@@ -263,7 +264,7 @@ export default function Incidents() {
                     )}
                   </div>
                   <p className="incident-meta">
-                    {new Date(incident.date).toLocaleDateString()} at{' '}
+                    {formatDateOnly(incident.date, { fallback: incident.date })} at{' '}
                     {incident.time}
                   </p>
                   {incident.project && (
@@ -352,13 +353,13 @@ export default function Incidents() {
                               </span>
                             )}
                             {action.due_date && (
-                              <span className="ica-tag ica-tag--date">Due {new Date(action.due_date).toLocaleDateString()}</span>
+                              <span className="ica-tag ica-tag--date">Due {formatDateOnly(action.due_date, { fallback: action.due_date })}</span>
                             )}
                             {getCorrectiveActionPhotoCount(action) > 0 && (
                               <span className="ica-tag">{getCorrectiveActionPhotoCount(action)} photo{getCorrectiveActionPhotoCount(action) === 1 ? '' : 's'}</span>
                             )}
                             {getDeclaredCompletionDate(action) && (
-                              <span className="ica-tag ica-tag--done">Completed {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}</span>
+                              <span className="ica-tag ica-tag--done">Completed {formatDateOnly(getDeclaredCompletionDate(action), { fallback: getDeclaredCompletionDate(action) })}</span>
                             )}
                           </div>
                         </div>

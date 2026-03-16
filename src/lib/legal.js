@@ -1,15 +1,23 @@
+import { getCurrentDateInputValue, getCurrentTimeInputValue } from './dateTime'
+
 export const LEGAL_CONFIRMATION_CLAUSE = 'The information in this document reflects data entered and confirmed by the user identified above. The accuracy and reliability of the information are the sole responsibility of the user and the organization operating the system.'
+
+export const MEETING_TOPIC_ATTESTATION_CLAUSE = 'Organizer of this toolbox meeting attests that the training delivered during this meeting was materially consistent with the selected safety topic. The training content does not need to match the topic description word-for-word, provided that the purpose of the training, its jobsite-specific focus, and the hazards, issues, or safety problems discussed substantially align with the selected topic.'
+
+export const BULK_MEETING_TOPIC_ATTESTATION_CLAUSE = 'Organizers of the toolbox meetings attest that the trainings delivered during those meetings were materially consistent with the selected safety topics. The training content does not need to match the topic descriptions word-for-word, provided that the purpose of each training, its jobsite-specific focus, and the hazards, issues, or safety problems discussed substantially align with the selected topic for the relevant meeting.'
 
 export const JURISDICTION_WARNING_MESSAGE = 'Before accepting this meeting, you must ensure that your actions comply with the laws and recordkeeping requirements applicable in your jurisdiction.'
 
-const pad = (value) => String(value).padStart(2, '0')
+export const getMeetingTopicAttestationClause = ({ plural = false } = {}) => (
+  plural ? BULK_MEETING_TOPIC_ATTESTATION_CLAUSE : MEETING_TOPIC_ATTESTATION_CLAUSE
+)
 
 export const getLocalDateString = (value = new Date()) => (
-  `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
+  getCurrentDateInputValue({ value })
 )
 
 export const getLocalTimeString = (value = new Date()) => (
-  `${pad(value.getHours())}:${pad(value.getMinutes())}`
+  getCurrentTimeInputValue({ value })
 )
 
 const normalizeTimeString = (value) => {

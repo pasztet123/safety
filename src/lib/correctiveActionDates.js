@@ -1,4 +1,6 @@
-export const getTodayDateString = () => new Date().toISOString().split('T')[0]
+import { getCurrentDateInputValue } from './dateTime'
+
+export const getTodayDateString = () => getCurrentDateInputValue()
 
 export const isValidDateInput = (value) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false

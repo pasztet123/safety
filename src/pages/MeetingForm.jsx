@@ -5,10 +5,11 @@ import { scoreChecklist, tradeBadgeLabel } from '../lib/suggestChecklists'
 import SignaturePad from '../components/SignaturePad'
 import MapPicker from '../components/MapPicker'
 import TopicPicker from '../components/TopicPicker'
-import { JurisdictionWarningNotice, LegalClauseNotice } from '../components/LegalNotice'
+import { JurisdictionWarningNotice, LegalClauseNotice, MeetingTopicAttestationNotice } from '../components/LegalNotice'
 import { JURISDICTION_WARNING_MESSAGE, describeSystemDateTimeMismatch, getSystemDateTimeMismatchDetails } from '../lib/legal'
 import { normalizeMeetingPersonName, resolveMeetingLeader } from '../lib/meetingLeader'
 import { fetchTrades } from '../lib/trades'
+import { getCurrentDateInputValue, getCurrentTimeInputValue } from '../lib/dateTime'
 import './MeetingForm.css'
 
 export default function MeetingForm() {
@@ -40,8 +41,8 @@ export default function MeetingForm() {
   
   const [formData, setFormData] = useState({
     project_id: '',
-    date: new Date().toISOString().split('T')[0],
-    time: new Date().toTimeString().slice(0, 5),
+    date: getCurrentDateInputValue(),
+    time: getCurrentTimeInputValue(),
     location: '',
     latitude: null,
     longitude: null,
@@ -1907,6 +1908,7 @@ export default function MeetingForm() {
               </JurisdictionWarningNotice>
             )}
             <LegalClauseNotice className="mf-legal-note" />
+            <MeetingTopicAttestationNotice className="mf-legal-note" />
             <label className="mf-verify-item">
               <input type="checkbox" checked={formData.completed}
                 onChange={(e) => {

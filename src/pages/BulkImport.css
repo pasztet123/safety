@@ -227,9 +227,38 @@
   max-width: 160px;
 }
 .bi-cell-topic {
+  min-width: 240px;
+}
+.bi-topic-field {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.bi-topic-suggestion {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-muted);
+}
+.bi-topic-suggestion strong {
+  color: var(--color-primary);
+}
+.bi-topic-suggestion-btn {
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.bi-topic-suggestion-btn:disabled {
+  color: var(--color-muted);
+  cursor: default;
 }
 .bi-refresh-btn {
   flex-shrink: 0;

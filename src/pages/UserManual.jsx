@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   BASE_CSS,
@@ -22,6 +22,55 @@ const ACCESS_VARIANTS = {
 
 const guideSections = [
   {
+    id: 'access-and-navigation',
+    title: 'Access, Login & Dashboard',
+    shortDescription: 'Sign in, understand the main menu, and use the dashboard cards as the starting point for daily work.',
+    route: '/',
+    access: 'all',
+    purpose:
+      'Use the entry flow and dashboard to access the system safely, confirm your role-based access, and jump quickly into the module that matches the day\'s safety work.',
+    outcomes: [
+      'Sign in with the account managed by your administrator.',
+      'Understand which modules are available to regular users, admins, and restricted audit accounts.',
+      'Use dashboard reminders, counters, and shortcuts to move into the right workflow faster.',
+    ],
+    accessRules: [
+      'All authenticated users can reach the dashboard and the standard navigation items that match their role.',
+      'Admin-only and restricted modules appear only when the logged-in account is allowed to use them.',
+    ],
+    capabilities: [
+      'Email and password sign-in with password visibility toggle.',
+      'Main dashboard cards for meetings, days safe, checklist activity, corrective actions, reminders, and recent activity.',
+      'Persistent left-side navigation for operational modules and role-gated admin areas.',
+    ],
+    procedures: [
+      {
+        title: 'Sign in and verify access',
+        steps: [
+          'Open the application and sign in with the email address and password issued by the system administrator.',
+          'If needed, use the password visibility control before submitting the form.',
+          'After sign-in, verify that the menu items shown on the left match your expected role. Admin Panel, Export Center, Bulk Import, and System Records do not appear for everyone.',
+          'If a module you expect is missing, stop and contact an administrator instead of attempting work under another account.',
+        ],
+      },
+      {
+        title: 'Use the dashboard as a starting point',
+        steps: [
+          'Open the main dashboard after login to review current counts, reminders, and recent safety activity.',
+          'Use the meeting and checklist counters to identify where new records may be needed.',
+          'Review overdue corrective actions and disciplinary items before starting a new report if follow-up is already open.',
+          'Use the navigation drawer to move into the exact module where the new record should be created.',
+        ],
+      },
+    ],
+    disclaimers: [
+      'Never share accounts or enter records under another user\'s identity.',
+      'Role restrictions are part of the audit trail and should not be bypassed informally.',
+    ],
+    includeInHandbook: true,
+    pdfExportLabel: 'Export Access, Login & Dashboard guide',
+  },
+  {
     id: 'toolbox-meetings',
     title: 'Meetings & Safety Surveys',
     shortDescription: 'Run safety talks and surveys, collect attendance, attach evidence, and keep the history audit-ready.',
@@ -36,59 +85,53 @@ const guideSections = [
     ],
     accessRules: [
       'All users can create and review meetings.',
-      'Admins can edit existing meetings, manage drafts, bulk-approve imports, and run broader export workflows.',
+      'Admins can edit existing meetings, manage drafts, bulk-import attendance, and approve imported drafts.',
     ],
     capabilities: [
-      'Search by topic, worker performing the meeting, project, or attendee name.',
-      'Filter by trade and attendee, then sort by newest, oldest, topic name, or attendee count.',
-      'Open a detailed record showing signatures, photos, location, and linked checklists.',
-      'Generate a single meeting PDF or export filtered meeting reports and ZIP bundles.',
+      'Search by topic, worker performing the meeting, project, location, attendee, trade, and time range.',
+      'Use smart topic selection, self-training handling, map-based location picking, and inline checklist completion.',
+      'Export one meeting, filtered meeting lists, chunked list ZIP packages, or ZIP archives of individual PDFs.',
+      'Maintain a separate admin draft queue with filters, pagination, bulk editing, and approval tools.',
     ],
     procedures: [
       {
-        title: 'Method A: Create a meeting manually',
+        title: 'Create a meeting manually',
         steps: [
-          'Open Meetings & Safety Surveys and choose the action to create a new meeting.',
-          'Select the project, date, time, and location. The form can prefill location using device GPS, and you can adjust it manually.',
-          'Choose the worker performing the meeting, trade, and safety topic. If needed, use the topic content panel to guide the discussion live during the meeting.',
-          'Add attendees from the worker list or type names manually when a person is not yet in the directory.',
-          'Optionally attach checklists that match the trade or topic and complete them before saving the meeting.',
-          'Add discussion notes and upload photos if visual evidence is required.',
-          'Capture the worker performing the meeting signature using either a stored default signature or a handwritten signature.',
-          'For each attendee, use either the attendance checkbox or an individual signature when a stronger proof of attendance is required.',
-          'Save the meeting. For new manual meetings, the application also tags the source as manual and preserves all linked evidence in the final record.',
+          'Open Meetings & Safety Surveys and start a new meeting.',
+          'Select the project, date, time, and location. GPS and map tools can prefill the location, but you can edit it manually.',
+          'Choose the worker performing the meeting, trade, and safety topic. Use the topic description while conducting the talk if you need a live reference.',
+          'Add attendees from existing people records or type a new attendee name when the person has not been created yet.',
+          'Attach matching checklists if you want the meeting and inspection evidence stored together.',
+          'Add notes, upload photos, and review any date or time warnings before continuing.',
+          'Use the stored default signature or draw a fresh signature for the meeting leader, then capture attendee confirmations or attendee signatures as needed.',
+          'Save the meeting and use the details page or list actions to open the final record or generate its PDF.',
         ],
       },
       {
-        title: 'Method B: Import attendance to drafts, then approve',
+        title: 'Import BusyBusy attendance and approve drafts',
         steps: [
-          'Open Bulk Import as an admin and select the active project that should receive the imported records.',
-          'Upload a BusyBusy CSV export. The system parses time-entry rows and groups them into draft meetings by date and related attendance data.',
-          'Review the generated draft list before saving. At this stage you can spot duplicate dates, skip selected dates, refresh suggested topics, change trade values, and fine-tune draft fields.',
-          'Confirm the import. The system saves each draft with an import batch id, marks the source as BusyBusy CSV, and can create missing people in the worker directory when needed.',
-          'Go back to Meetings & Safety Surveys and open the draft area. Use filters, pagination, batch selection, and batch editing to prepare the drafts for approval.',
-          'Launch the draft approval flow. In the approval modal, confirm or correct the worker performing the meeting, verify the meeting contents, and provide the signature or signature mode required for finalization.',
-          'Approve the draft. The meeting is converted from draft to finalized record and becomes part of the normal meeting history, exports, and project view.',
+          'Open Bulk Import as an admin, choose the target project, and upload a BusyBusy CSV file.',
+          'Review the parsed draft groups. You can detect duplicates, skip selected dates, adjust trades, and choose the correct safety topic for each draft.',
+          'Save the import so the application creates draft meetings, related attendees, and any missing people records that must exist for later use.',
+          'Return to Meetings & Safety Surveys and switch to the draft area, where you can search, filter, paginate, and batch-select drafts.',
+          'Use bulk edit if you need to fix leader, trade, topic, or additional attendees before approval.',
+          'Open the approval workflow, verify the worker performing the meeting, confirm self-training cases when applicable, choose a default or handwritten signature, and approve the drafts.',
+          'Once approved, the drafts become normal meeting records and appear in history, project views, exports, and person activity.',
         ],
       },
-    ],
-    imageSlots: [
       {
-        title: 'Meetings list overview',
-        caption: 'Recommended screenshot: the meetings page with filters, actions, and draft section visible.',
-      },
-      {
-        title: 'Manual meeting form',
-        caption: 'Recommended screenshot: the meeting form with topic, attendees, signature panel, and checklists.',
-      },
-      {
-        title: 'Bulk import and draft approval',
-        caption: 'Recommended screenshot: CSV preview or draft approval modal showing the admin workflow.',
+        title: 'Work with history and exports',
+        steps: [
+          'Use filters on the meetings list to narrow records by people, project, topic, trade, self-training flag, date range, location, or time-of-day bucket.',
+          'Open a detail page when you need to inspect signatures, photos, location, checklist data, or reading-time information for the topic.',
+          'Use single-record PDF for one meeting, list PDF for smaller filtered sets, chunked ZIP for large list exports, or individual PDF ZIP for smaller batches of complete meeting packets.',
+          'If a large export is needed, monitor the progress dialog and keep the browser tab open until the ZIP has been prepared.',
+        ],
       },
     ],
     disclaimers: [
-      'Meeting attendance, signatures, and topic records must reflect the real event that took place.',
-      'Users must not sign on behalf of another person or create attendance evidence in bad faith.',
+      'Meeting attendance, signatures, topics, and training statements must reflect the real event that took place.',
+      'Never sign for another person or create false proof of training attendance.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Meetings & Safety Surveys guide',
@@ -100,11 +143,11 @@ const guideSections = [
     route: '/safety-topics',
     access: 'mixed',
     purpose:
-      'Use Safety Topics to maintain a structured library of talk content, filter it by category or trade, and connect safety guidance to the meeting workflow.',
+      'Use Safety Topics to maintain a structured library of talk content, filter it by category or trade, and connect safety guidance to meeting and checklist workflows.',
     outcomes: [
       'Standardize what is discussed during toolbox talks.',
-      'Make topic selection easier by category, risk level, and trade.',
-      'Prepare printable topic content for field use or review.',
+      'Make topic selection easier by category, risk level, trade, and OSHA reference.',
+      'Prepare single-topic or brochure-style PDF material for field use or review.',
     ],
     accessRules: [
       'All users can browse, search, and open topic content.',
@@ -113,18 +156,27 @@ const guideSections = [
     capabilities: [
       'Search by topic name, description, or OSHA reference.',
       'Filter by category, risk level, and trade.',
-      'Generate single-topic PDF output and brochure-style exports from the topic module.',
-      'Use topic-to-checklist relationships maintained by admins.',
+      'Open topic details with risk information, image, and suggested checklist relationships.',
+      'Generate single-topic PDFs and brochure exports for all currently visible topics.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Topics library grid',
-        caption: 'Recommended screenshot: filters, risk tags, and visible topic cards.',
+        title: 'Find the right talk topic',
+        steps: [
+          'Open Safety Topics and start with search, category, risk, or trade filters.',
+          'Narrow the list until the visible cards match the work area or hazard you need to address.',
+          'Open a topic card to review the full description, OSHA reference, trade relevance, and any image attached to the topic.',
+          'Use the topic immediately in the meeting workflow or return to the topic list if you need a better match.',
+        ],
       },
       {
-        title: 'Topic detail modal or panel',
-        caption: 'Recommended screenshot: topic content, image, risk level, and checklist references.',
+        title: 'Use topic exports and checklist suggestions',
+        steps: [
+          'On the topic details view, review the suggested checklist list to see which inspections fit the same trade or category.',
+          'Generate a single-topic PDF when you need one printable handout or discussion aid.',
+          'Use the brochure export when you want one PDF containing every topic currently visible under your filters.',
+          'Admins can keep this library current by editing descriptions, risk levels, trades, OSHA references, and featured topics.',
+        ],
       },
     ],
     disclaimers: [
@@ -147,32 +199,41 @@ const guideSections = [
       'Produce completion evidence for internal review, management, or compliance follow-up.',
     ],
     accessRules: [
-      'All users can browse checklists and complete them.',
-      'Admins can edit history records, delete records, and run broader history exports.',
+      'All users can browse checklist templates and complete them.',
+      'Admins can create templates, edit completion history, delete records, and export broader completion datasets.',
     ],
     capabilities: [
-      'Filter checklist templates by category and trade.',
-      'Complete checklist items with notes, item photos, and overall completion photos.',
-      'Assign the completion to a project and capture signer identity as worker performing the meeting or worker.',
-      'Store signature evidence using a saved default signature or a new handwritten signature.',
+      'Assign category and trade tags so checklists sort better in meeting and topic workflows.',
+      'Add checklist items, section headers, and reordered steps inside one template.',
+      'Complete checklists with per-item notes, per-item photos, overall photos, project assignment, and signature capture.',
+      'Review completion history, open completion detail pages, and edit history when you have admin access.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Checklist library',
-        caption: 'Recommended screenshot: checklist cards with category or trade filters visible.',
+        title: 'Create or update a checklist template',
+        steps: [
+          'Open Checklists and start a new template or open an existing one for editing.',
+          'Enter the checklist name, description, category, and trade tags. Trade tags improve smart matching elsewhere in the app.',
+          'Add checklist items one by one, using the section header option when you need a visual divider instead of a checkable step.',
+          'Reorder the items into the inspection sequence you want the field team to follow.',
+          'If a similar checklist already exists, clone it and then make only the necessary changes.',
+          'Save the template and review the completion history panel if you want to see how often it has been used.',
+        ],
       },
       {
-        title: 'Checklist completion flow',
-        caption: 'Recommended screenshot: item checklist, progress bar, notes, photos, and signer panel.',
-      },
-      {
-        title: 'Checklist history view',
-        caption: 'Recommended screenshot: completion details with signature and export actions.',
+        title: 'Complete a checklist in the field',
+        steps: [
+          'Open the desired checklist and start the completion workflow.',
+          'Choose the project when the inspection belongs to a specific job, and set the completion date and time if the default value is not correct.',
+          'Work through the items, checking completed steps and adding notes where context is needed.',
+          'Attach photos to specific steps when the evidence belongs to one item, and use overall completion photos for broader site proof.',
+          'Choose the signing person, then use either that person\'s stored default signature or a new handwritten signature.',
+          'Save the completion and use history screens to review, export, or edit the record later if your role permits it.',
+        ],
       },
     ],
     disclaimers: [
-      'A completed checklist does not by itself prove site conditions were safe if the information entered is false or incomplete.',
+      'A completed checklist does not prove safe conditions if the information entered is false, incomplete, or backfilled inaccurately.',
       'The person completing or signing the checklist is responsible for truthful documentation.',
     ],
     includeInHandbook: true,
@@ -193,32 +254,39 @@ const guideSections = [
     ],
     accessRules: [
       'All users can create incident reports.',
-      'Admins can edit, delete, and export incident summaries and maintain linked actions more broadly.',
+      'Admins can edit, delete, export, and manage linked follow-up records more broadly.',
     ],
     capabilities: [
-      'Choose Quick Report or Full Investigation mode depending on the situation.',
-      'Capture incident type, subtype, severity, injuries, treatment, OSHA flags, witnesses, map location, and photo evidence.',
-      'Collect reporter signatures using default or handwritten signatures.',
-      'Create corrective actions and, for safety violations, disciplinary actions directly from the incident workflow.',
+      'Choose Quick Report or Full Investigation mode depending on the urgency and available information.',
+      'Capture severity, witnesses, location, incident classification, injuries, treatment details, and safety violation type.',
+      'Upload photos, use the map picker with reverse geocoding, and collect a reporter signature.',
+      'Create corrective actions and disciplinary actions directly from an incident context.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Incident log',
-        caption: 'Recommended screenshot: incident list with filters and action buttons.',
+        title: 'File a new incident report',
+        steps: [
+          'Open Incidents and start a new report.',
+          'Choose Quick Report when speed matters and you only have the essential facts, or Full Investigation when you are ready to complete the broader form.',
+          'Enter the date, time, location, project, incident type, severity, and detailed narrative of what happened.',
+          'Identify the employee or person involved, the reporter, and any witnesses. Witnesses can be selected from existing people or typed manually.',
+          'Add photos and map data if the location or physical evidence matters for follow-up.',
+          'Capture the reporter signature using a stored default signature or a handwritten signature, then save the incident.',
+        ],
       },
       {
-        title: 'Incident report form',
-        caption: 'Recommended screenshot: the main form with type selection, witnesses, map, and signature panel.',
-      },
-      {
-        title: 'Incident detail and follow-up',
-        caption: 'Recommended screenshot: detail page with corrective and disciplinary actions.',
+        title: 'Use incident follow-up actions',
+        steps: [
+          'From the incident list or detail page, open the incident and review the recorded facts, witnesses, and uploaded evidence.',
+          'If corrective work is required, launch a corrective action from the incident so the follow-up keeps the source incident attached.',
+          'If the incident is a safety violation, launch a disciplinary action from the same context so the violation and formal response stay connected.',
+          'Use incident filters and PDF exports to review open cases, prepare management packets, or support investigation meetings.',
+        ],
       },
     ],
     disclaimers: [
-      'Users must not use incident reporting to harass, retaliate against, or falsely accuse another person.',
-      'Incident data must be entered promptly, accurately, and in good faith.',
+      'Incident reporting must never be used to harass, retaliate against, or falsely accuse another person.',
+      'Incident data should be entered promptly, accurately, and in good faith.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Incidents guide',
@@ -230,35 +298,46 @@ const guideSections = [
     route: '/corrective-actions',
     access: 'mixed',
     purpose:
-      'Use Corrective Actions to convert findings into assigned follow-up work with status, due dates, completion dates, and incident linkage.',
+      'Use Corrective Actions to convert findings into assigned follow-up work with status, due dates, declared completion dates, and incident linkage.',
     outcomes: [
-      'Track whether issues remain open, overdue, or completed.',
-      'Assign responsibility to the right worker or person in the system.',
-      'Show follow-up status in the incident, project, and action-log views.',
+      'Track whether issues remain open, overdue, in progress, or completed.',
+      'Assign responsibility to the correct worker or person in the system.',
+      'Show follow-up status from the action log and from related incident records.',
     ],
     accessRules: [
-      'The log is visible across the application.',
-      'Admins handle creation, editing, status changes, and export workflows where admin-only controls are exposed.',
+      'The action log is visible across the application for operational awareness.',
+      'Admins handle creation, edits, status changes, person assignment, and export workflows where those controls are restricted.',
     ],
     capabilities: [
-      'Search by description and filter by open or completed status.',
-      'Create actions from scratch or start from predefined action suggestions.',
-      'Link to incidents and assign responsibility to a person in the directory.',
-      'Export filtered action lists as a PDF report.',
+      'Search by description and filter by open, in-progress, closed, or overdue status.',
+      'Create actions from incidents or add them directly from the corrective action module.',
+      'Assign a responsible person, set due dates, record declared completion dates, and upload supporting photos.',
+      'Export filtered corrective action logs as PDF reports.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Corrective action timeline',
-        caption: 'Recommended screenshot: timeline cards with status, due dates, and filters.',
+        title: 'Create and assign a corrective action',
+        steps: [
+          'Open Corrective Actions or launch the action from a specific incident.',
+          'Write a clear description of the required corrective work and confirm the linked incident when one applies.',
+          'Choose the responsible person from the people directory and set the due date.',
+          'Add notes or photos if the responsible person needs visual context to complete the work correctly.',
+          'Save the action so it appears in the timeline, incident record, and exports.',
+        ],
       },
       {
-        title: 'Create or edit action',
-        caption: 'Recommended screenshot: add form or inline edit state with predefined action picker.',
+        title: 'Track progress and close the action',
+        steps: [
+          'Use the status and search filters to focus on open, overdue, or completed items.',
+          'Open or edit the action record when progress changes, then update the status to match the real state of work.',
+          'When the work is finished, record the declared completion date if the actual field completion date matters separately from the system close date.',
+          'Only mark the record completed after the corrective work has truly been performed or verified.',
+          'Use the PDF export when you need a status packet for management or follow-up review.',
+        ],
       },
     ],
     disclaimers: [
-      'Changing an action to completed should happen only when the corrective work has actually been finished or verified.',
+      'Do not mark an action complete unless the corrective work has actually been finished or verified.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Corrective Actions guide',
@@ -270,34 +349,43 @@ const guideSections = [
     route: '/disciplinary-actions',
     access: 'mixed',
     purpose:
-      'Use Disciplinary Actions to document formal responses connected to safety violations, the worker involved, and the responsible worker performing the meeting overseeing the response.',
+      'Use Disciplinary Actions to document formal responses connected to safety violations, the worker involved, and the responsible worker performing the meeting who oversaw the response.',
     outcomes: [
       'Keep disciplinary follow-up tied to the underlying incident.',
-      'Record the type of action taken, who received it, who managed it, and when it happened.',
+      'Record what action was taken, who received it, who managed it, and when it happened.',
       'Provide a consistent history visible in incident records and person profiles.',
     ],
     accessRules: [
-      'The module is visible in the app for review and workflow continuity.',
-      'Creation and maintenance of records are intended for authorized supervisory or admin users.',
+      'The log is visible in the application for continuity and review.',
+      'Creation, editing, and deletion are intended for authorized supervisory or admin users.',
     ],
     capabilities: [
-      'Search and filter by action type, violation type, and worker performing the meeting.',
-      'Launch the form directly from a safety-violation incident or from the main disciplinary log.',
+      'Search and filter by action type, violation type, leader, and recipient.',
+      'Create the record directly from a safety-violation incident or from the disciplinary log.',
+      'Store notes, timing, recipient identity, and the responsible leader in one record.',
       'Export filtered disciplinary records as a PDF report.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Disciplinary action log',
-        caption: 'Recommended screenshot: list view with filters for action type and worker performing the meeting.',
+        title: 'Create a disciplinary action from a violation',
+        steps: [
+          'Open the source incident or go directly to Disciplinary Actions and start a new record.',
+          'Confirm the linked incident, recipient, violation type, action type, and the worker performing the meeting who handled the response.',
+          'Enter the action date and time, then add notes that describe what formal response was delivered.',
+          'Save the record so it becomes visible both in the disciplinary log and in the related incident and person history.',
+        ],
       },
       {
-        title: 'Violation-linked action form',
-        caption: 'Recommended screenshot: the form showing incident, recipient, worker performing the meeting, notes, and action timing.',
+        title: 'Review and export disciplinary history',
+        steps: [
+          'Use filters to narrow the list by action type, violation type, or responsible leader.',
+          'Open related incidents or people records when you need the full context behind the disciplinary action.',
+          'Use the module export to produce a filtered PDF when a supervisor or manager needs a formal summary.',
+        ],
       },
     ],
     disclaimers: [
-      'Disciplinary records must be based on real supervisory action and must not be created in bad faith or for retaliation.',
+      'Disciplinary records must be based on real supervisory action and must never be created in bad faith or for retaliation.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Disciplinary Actions guide',
@@ -309,34 +397,43 @@ const guideSections = [
     route: '/projects',
     access: 'all',
     purpose:
-      'Use Projects as the operational container for meetings and incidents so that records stay tied to the correct job and can be reviewed in context.',
+      'Use Projects as the operational container for meetings, incidents, and related safety records so that each item stays tied to the correct jobsite.',
     outcomes: [
-      'Keep meetings and incidents grouped by real jobsite.',
-      'Review job-specific activity from a single detail page.',
-      'Start project-specific meeting entry with fewer manual selections.',
+      'Keep meetings and incidents grouped by the real jobsite.',
+      'Review job-specific activity from one detail page.',
+      'Reduce re-entry by selecting the correct project early in each workflow.',
     ],
     accessRules: [
       'Projects are part of the normal workflow for all users.',
+      'Editing the project master data is typically handled by users with broader operational responsibility.',
     ],
     capabilities: [
-      'Search by name, client, address, or trade.',
-      'Sort by newest, oldest, name, or status.',
-      'Review meetings and incidents from the project detail tabs.',
-      'Generate PDFs for individual meetings and incidents inside the project context.',
+      'Search by project name, client, address, or trade.',
+      'Sort by newest, oldest, alphabetical order, or status.',
+      'Store client, address, description, status, and trade tags on the project record.',
+      'Review linked meetings and incidents from project details.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Project list and filters',
-        caption: 'Recommended screenshot: project cards with trades, status, and search controls.',
+        title: 'Create or update a project',
+        steps: [
+          'Open Projects and start a new project or edit an existing one.',
+          'Enter the project name, client, address, status, description, and any relevant trade tags.',
+          'Save the project before creating linked meetings or incidents whenever possible.',
+          'Use the status field consistently so archived or completed jobs do not clutter active work.',
+        ],
       },
       {
-        title: 'Project detail tabs',
-        caption: 'Recommended screenshot: project detail view with meetings and incidents tabs.',
+        title: 'Review project activity',
+        steps: [
+          'Use search and filters on the project list to find the correct job.',
+          'Open the project detail page to inspect linked meetings and incidents in context.',
+          'Use project-linked PDFs from related records when you need job-specific documentation.',
+        ],
       },
     ],
     disclaimers: [
-      'Users should attach records to the correct project to avoid misleading reporting and incomplete project histories.',
+      'Attach records to the correct project to avoid misleading reporting and incomplete project history.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Projects guide',
@@ -350,32 +447,39 @@ const guideSections = [
     purpose:
       'Use People as the central directory for workers, subcontractors, and workers performing the meetings when assigning attendance, responsibility, witnesses, or reviewing historical involvement.',
     outcomes: [
-      'Find the correct person before assigning actions or witnesses.',
-      'Review a person\'s meetings, incidents, projects, and actions in one place.',
-      'Support more consistent naming and better traceability across the app.',
+      'Find the correct person before assigning actions, attendance, or witness involvement.',
+      'Review a person\'s meetings, incidents, projects, corrective actions, and disciplinary actions in one place.',
+      'Support more consistent naming and traceability across the application.',
     ],
     accessRules: [
       'The directory is visible to all users for operational reference.',
-      'Admin Panel is used to maintain the underlying people master data.',
+      'Admin Panel is used to maintain the underlying people master data, signatures, and links between workers and meeting leaders.',
     ],
     capabilities: [
-      'Search by name.',
-      'See role badges for worker, performs the meetings, or both.',
-      'Open profile tabs for meetings, projects, incidents, corrective actions, and disciplinary actions.',
+      'Search by person name and review role badges for worker, performs the meetings, or both.',
+      'Open tabbed profile pages with meetings, projects, incidents, corrective actions, and disciplinary actions.',
+      'See company affiliation, linked leader information, and recent activity context.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'People directory cards',
-        caption: 'Recommended screenshot: people cards with meeting counts and role badges.',
+        title: 'Find the correct person before recording work',
+        steps: [
+          'Open People and search by name before creating a meeting, incident, or follow-up action.',
+          'Check the role badges so you know whether the record should treat the person as a worker, a worker performing the meetings, or both.',
+          'Open the detail profile if you need to verify company, linked leader, or historical involvement before assigning responsibility.',
+        ],
       },
       {
-        title: 'Person detail profile',
-        caption: 'Recommended screenshot: the tabbed activity view for one person.',
+        title: 'Review a person\'s full activity history',
+        steps: [
+          'Open a person profile from the directory.',
+          'Use the tabs to review meetings, projects, incidents, corrective actions, and disciplinary actions related to that person.',
+          'Use this profile view when you need to confirm that a witness, attendee, recipient, or responsible person selection is consistent with existing records.',
+        ],
       },
     ],
     disclaimers: [
-      'Users should select the correct person identity before assigning attendance, actions, or witness involvement.',
+      'Always select the correct person identity before assigning attendance, actions, or witness involvement.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export People guide',
@@ -391,32 +495,40 @@ const guideSections = [
     outcomes: [
       'Build management-ready or compliance-ready PDF packages from filtered data.',
       'Export CSV files for downstream review, backup, or analytics.',
-      'Use consistent filter-based exports rather than manual screenshot collection.',
+      'Use consistent filter-based exports instead of manual copying or screenshots.',
     ],
     accessRules: [
       'The Export Center is admin-only.',
-      'Users can still generate some single-record PDFs from detail pages elsewhere in the app.',
+      'Regular users can still generate selected single-record PDFs from detail pages in other modules.',
     ],
     capabilities: [
-      'Generate meeting list PDFs and ZIP bundles of individual meeting PDFs.',
-      'Generate incident, corrective-action, safety-topic, and checklist-history reports.',
-      'Build CSV ZIP packages for selected datasets.',
-      'Track long-running exports through progress UI.',
+      'Generate meeting list PDFs, chunked list ZIP files, and ZIP bundles of individual meeting PDFs.',
+      'Generate incident, corrective action, checklist completion, and safety topic PDF reports.',
+      'Create CSV ZIP packages for meetings, incidents, corrective actions, statistics, and attendance.',
+      'Track long-running exports through the progress dialog and cancel supported ZIP jobs.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Export Center overview',
-        caption: 'Recommended screenshot: the export page with section filters and export buttons.',
+        title: 'Export filtered PDF reports',
+        steps: [
+          'Open Export Center and choose the data area you want to export.',
+          'Set the filters carefully before generating the file. Most sections support date ranges, projects, and module-specific filters.',
+          'For meetings, choose between a single list PDF, chunked list ZIP, or ZIP of individual meeting PDFs depending on batch size and purpose.',
+          'Wait for the progress dialog to finish before closing the tab, especially for chunked or ZIP-based exports.',
+        ],
       },
       {
-        title: 'Progress modal',
-        caption: 'Recommended screenshot: export progress dialog during ZIP or large report generation.',
+        title: 'Export CSV spreadsheets',
+        steps: [
+          'Go to the spreadsheet export section inside Export Center.',
+          'Choose the date range, project, and the CSV files you want included in the ZIP package.',
+          'Generate the export and open the resulting ZIP in Excel, Google Sheets, or another spreadsheet tool for downstream analysis.',
+        ],
       },
     ],
     disclaimers: [
       'Exported documents are only as accurate as the data entered into the system.',
-      'Users must not circulate exported records in a misleading or bad-faith context.',
+      'Do not circulate exports in a misleading, retaliatory, or bad-faith context.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Export Center guide',
@@ -432,33 +544,40 @@ const guideSections = [
     outcomes: [
       'Create and maintain users, workers performing the meetings, workers, and companies.',
       'Store default signatures used elsewhere in meetings, incidents, and checklists.',
-      'Control featured content and topic-checklist relationships.',
+      'Control topic-checklist mappings, featured content, timezone settings, and analytics visibility.',
     ],
     accessRules: [
       'Admin Panel is restricted to admins.',
-      'Some functions inside it, such as audit-oriented maintenance or featured settings, are especially sensitive and should be limited to trusted administrators.',
+      'Because its changes affect downstream data quality, it should be used only by trusted administrators.',
     ],
     capabilities: [
-      'Create users, reset passwords, edit admin rights, and delete accounts.',
-      'Maintain workers performing the meetings and workers, including default signatures.',
-      'Manage companies and topic-to-checklist suggestions.',
-      'Adjust featured categories, topics, and trades that affect user-facing screens.',
-      'Run the draft meeting-performer repair utility and view analytics.',
+      'Manage meetings, incidents, users, workers performing the meetings, workers and subs, companies, topic-checklist relationships, settings, and analytics.',
+      'Capture or update default signatures for users, leaders, and involved persons.',
+      'Set the global app timezone and featured categories, topics, and trades.',
+      'Run draft meeting repair utilities and review admin analytics.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'Admin tabs overview',
-        caption: 'Recommended screenshot: tab bar showing users, workers performing the meetings, workers, settings, and analytics.',
+        title: 'Maintain people, access, and signatures',
+        steps: [
+          'Open the Users, Workers Performing the Meetings, Workers & Subs, or Companies tab depending on the master data that needs maintenance.',
+          'Create, edit, or deactivate records carefully because these identities are reused throughout meetings, incidents, checklists, and follow-up actions.',
+          'When appropriate, save a default signature for the user, leader, or involved person so that later workflows can reuse it instead of drawing a fresh signature every time.',
+        ],
       },
       {
-        title: 'User or meeting performer form',
-        caption: 'Recommended screenshot: one admin form showing default signature management.',
+        title: 'Use admin settings and maintenance tools',
+        steps: [
+          'Open Topic Checklists to maintain which checklists should be suggested for each safety topic.',
+          'Open Settings to manage featured categories, featured topics, featured trades, and the global app timezone. Timezone changes affect how date and time data are interpreted across the app.',
+          'Use the meetings-related admin tools for draft maintenance, approval support, and repair utilities only when normal operational workflows cannot resolve the issue.',
+          'Review Analytics when you need dashboard-style summaries for meeting frequency, safety activity, or completion trends.',
+        ],
       },
     ],
     disclaimers: [
       'Administrative permissions must be used only by authorized personnel and in good faith.',
-      'Deleting or changing records in the admin area can affect downstream reporting and evidence quality.',
+      'Deleting or changing records in the admin area can affect downstream reporting, signatures, and evidence quality.',
     ],
     includeInHandbook: true,
     pdfExportLabel: 'Export Admin Panel guide',
@@ -478,18 +597,22 @@ const guideSections = [
     ],
     accessRules: [
       'This screen is restricted to audit superadmin accounts only.',
-      'It should not be treated as a normal operational workflow for standard users or regular admins.',
+      'It is not a standard operational workflow for ordinary users or regular admins.',
     ],
     capabilities: [
       'Filter and search audit events and record-history entries.',
-      'Inspect JSON metadata and snapshot content.',
-      'Export filtered evidence PDF output.',
+      'Inspect JSON metadata, actor data, and snapshot content for tracked changes.',
+      'Export filtered evidence PDF output for restricted investigation use.',
     ],
-    procedures: [],
-    imageSlots: [
+    procedures: [
       {
-        title: 'System Records view',
-        caption: 'Recommended screenshot: audit event or record-history card layout for restricted users.',
+        title: 'Review audit evidence safely',
+        steps: [
+          'Open System Records only when the review is authorized and requires audit-level inspection.',
+          'Use entity filters, date filters, and search to narrow the result set to the specific workflow or record under review.',
+          'Open the matching audit or history entry and inspect metadata, actor identity, and before-and-after snapshots carefully.',
+          'Generate a filtered evidence PDF only when you need a formal audit package.',
+        ],
       },
     ],
     disclaimers: [
@@ -532,11 +655,6 @@ const manualPdfStyles = `
   .manual-panel ul,.manual-steps ol{padding-left:18px}
   .manual-panel li,.manual-steps li{font-size:12px;color:#374151;line-height:1.65;margin-bottom:6px}
   .manual-steps{margin-top:14px;border:1px solid #e5e5e5;border-radius:10px;padding:14px;background:#fffaf9}
-  .manual-shot-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:14px}
-  .manual-shot{border:1px dashed #9ca3af;border-radius:12px;background:#f9fafb;padding:14px;min-height:150px}
-  .manual-shot-label{font-size:11px;font-weight:800;color:#171717;margin-bottom:8px}
-  .manual-shot-box{height:82px;border:1px dashed #d1d5db;border-radius:8px;background:repeating-linear-gradient(135deg,#ffffff,#ffffff 10px,#f3f4f6 10px,#f3f4f6 20px);display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
-  .manual-shot-caption{font-size:11px;line-height:1.55;color:#6b7280;margin-top:8px}
   .manual-disclaimer{margin-top:14px;border-top:1px solid #e5e5e5;padding-top:12px}
   .manual-disclaimer-title{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#991b1b;margin-bottom:6px}
   .manual-disclaimer li{font-size:11px;color:#7f1d1d;line-height:1.6;margin-left:18px;margin-bottom:4px}
@@ -608,16 +726,6 @@ const buildSectionHtml = (sectionData) => {
         </div>
       `).join('')
     : ''
-  const screenshotsHtml = sectionData.imageSlots.length > 0
-    ? `<div class="manual-shot-grid">${sectionData.imageSlots.map((slot) => `
-        <div class="manual-shot">
-          <div class="manual-shot-label">${escapeHtml(slot.title)}</div>
-          <div class="manual-shot-box">Screenshot Placeholder</div>
-          <div class="manual-shot-caption">${escapeHtml(slot.caption)}</div>
-        </div>
-      `).join('')}</div>`
-    : ''
-
   return `
     <div class="manual-section-card">
       <span class="manual-badge ${accessMeta.className}">${escapeHtml(accessMeta.label)}</span>
@@ -638,7 +746,6 @@ const buildSectionHtml = (sectionData) => {
         <ul>${capabilitiesHtml}</ul>
       </div>
       ${proceduresHtml}
-      ${screenshotsHtml}
       <div class="manual-disclaimer">
         <div class="manual-disclaimer-title">Section Disclaimer</div>
         <ul>${disclaimerHtml}</ul>
@@ -683,8 +790,118 @@ const buildGuidePdfHtml = ({ title, subtitle, sections }) => {
   `)
 }
 
+function GuideSectionDetails({ sectionData, exportingMode, onExportSectionPdf, onClose }) {
+  const accessMeta = getAccessMeta(sectionData.access)
+
+  return (
+    <>
+      <div className="user-guide-detail-header">
+        <div>
+          <span className={`user-guide-access-badge ${accessMeta.className}`}>{accessMeta.label}</span>
+          <h2>{sectionData.title}</h2>
+          <p>{sectionData.shortDescription}</p>
+        </div>
+        <div className="user-guide-detail-actions">
+          <button className="btn btn-secondary" onClick={() => onExportSectionPdf(sectionData)} disabled={!!exportingMode}>
+            {exportingMode === sectionData.id ? 'Preparing PDF...' : sectionData.pdfExportLabel}
+          </button>
+          <Link className="btn btn-secondary" to={sectionData.route}>
+            Open Module
+          </Link>
+          {onClose && (
+            <button type="button" className="btn btn-secondary user-guide-close-btn" onClick={onClose}>
+              Close
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="user-guide-purpose card-lite">
+        <span className="user-guide-section-label">Purpose</span>
+        <p>{sectionData.purpose}</p>
+      </div>
+
+      <div className="user-guide-detail-grid">
+        <article className="user-guide-panel">
+          <h3>What You Can Achieve</h3>
+          <ul>
+            {sectionData.outcomes.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+
+        <article className="user-guide-panel">
+          <h3>Who Has Access</h3>
+          <ul>
+            {sectionData.accessRules.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </article>
+      </div>
+
+      <article className="user-guide-panel user-guide-panel--full">
+        <h3>Key Capabilities</h3>
+        <ul>
+          {sectionData.capabilities.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </article>
+
+      {sectionData.procedures.length > 0 && (
+        <section className="user-guide-procedures">
+          <div className="user-guide-section-head">
+            <span className="user-guide-section-label">Step by step</span>
+            <h3>How To Use This Section</h3>
+          </div>
+          <div className="user-guide-procedure-grid">
+            {sectionData.procedures.map((procedure) => (
+              <article key={procedure.title} className="user-guide-procedure-card">
+                <h4>{procedure.title}</h4>
+                <ol>
+                  {procedure.steps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="user-guide-disclaimers">
+        <div className="user-guide-section-head">
+          <span className="user-guide-section-label">Responsibility and good faith</span>
+          <h3>Section Disclaimers</h3>
+        </div>
+        <div className="user-guide-disclaimer-grid">
+          <article className="user-guide-callout user-guide-callout--warning">
+            <div className="user-guide-callout-title">Global Rules</div>
+            <ul>
+              {GLOBAL_DISCLAIMER.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+          <article className="user-guide-callout user-guide-callout--danger">
+            <div className="user-guide-callout-title">{sectionData.title} Specific</div>
+            <ul>
+              {sectionData.disclaimers.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </section>
+    </>
+  )
+}
+
 export default function UserManual() {
   const [activeSectionId, setActiveSectionId] = useState(guideSections[0].id)
+  const [modalSectionId, setModalSectionId] = useState('')
   const [exportingMode, setExportingMode] = useState('')
 
   const activeSection = useMemo(
@@ -696,6 +913,30 @@ export default function UserManual() {
     () => guideSections.filter((sectionData) => sectionData.includeInHandbook),
     []
   )
+
+  const modalSection = useMemo(
+    () => guideSections.find((sectionData) => sectionData.id === modalSectionId) || null,
+    [modalSectionId]
+  )
+
+  useEffect(() => {
+    if (!modalSection) return undefined
+
+    const previousOverflow = document.body.style.overflow
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setModalSectionId('')
+      }
+    }
+
+    document.body.style.overflow = 'hidden'
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [modalSection])
 
   const exportSectionPdf = async (sectionData) => {
     setExportingMode(sectionData.id)
@@ -733,8 +974,6 @@ export default function UserManual() {
     }
   }
 
-  const activeAccess = getAccessMeta(activeSection.access)
-
   return (
     <div className="user-guide-page">
       <section className="user-guide-hero card">
@@ -742,8 +981,8 @@ export default function UserManual() {
           <span className="user-guide-eyebrow">Operating Guide</span>
           <h1>Section-Based Safety App Handbook</h1>
           <p>
-            This guide is organized around the real sections of the application. Select a section card to learn why the feature exists,
-            what can be achieved with it, who has access, and what responsibilities apply when entering or exporting data.
+            This guide is organized around the real sections and workflows of the application. Select a section card for the inline view,
+            or use View guide section to open the full instructions in a popup.
           </p>
           <div className="user-guide-hero-actions">
             <button className="btn btn-primary" onClick={exportHandbookPdf} disabled={!!exportingMode}>
@@ -779,11 +1018,22 @@ export default function UserManual() {
           const accessMeta = getAccessMeta(sectionData.access)
           const isActive = sectionData.id === activeSectionId
           return (
-            <button
+            <article
               key={sectionData.id}
-              type="button"
               className={`user-guide-card${isActive ? ' is-active' : ''}`}
-              onClick={() => setActiveSectionId(sectionData.id)}
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setActiveSectionId(sectionData.id)
+                setModalSectionId(sectionData.id)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  setActiveSectionId(sectionData.id)
+                  setModalSectionId(sectionData.id)
+                }
+              }}
             >
               <div className="user-guide-card-top">
                 <div className="user-guide-card-icon">
@@ -793,125 +1043,38 @@ export default function UserManual() {
               </div>
               <h2>{sectionData.title}</h2>
               <p>{sectionData.shortDescription}</p>
-              <span className="user-guide-card-link">View guide section</span>
-            </button>
+              <button
+                type="button"
+                className="user-guide-card-link"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setActiveSectionId(sectionData.id)
+                  setModalSectionId(sectionData.id)
+                }}
+              >
+                View guide section
+              </button>
+            </article>
           )
         })}
       </section>
 
       <section className="user-guide-detail card">
-        <div className="user-guide-detail-header">
-          <div>
-            <span className={`user-guide-access-badge ${activeAccess.className}`}>{activeAccess.label}</span>
-            <h2>{activeSection.title}</h2>
-            <p>{activeSection.shortDescription}</p>
-          </div>
-          <div className="user-guide-detail-actions">
-            <button className="btn btn-secondary" onClick={() => exportSectionPdf(activeSection)} disabled={!!exportingMode}>
-              {exportingMode === activeSection.id ? 'Preparing PDF...' : activeSection.pdfExportLabel}
-            </button>
-            <Link className="btn btn-secondary" to={activeSection.route}>
-              Open Module
-            </Link>
-          </div>
-        </div>
-
-        <div className="user-guide-purpose card-lite">
-          <span className="user-guide-section-label">Purpose</span>
-          <p>{activeSection.purpose}</p>
-        </div>
-
-        <div className="user-guide-detail-grid">
-          <article className="user-guide-panel">
-            <h3>What You Can Achieve</h3>
-            <ul>
-              {activeSection.outcomes.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
-
-          <article className="user-guide-panel">
-            <h3>Who Has Access</h3>
-            <ul>
-              {activeSection.accessRules.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
-        </div>
-
-        <article className="user-guide-panel user-guide-panel--full">
-          <h3>Key Capabilities</h3>
-          <ul>
-            {activeSection.capabilities.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
-
-        {activeSection.procedures.length > 0 && (
-          <section className="user-guide-procedures">
-            <div className="user-guide-section-head">
-              <span className="user-guide-section-label">Step by step</span>
-              <h3>How To Use This Section</h3>
-            </div>
-            <div className="user-guide-procedure-grid">
-              {activeSection.procedures.map((procedure) => (
-                <article key={procedure.title} className="user-guide-procedure-card">
-                  <h4>{procedure.title}</h4>
-                  <ol>
-                    {procedure.steps.map((step) => (
-                      <li key={step}>{step}</li>
-                    ))}
-                  </ol>
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-
-        <section className="user-guide-screenshots">
-          <div className="user-guide-section-head">
-            <span className="user-guide-section-label">Screenshot placeholders</span>
-            <h3>Drop-In Visual References</h3>
-          </div>
-          <div className="user-guide-shot-grid">
-            {activeSection.imageSlots.map((slot) => (
-              <article key={slot.title} className="user-guide-shot-card">
-                <div className="user-guide-shot-label">{slot.title}</div>
-                <div className="user-guide-shot-box">Screenshot Placeholder</div>
-                <p>{slot.caption}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="user-guide-disclaimers">
-          <div className="user-guide-section-head">
-            <span className="user-guide-section-label">Responsibility and good faith</span>
-            <h3>Section Disclaimers</h3>
-          </div>
-          <div className="user-guide-disclaimer-grid">
-            <article className="user-guide-callout user-guide-callout--warning">
-              <div className="user-guide-callout-title">Global Rules</div>
-              <ul>
-                {GLOBAL_DISCLAIMER.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-            <article className="user-guide-callout user-guide-callout--danger">
-              <div className="user-guide-callout-title">{activeSection.title} Specific</div>
-              <ul>
-                {activeSection.disclaimers.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </article>
-          </div>
-        </section>
+        <GuideSectionDetails sectionData={activeSection} exportingMode={exportingMode} onExportSectionPdf={exportSectionPdf} />
       </section>
+
+      {modalSection && (
+        <div className="user-guide-modal-overlay" onClick={() => setModalSectionId('')}>
+          <div className="user-guide-modal" onClick={(event) => event.stopPropagation()}>
+            <GuideSectionDetails
+              sectionData={modalSection}
+              exportingMode={exportingMode}
+              onExportSectionPdf={exportSectionPdf}
+              onClose={() => setModalSectionId('')}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

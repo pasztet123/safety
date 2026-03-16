@@ -123,6 +123,42 @@ export const ALL_TRADES = [
   'Roofing',
 ]
 
+export const TRADE_TOPIC_SUGGESTION_NAMES = Object.freeze({
+  Carpentry: 'Hand and Power Tools',
+  Drywall: 'Respiratory Protection',
+  Electrical: 'Electrical Safety',
+  General: 'Personal Protective Equipment (PPE)',
+  HVAC: 'Lockout/Tagout',
+  Masonry: 'Scaffolding Safety',
+  'Metal Work': 'Fire Prevention',
+  Painting: 'Hazard Communication',
+  Plumbing: 'Ladder Safety',
+  Roofing: 'Fall Protection',
+})
+
+export function getSuggestedTopicNameForTrade(trade) {
+  return TRADE_TOPIC_SUGGESTION_NAMES[trade] || TRADE_TOPIC_SUGGESTION_NAMES.General || ''
+}
+
+export function getSuggestedTopicForTrade(trade, topics = []) {
+  if (!Array.isArray(topics) || topics.length === 0) return null
+
+  const suggestedName = getSuggestedTopicNameForTrade(trade)
+  if (suggestedName) {
+    const exactMatch = topics.find((topic) => topic?.name === suggestedName)
+    if (exactMatch) return exactMatch
+  }
+
+  if (trade && trade !== 'General') {
+    const generalSuggestion = TRADE_TOPIC_SUGGESTION_NAMES.General
+    if (generalSuggestion) {
+      return topics.find((topic) => topic?.name === generalSuggestion) || null
+    }
+  }
+
+  return null
+}
+
 /**
  * Map a cost code string to a trade name.
  * Falls back to 'General' for unknown codes.
@@ -235,7 +271,6 @@ function parseCSV(text) {
  *
  * @param {{ firstName, lastName, start, costCode }[]} rows
  * @param {string} projectId  UUID of the project this batch belongs to
- * @param {{ id, name, trades, category }[]} safetyTopics  All topics from DB
  * @param {string} projectLocation  Default location (project.job_address or '')
  * @returns {DraftMeeting[]}
  *
@@ -249,7 +284,7 @@ function parseCSV(text) {
  * @property {string[]} attendeeNames   sorted unique names
  * @property {string[]} costCodes       all distinct cost codes for this day
  */
-export function groupIntoDraftMeetings(rows, projectId, safetyTopics = [], projectLocation = '') {
+export function groupIntoDraftMeetings(rows, projectId, projectLocation = '') {
   // 1. Group rows by date
   const byDate = {}
   for (const row of rows) {
@@ -274,8 +309,8 @@ export function groupIntoDraftMeetings(rows, projectId, safetyTopics = [], proje
     const costCodes = [...new Set(dayRows.map(r => r.costCode).filter(Boolean))]
     const trade = pickBestTrade(costCodes)
 
-    // 4. Random topic matching the trade
-    const topic = pickRandomTopic(trade, safetyTopics)
+    // 4. Topic stays empty so the user must choose it manually.
+    const topic = ''
 
     // 5. Unique attendee names
     const attendeeNames = [...new Set(
@@ -333,36 +368,6 @@ function pickBestTrade(costCodes) {
   const trades = costCodes.map(c => costCodeToTrade(c))
   const nonGeneral = trades.find(t => t !== 'General')
   return nonGeneral || 'General'
-}
-
-/**
- * Pick a random safety topic whose `trades` array includes the given trade.
- * Falls back to any topic with trade=General, then first available topic.
- *
- * @param {string} trade
- * @param {{ name: string, trades: string[] }[]} topics
- * @returns {string}
- */
-export function pickRandomTopic(trade, topics) {
-  if (!topics || topics.length === 0) return ''
-
-  const forTrade = topics.filter(t =>
-    Array.isArray(t.trades) && t.trades.some(tr => tr.toLowerCase() === trade.toLowerCase())
-  )
-  if (forTrade.length > 0) {
-    return forTrade[Math.floor(Math.random() * forTrade.length)].name
-  }
-
-  // Fallback: General topics
-  const general = topics.filter(t =>
-    Array.isArray(t.trades) && t.trades.some(tr => tr.toLowerCase() === 'general')
-  )
-  if (general.length > 0) {
-    return general[Math.floor(Math.random() * general.length)].name
-  }
-
-  // Last resort: any topic
-  return topics[Math.floor(Math.random() * topics.length)].name
 }
 
 /**

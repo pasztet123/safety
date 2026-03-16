@@ -9,6 +9,7 @@ import { MAX_CORRECTIVE_ACTION_PHOTOS, normalizeCorrectiveActionPhotos } from '.
 import { buildCompletionStatusFields, getDeclaredCompletionDate, getTodayDateString } from '../lib/correctiveActionDates'
 import { MAX_INCIDENT_PHOTOS, normalizeIncidentPhotos } from '../lib/incidentPhotos'
 import { buildResponsiblePersonOptions, mergeResponsiblePerson, resolveResponsiblePersonId } from '../lib/responsiblePeople'
+import { getCurrentDateInputValue, getCurrentTimeInputValue } from '../lib/dateTime'
 import './IncidentForm.css'
 
 const SEVERITY_OPTIONS = [
@@ -134,8 +135,8 @@ export default function IncidentForm() {
 
   const [formData, setFormData] = useState({
     project_id: '',
-    date: new Date().toISOString().split('T')[0],
-    time: new Date().toTimeString().slice(0, 5),
+    date: getCurrentDateInputValue(),
+    time: getCurrentTimeInputValue(),
     location: '',
     latitude: null,
     longitude: null,

@@ -7,6 +7,7 @@ import { generateMeetingPDF } from '../lib/pdfGenerator'
 import { generateIncidentPDF } from '../lib/pdfGenerator'
 import { getIncidentPhotoCount } from '../lib/incidentPhotos'
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
+import { formatDateOnly } from '../lib/dateTime'
 import LocationMap from '../components/LocationMap'
 import './ProjectDetail.css'
 
@@ -367,7 +368,7 @@ export default function ProjectDetail() {
                     <div>
                       <h3 className="meeting-topic">{meeting.topic}</h3>
                       <p className="meeting-meta">
-                        {new Date(meeting.date).toLocaleDateString()} at {meeting.time}
+                        {formatDateOnly(meeting.date, { fallback: meeting.date })} at {meeting.time}
                       </p>
                     </div>
                     {isAdmin && (
@@ -468,7 +469,7 @@ export default function ProjectDetail() {
                         )}
                       </div>
                       <p className="incident-meta">
-                        {new Date(incident.date).toLocaleDateString()} at {incident.time}
+                        {formatDateOnly(incident.date, { fallback: incident.date })} at {incident.time}
                       </p>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
@@ -552,7 +553,7 @@ export default function ProjectDetail() {
                                 )}
                                 {action.due_date && (
                                   <span className="ica-tag ica-tag--date">
-                                    Due {new Date(action.due_date).toLocaleDateString()}
+                                    Due {formatDateOnly(action.due_date, { fallback: action.due_date })}
                                   </span>
                                 )}
                                 {getCorrectiveActionPhotoCount(action) > 0 && (
@@ -560,7 +561,7 @@ export default function ProjectDetail() {
                                 )}
                                 {getDeclaredCompletionDate(action) && (
                                   <span className="ica-tag ica-tag--done">
-                                    Completed {new Date(getDeclaredCompletionDate(action)).toLocaleDateString()}
+                                    Completed {formatDateOnly(getDeclaredCompletionDate(action), { fallback: getDeclaredCompletionDate(action) })}
                                   </span>
                                 )}
                               </div>
