@@ -142,6 +142,7 @@ export default function AdminPanel() {
   const [attendanceRiskEnabledDraft, setAttendanceRiskEnabledDraft] = useState(false)
   const [attendanceRiskEmailDraft, setAttendanceRiskEmailDraft] = useState(true)
   const [attendanceRiskInAppDraft, setAttendanceRiskInAppDraft] = useState(true)
+  const [attendanceRiskPushDraft, setAttendanceRiskPushDraft] = useState(false)
   const [attendanceRiskRunHourDraft, setAttendanceRiskRunHourDraft] = useState(10)
   const [attendanceRiskSettingsSaving, setAttendanceRiskSettingsSaving] = useState(false)
   const [meetings, setMeetings] = useState([])
@@ -194,8 +195,16 @@ export default function AdminPanel() {
     setAttendanceRiskEnabledDraft(Boolean(appSettings.attendance_risk_notifications_enabled))
     setAttendanceRiskEmailDraft(Boolean(appSettings.attendance_risk_email_enabled))
     setAttendanceRiskInAppDraft(Boolean(appSettings.attendance_risk_in_app_enabled))
+    setAttendanceRiskPushDraft(Boolean(appSettings.attendance_risk_push_enabled))
     setAttendanceRiskRunHourDraft(Number.isFinite(Number(appSettings.attendance_risk_run_hour)) ? Number(appSettings.attendance_risk_run_hour) : 10)
-  }, [appSettings.timezone])
+  }, [
+    appSettings.attendance_risk_email_enabled,
+    appSettings.attendance_risk_in_app_enabled,
+    appSettings.attendance_risk_notifications_enabled,
+    appSettings.attendance_risk_push_enabled,
+    appSettings.attendance_risk_run_hour,
+    appSettings.timezone,
+  ])
 
   // ── Draft leader migration ──
   const [draftMigrationRunning, setDraftMigrationRunning] = useState(false)
@@ -587,6 +596,7 @@ export default function AdminPanel() {
         attendance_risk_notifications_enabled: attendanceRiskEnabledDraft,
         attendance_risk_email_enabled: attendanceRiskEmailDraft,
         attendance_risk_in_app_enabled: attendanceRiskInAppDraft,
+        attendance_risk_push_enabled: attendanceRiskPushDraft,
         attendance_risk_run_hour: attendanceRiskRunHourDraft,
       })
       alert('Attendance risk settings saved!')
@@ -2964,7 +2974,7 @@ export default function AdminPanel() {
                 <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>Attendance Risk Notifications</h3>
                 <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#475569', maxWidth: '860px' }}>
                   This feature creates daily risk alerts for workers or subs who attended a toolbox meeting within the last 7 calendar days but do not appear today.
-                  Weekend notification runs are skipped. In-app alerts are available in the Attendance Risk tab; email delivery uses the MailerSend configuration on the backend.
+                  Weekend notification runs are skipped. In-app alerts are available in the Attendance Risk tab; email delivery uses the MailerSend configuration on the backend; push delivery targets logged-in users who enable reminders on their device.
                 </p>
 
                 <div className="admin-settings-grid">
@@ -2995,6 +3005,15 @@ export default function AdminPanel() {
                     <span>Enable daily email digest to active admins</span>
                   </label>
 
+                  <label className="admin-settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={attendanceRiskPushDraft}
+                      onChange={(event) => setAttendanceRiskPushDraft(event.target.checked)}
+                    />
+                    <span>Enable web push reminders for logged-in users</span>
+                  </label>
+
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label" htmlFor="attendance-risk-run-hour">Run hour</label>
                     <select
@@ -3014,7 +3033,7 @@ export default function AdminPanel() {
                 </div>
 
                 <p style={{ margin: '16px 0 0 0', fontSize: '12px', color: '#64748b' }}>
-                  Mobile push is not wired yet in this repository. The current implementation supports persistent in-app alerts and a MailerSend-based email digest.
+                  Push reminders require an installed PWA or browser notification permission on each device. The admin toggle only enables the channel globally; users still opt in from the dashboard.
                 </p>
 
                 <div style={{ marginTop: '16px' }}>

@@ -101,6 +101,32 @@
   border-radius: 10px;
 }
 
+.attendance-risk-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attendance-risk-date-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #1e293b;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attendance-risk-date-arrow:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .attendance-risk-status-row {
   display: flex;
   flex-wrap: wrap;

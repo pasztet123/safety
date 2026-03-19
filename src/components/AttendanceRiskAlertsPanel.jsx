@@ -6,6 +6,7 @@ import {
   formatAttendanceRiskRunHourLabel,
   runAttendanceRiskEvaluation,
 } from '../lib/attendanceRisk'
+import { logAuditEvent } from '../lib/compliance'
 import { formatDateOnly, formatDateTimeInTimeZone, getCurrentDateInputValue } from '../lib/dateTime'
 import { formatElapsedSince } from '../lib/personProfiles'
 import './AttendanceRiskAlertsPanel.css'
@@ -14,6 +15,19 @@ const STATUS_LABELS = {
   open: 'Open',
   acked: 'Acknowledged',
   resolved: 'Resolved',
+}
+
+const shiftDateOnly = (value, dayOffset) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return value
+
+  const nextDate = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0))
+  nextDate.setUTCDate(nextDate.getUTCDate() + dayOffset)
+
+  const year = nextDate.getUTCFullYear()
+  const month = String(nextDate.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(nextDate.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export default function AttendanceRiskAlertsPanel({ appSettings }) {
@@ -25,26 +39,62 @@ export default function AttendanceRiskAlertsPanel({ appSettings }) {
   const [runState, setRunState] = useState({ busy: false, summary: null })
   const [ackState, setAckState] = useState({ busyId: '', notes: {} })
 
-  const loadAlerts = async () => {
-    setLoading(true)
-    setError('')
-
-    try {
-      const rows = await fetchAttendanceRiskAlerts({
-        alertDate,
-        status: 'all',
-        limit: 300,
-      })
-      setAlerts(rows)
-    } catch (nextError) {
-      setError(nextError.message || 'Unable to load attendance risk alerts.')
-    } finally {
-      setLoading(false)
-    }
+  const loadAlerts = async (selectedDate) => {
+    const rows = await fetchAttendanceRiskAlerts({
+      alertDate: selectedDate,
+      status: 'all',
+      limit: 300,
+    })
+    setAlerts(rows)
+    return rows
   }
 
   useEffect(() => {
-    loadAlerts()
+    let cancelled = false
+
+    const autoRefreshForDate = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const summary = await runAttendanceRiskEvaluation({
+          sendEmails: false,
+          sendNotifications: false,
+          forceRun: true,
+          alertDate,
+          retries: 2,
+          retryDelayMs: 500,
+        })
+
+        if (cancelled) return
+
+        setRunState((prev) => ({
+          ...prev,
+          summary,
+        }))
+
+        await loadAlerts(alertDate)
+      } catch (nextError) {
+        if (!cancelled) {
+          try {
+            await loadAlerts(alertDate)
+          } catch {
+            // Ignore fallback read failures and preserve the original auto-refresh error.
+          }
+          setError(nextError.message || 'Unable to refresh attendance risk alerts for the selected day.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+
+    autoRefreshForDate()
+
+    return () => {
+      cancelled = true
+    }
   }, [alertDate])
 
   const filteredAlerts = statusFilter === 'all'
@@ -55,22 +105,29 @@ export default function AttendanceRiskAlertsPanel({ appSettings }) {
     acc[status] = alerts.filter((alert) => alert.status === status).length
     return acc
   }, { open: 0, acked: 0, resolved: 0 })
+  const todayDate = getCurrentDateInputValue()
+  const canGoForward = alertDate < todayDate
 
   const handleRunNow = async () => {
     setRunState({ busy: true, summary: null })
     setError('')
+    setLoading(true)
 
     try {
       const summary = await runAttendanceRiskEvaluation({
         sendEmails: Boolean(appSettings?.attendance_risk_notifications_enabled && appSettings?.attendance_risk_email_enabled),
+        sendNotifications: true,
         forceRun: true,
+        alertDate,
       })
 
       setRunState({ busy: false, summary })
-      await loadAlerts()
+      await loadAlerts(alertDate)
     } catch (nextError) {
       setRunState({ busy: false, summary: null })
       setError(nextError.message || 'Unable to run attendance risk evaluation.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -93,12 +150,27 @@ export default function AttendanceRiskAlertsPanel({ appSettings }) {
         alertId,
         note: ackState.notes[alertId] || '',
       })
-      await loadAlerts()
+      await logAuditEvent({
+        eventType: 'meeting_attendance_risk.alert_acked',
+        tableName: 'meeting_attendance_risk_alerts',
+        recordId: alertId,
+        metadata: {
+          alert_date: alertDate,
+        },
+      })
+      await loadAlerts(alertDate)
     } catch (nextError) {
       setError(nextError.message || 'Unable to acknowledge attendance risk alert.')
     } finally {
       setAckState((prev) => ({ ...prev, busyId: '' }))
     }
+  }
+
+  const handleShiftAlertDate = (dayOffset) => {
+    setAlertDate((currentValue) => {
+      const shiftedValue = shiftDateOnly(currentValue, dayOffset)
+      return dayOffset > 0 && shiftedValue > todayDate ? todayDate : shiftedValue
+    })
   }
 
   return (
@@ -133,10 +205,24 @@ export default function AttendanceRiskAlertsPanel({ appSettings }) {
       </div>
 
       {runState.summary && (
-        <div className="attendance-risk-summary-banner">
-          <strong>Last run:</strong>{' '}
-          {runState.summary.alertDate || alertDate} · {runState.summary.createdCount || 0} created · {runState.summary.updatedCount || 0} updated · {runState.summary.resolvedCount || 0} resolved · {runState.summary.emailDeliveryCount || 0} email deliveries
-        </div>
+        <>
+          <div className="attendance-risk-summary-banner">
+            <strong>Last run:</strong>{' '}
+            {runState.summary.alertDate || alertDate}
+            {runState.summary.skipped
+              ? ` · skipped (${runState.summary.reason || 'unknown reason'})`
+              : ` · ${runState.summary.openCount || 0} open · ${runState.summary.createdCount || 0} created · ${runState.summary.updatedCount || 0} updated · ${runState.summary.resolvedCount || 0} resolved · ${runState.summary.emailDeliveryCount || 0} email deliveries${runState.summary.usedRawFallback ? ' · raw-name fallback' : ''}`}
+          </div>
+
+          {runState.summary.debug && (
+            <details className="attendance-risk-summary-banner" style={{ marginTop: '12px', whiteSpace: 'pre-wrap' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Run diagnostics</summary>
+              <pre style={{ margin: '12px 0 0 0', fontSize: '12px', lineHeight: 1.5, overflowX: 'auto' }}>
+                {JSON.stringify(runState.summary.debug, null, 2)}
+              </pre>
+            </details>
+          )}
+        </>
       )}
 
       {error && <div className="attendance-risk-error">{error}</div>}
@@ -144,12 +230,32 @@ export default function AttendanceRiskAlertsPanel({ appSettings }) {
       <div className="attendance-risk-toolbar">
         <div className="attendance-risk-toolbar-field">
           <label htmlFor="attendance-risk-date">Alert date</label>
-          <input
-            id="attendance-risk-date"
-            type="date"
-            value={alertDate}
-            onChange={(event) => setAlertDate(event.target.value)}
-          />
+          <div className="attendance-risk-date-nav">
+            <button
+              type="button"
+              className="attendance-risk-date-arrow"
+              onClick={() => handleShiftAlertDate(-1)}
+              aria-label="Show previous day"
+            >
+              ←
+            </button>
+            <input
+              id="attendance-risk-date"
+              type="date"
+              value={alertDate}
+              max={todayDate}
+              onChange={(event) => setAlertDate(event.target.value)}
+            />
+            <button
+              type="button"
+              className="attendance-risk-date-arrow"
+              onClick={() => handleShiftAlertDate(1)}
+              disabled={!canGoForward}
+              aria-label="Show next day"
+            >
+              →
+            </button>
+          </div>
         </div>
 
         <div className="attendance-risk-status-row" role="tablist" aria-label="Attendance risk status filter">

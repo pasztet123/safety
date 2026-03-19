@@ -305,6 +305,31 @@ tbody tr:last-child td {
   gap: 16px;
 }
 
+.admin-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px 18px;
+  align-items: start;
+}
+
+.admin-settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #dbe4ee;
+  background: #fff;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.admin-settings-checkbox input {
+  width: 18px;
+  height: 18px;
+}
+
 .admin-edit-modal-overlay {
   position: fixed;
   inset: 0;

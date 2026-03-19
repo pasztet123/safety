@@ -1,9 +1,20 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { useAppSettings } from '../lib/appSettings'
 import { formatDateOnly, formatDateTimeInTimeZone } from '../lib/dateTime'
 import { formatElapsedSince, getToolboxMeetingReminderForCurrentUser } from '../lib/personProfiles'
+import { fetchAttendanceRiskFeed } from '../lib/attendanceRisk'
+import {
+  getPushSupportDiagnostics,
+  getPushSubscriptionState,
+  subscribeCurrentUserToAttendanceRiskPush,
+  syncCurrentPushSubscription,
+  unsubscribeCurrentUserFromAttendanceRiskPush,
+} from '../lib/pushSubscriptions'
 import './MainMenu.css'
+
+const SHOW_HOME_DEVICE_REMINDER = false
 
 /* ── Icons ── */
 const FolderIcon = () => (
@@ -130,9 +141,31 @@ const calculateDaysSince = (dateValue) => {
 
 export default function MainMenu() {
   const navigate = useNavigate()
+  const appSettings = useAppSettings()
   const [isAdmin, setIsAdmin] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState(null)
   const [toolboxReminder, setToolboxReminder] = useState(null)
   const [showToolboxReminder, setShowToolboxReminder] = useState(false)
+  const [pushStatus, setPushStatus] = useState({
+    loading: true,
+    supported: false,
+    permission: 'default',
+    subscribed: false,
+    endpoint: null,
+    diagnostics: null,
+    error: '',
+  })
+  const [pushBusy, setPushBusy] = useState(false)
+  const [attendanceRiskFeed, setAttendanceRiskFeed] = useState({
+    loading: true,
+    featureEnabled: false,
+    pushEnabled: false,
+    weekend: false,
+    alertDate: null,
+    openCount: 0,
+    alerts: [],
+    error: '',
+  })
   const [stats, setStats] = useState({
     meetings: '—', daysSafe: '—', openActions: '—', completedActions: '—', workersAndSubsCount: '—', todayMeetings: 0,
   })
@@ -146,6 +179,8 @@ export default function MainMenu() {
         const initAuth = async () => {
           const { data: { user } } = await supabase.auth.getUser()
           if (!user) return { isAdmin: false, userId: null }
+
+          setCurrentUserId(user.id)
 
           const { data } = await supabase
             .from('users')
@@ -211,8 +246,9 @@ export default function MainMenu() {
         supabase.from('meetings')
           .select('id', { count: 'exact', head: true }).gte('date', monthStart),
         supabase.from('incidents')
+          .select('id', { count: 'exact', head: true })
           .is('deleted_at', null)
-          .select('id', { count: 'exact', head: true }).gte('date', thirtyDaysAgo),
+          .gte('date', thirtyDaysAgo),
         supabase.from('disciplinary_actions')
           .select('id', { count: 'exact', head: true }),
       ])
@@ -240,8 +276,8 @@ export default function MainMenu() {
           .select('id, topic, leader_name, date')
           .order('date', { ascending: false }).limit(3),
         supabase.from('incidents')
-          .is('deleted_at', null)
           .select('id, type_name, employee_name, date')
+          .is('deleted_at', null)
           .order('date', { ascending: false }).limit(3),
         supabase.from('corrective_actions')
           .select('id, description, status, declared_created_date, due_date')
@@ -292,16 +328,146 @@ export default function MainMenu() {
     }
 
     const init = async () => {
-      const authContext = await initAuth()
-      fetchStats()
-      fetchExtraStats()
-      fetchSpotlight()
-      await maybeShowToolboxReminder(authContext.userId)
-      if (authContext.isAdmin) await fetchActivity()
+      try {
+        const authContext = await initAuth()
+
+        await Promise.all([
+          fetchStats(),
+          fetchExtraStats(),
+          fetchSpotlight(),
+        ])
+
+        await maybeShowToolboxReminder(authContext.userId)
+        if (authContext.isAdmin) await fetchActivity()
+      } catch (error) {
+        console.error('Main menu init error:', error)
+      }
     }
 
     init()
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!SHOW_HOME_DEVICE_REMINDER) {
+      setPushStatus({
+        loading: false,
+        supported: false,
+        permission: 'default',
+        subscribed: false,
+        endpoint: null,
+        diagnostics: null,
+        error: '',
+      })
+      return () => {
+        cancelled = true
+      }
+    }
+
+    const syncPushStatus = async () => {
+      if (!currentUserId) {
+        if (!cancelled) {
+          setPushStatus({
+            loading: false,
+            supported: false,
+            permission: 'default',
+            subscribed: false,
+            endpoint: null,
+            diagnostics: null,
+            error: '',
+          })
+        }
+        return
+      }
+
+      try {
+        const currentState = await getPushSubscriptionState()
+
+        if (appSettings.attendance_risk_push_enabled && currentState.supported && currentState.subscribed) {
+          await syncCurrentPushSubscription({ userId: currentUserId })
+        }
+
+        if (!cancelled) {
+          setPushStatus({
+            loading: false,
+            supported: currentState.supported,
+            permission: currentState.permission,
+            subscribed: currentState.subscribed,
+            endpoint: currentState.endpoint,
+            diagnostics: currentState.diagnostics || null,
+            error: '',
+          })
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPushStatus((prev) => ({
+            ...prev,
+            loading: false,
+            error: error instanceof Error ? error.message : 'Unable to sync device reminder status.',
+          }))
+        }
+      }
+    }
+
+    syncPushStatus()
+
+    return () => {
+      cancelled = true
+    }
+  }, [appSettings.attendance_risk_push_enabled, currentUserId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadAttendanceRiskFeed = async () => {
+      if (!currentUserId) {
+        if (!cancelled) {
+          setAttendanceRiskFeed({
+            loading: false,
+            featureEnabled: false,
+            pushEnabled: false,
+            weekend: false,
+            alertDate: null,
+            openCount: 0,
+            alerts: [],
+            error: '',
+          })
+        }
+        return
+      }
+
+      try {
+        const nextFeed = await fetchAttendanceRiskFeed()
+        if (!cancelled) {
+          setAttendanceRiskFeed({
+            loading: false,
+            featureEnabled: nextFeed.featureEnabled,
+            pushEnabled: nextFeed.pushEnabled,
+            weekend: nextFeed.weekend,
+            alertDate: nextFeed.alertDate,
+            openCount: nextFeed.openCount,
+            alerts: nextFeed.alerts,
+            error: '',
+          })
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setAttendanceRiskFeed((prev) => ({
+            ...prev,
+            loading: false,
+            error: error instanceof Error ? error.message : 'Unable to load today\'s attendance watch list.',
+          }))
+        }
+      }
+    }
+
+    loadAttendanceRiskFeed()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentUserId])
 
   const menuItems = [
     { title: 'Projects',           subtitle: 'Active & archived jobs',     path: '/projects',           icon: <FolderIcon /> },
@@ -379,6 +545,104 @@ export default function MainMenu() {
     setShowToolboxReminder(false)
   }
 
+  const handleEnablePush = async () => {
+    if (!currentUserId) return
+
+    setPushBusy(true)
+    try {
+      const nextState = await subscribeCurrentUserToAttendanceRiskPush({ userId: currentUserId })
+      setPushStatus({
+        loading: false,
+        supported: nextState.supported,
+        permission: nextState.permission,
+        subscribed: nextState.subscribed,
+        endpoint: nextState.endpoint,
+        diagnostics: nextState.diagnostics || null,
+        error: nextState.permission === 'denied' ? 'Browser notifications are blocked for this device.' : '',
+      })
+    } catch (error) {
+      setPushStatus((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Unable to enable reminders on this device.',
+      }))
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const handleDisablePush = async () => {
+    setPushBusy(true)
+    try {
+      const nextState = await unsubscribeCurrentUserFromAttendanceRiskPush()
+      setPushStatus({
+        loading: false,
+        supported: nextState.supported,
+        permission: nextState.permission,
+        subscribed: false,
+        endpoint: null,
+        diagnostics: nextState.diagnostics || null,
+        error: '',
+      })
+    } catch (error) {
+      setPushStatus((prev) => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Unable to disable reminders on this device.',
+      }))
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const pushChannelEnabled = Boolean(appSettings.attendance_risk_push_enabled)
+  const livePushDiagnostics = getPushSupportDiagnostics()
+  const effectivePushSupported = pushStatus.supported || Boolean(livePushDiagnostics?.supported)
+  const pushDiagnostics = pushStatus.diagnostics || (!effectivePushSupported ? livePushDiagnostics : livePushDiagnostics)
+  const displayPushPermission = effectivePushSupported && pushStatus.permission === 'unsupported'
+    ? 'default'
+    : pushStatus.permission
+  const pushPermissionBlocked = displayPushPermission === 'denied'
+  const pushReady = pushChannelEnabled && effectivePushSupported && pushStatus.subscribed
+  const unsupportedDetails = !effectivePushSupported && pushDiagnostics
+    ? [
+        !pushDiagnostics.secureContext ? 'Requires HTTPS or localhost.' : null,
+        !pushDiagnostics.serviceWorkerSupported ? 'Service Worker API missing.' : null,
+        !pushDiagnostics.pushManagerSupported ? 'PushManager API missing.' : null,
+        !pushDiagnostics.notificationsSupported ? 'Notifications API missing.' : null,
+        pushDiagnostics.isAppleMobile && !pushDiagnostics.standalone ? 'On iPhone/iPad, add the app to the Home Screen first.' : null,
+        pushDiagnostics.protocol ? `Current protocol: ${pushDiagnostics.protocol}//${pushDiagnostics.hostname || ''}` : null,
+      ].filter(Boolean)
+    : []
+  const enablePushBlockedReason = !pushChannelEnabled
+    ? 'Push reminders are disabled globally by admins.'
+    : !effectivePushSupported
+      ? 'This browser does not support web push notifications for the app.'
+      : pushPermissionBlocked
+        ? 'Browser notifications are blocked for this device.'
+        : pushReady
+          ? 'This device is already subscribed.'
+          : ''
+  const enablePushButtonLabel = !pushChannelEnabled
+    ? 'Enable In Admin Panel First'
+    : !effectivePushSupported
+      ? 'Push Not Supported Here'
+      : pushPermissionBlocked
+        ? 'Notifications Blocked'
+        : pushBusy && !pushReady
+          ? 'Enabling…'
+          : 'Enable On This Device'
+  const pushStatusLabel = pushStatus.loading
+    ? 'Checking this device'
+    : !pushChannelEnabled
+      ? 'Disabled by admins'
+      : !effectivePushSupported
+        ? 'Not supported here'
+        : pushPermissionBlocked
+          ? 'Blocked in browser settings'
+          : pushReady
+            ? 'Active on this device'
+            : 'Not enabled yet'
+  const showAttendanceRiskList = attendanceRiskFeed.featureEnabled || attendanceRiskFeed.loading || Boolean(attendanceRiskFeed.error)
+
   return (
     <div className="main-menu">
       {showToolboxReminder && toolboxReminder && (
@@ -417,6 +681,82 @@ export default function MainMenu() {
             </div>
           </div>
         </div>
+      )}
+
+      {SHOW_HOME_DEVICE_REMINDER && currentUserId && (
+        <section className={`push-reminder-card ${pushReady ? 'is-active' : ''}`}>
+          <div className="push-reminder-copy-block">
+            <span className="push-reminder-eyebrow">Device Reminder</span>
+            <div className="push-reminder-header-row">
+              <div>
+                <h3 className="push-reminder-title">Attendance reminders on this device</h3>
+                <p className="push-reminder-description">
+                  When admins enable the push channel, this device can receive attendance-risk reminders and open the dashboard directly.
+                </p>
+              </div>
+              <span className={`push-reminder-status push-reminder-status--${pushReady ? 'active' : 'idle'}`}>
+                {pushStatusLabel}
+              </span>
+            </div>
+          </div>
+
+          <div className="push-reminder-details">
+            <div className="push-reminder-detail">
+              <span>Global channel</span>
+              <strong>{pushChannelEnabled ? 'Enabled' : 'Disabled'}</strong>
+            </div>
+            <div className="push-reminder-detail">
+              <span>Browser permission</span>
+              <strong>{effectivePushSupported ? displayPushPermission : 'unsupported'}</strong>
+            </div>
+            <div className="push-reminder-detail">
+              <span>This device</span>
+              <strong>{pushStatus.subscribed ? 'Subscribed' : 'Not subscribed'}</strong>
+            </div>
+          </div>
+
+          <p className="push-reminder-note">
+            {pushChannelEnabled
+              ? 'Best results come from an installed PWA or a browser that supports background notifications.'
+              : 'An admin must enable the push channel globally before this device can subscribe.'}
+          </p>
+
+          {enablePushBlockedReason && !pushStatus.error && (
+            <p className="push-reminder-note">{enablePushBlockedReason}</p>
+          )}
+
+          {unsupportedDetails.length > 0 && !pushStatus.error && (
+            <div className="push-reminder-diagnostics">
+              {unsupportedDetails.map((detail) => (
+                <p key={detail} className="push-reminder-note">{detail}</p>
+              ))}
+            </div>
+          )}
+
+          {pushStatus.error && (
+            <p className="push-reminder-error">{pushStatus.error}</p>
+          )}
+
+          <div className="push-reminder-actions-row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleEnablePush}
+              disabled={pushBusy || Boolean(enablePushBlockedReason)}
+              title={enablePushBlockedReason || 'Enable push reminders on this device'}
+            >
+              {enablePushButtonLabel}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={handleDisablePush}
+              disabled={pushBusy || !pushStatus.subscribed}
+            >
+              {pushBusy && pushReady ? 'Turning off…' : 'Turn Off'}
+            </button>
+          </div>
+        </section>
       )}
 
       {/* ── KPI row ── */}
@@ -462,6 +802,58 @@ export default function MainMenu() {
           )}
         </div>
       </div>
+
+      {showAttendanceRiskList && (
+        <section className="attendance-watch-card">
+          <div className="attendance-watch-head">
+            <div>
+              <span className="attendance-watch-eyebrow">Attendance Watch</span>
+              <h3 className="attendance-watch-title">People who likely should have a toolbox meeting today</h3>
+            </div>
+            {attendanceRiskFeed.alertDate && (
+              <span className="attendance-watch-date">
+                {formatDateOnly(attendanceRiskFeed.alertDate, { locale: 'en-US', fallback: attendanceRiskFeed.alertDate })}
+              </span>
+            )}
+          </div>
+
+          {attendanceRiskFeed.loading ? (
+            <p className="attendance-watch-copy">Loading today&apos;s attendance watch list…</p>
+          ) : attendanceRiskFeed.error ? (
+            <p className="attendance-watch-error">{attendanceRiskFeed.error}</p>
+          ) : attendanceRiskFeed.weekend ? (
+            <p className="attendance-watch-copy">Weekend runs are skipped, so no one is flagged today.</p>
+          ) : attendanceRiskFeed.openCount === 0 ? (
+            <p className="attendance-watch-copy">No one is currently flagged for today.</p>
+          ) : (
+            <>
+              <p className="attendance-watch-copy">
+                {attendanceRiskFeed.openCount === 1
+                  ? '1 person is currently flagged because they appeared in toolbox meetings during the last 7 days but not today.'
+                  : `${attendanceRiskFeed.openCount} people are currently flagged because they appeared in toolbox meetings during the last 7 days but not today.`}
+              </p>
+
+              <div className="attendance-watch-list">
+                {attendanceRiskFeed.alerts.map((alert) => (
+                  <div key={`${alert.display_name}-${alert.latest_meeting_date || 'none'}`} className="attendance-watch-item">
+                    <div>
+                      <strong>{alert.display_name}</strong>
+                      <span>
+                        Last meeting {alert.latest_meeting_date
+                          ? formatDateOnly(alert.latest_meeting_date, { locale: 'en-US', fallback: alert.latest_meeting_date })
+                          : 'unknown'}
+                      </span>
+                    </div>
+                    <span className="attendance-watch-badge">
+                      {alert.days_without_meeting} day{alert.days_without_meeting === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+      )}
 
       {/* ── Safety Spotlight ── */}
       {spotlightTopics.length > 0 && (

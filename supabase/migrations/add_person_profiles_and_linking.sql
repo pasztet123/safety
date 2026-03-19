@@ -68,16 +68,19 @@ CREATE TRIGGER set_person_profiles_updated_at
 ALTER TABLE public.person_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.person_profile_name_aliases ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow authenticated users to read person_profiles" ON public.person_profiles;
 CREATE POLICY "Allow authenticated users to read person_profiles"
   ON public.person_profiles FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow authenticated users to read person_profile_name_aliases" ON public.person_profile_name_aliases;
 CREATE POLICY "Allow authenticated users to read person_profile_name_aliases"
   ON public.person_profile_name_aliases FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow admin users to insert person_profiles" ON public.person_profiles;
 CREATE POLICY "Allow admin users to insert person_profiles"
   ON public.person_profiles FOR INSERT
   TO authenticated
@@ -91,6 +94,7 @@ CREATE POLICY "Allow admin users to insert person_profiles"
     )
   );
 
+DROP POLICY IF EXISTS "Allow admin users to update person_profiles" ON public.person_profiles;
 CREATE POLICY "Allow admin users to update person_profiles"
   ON public.person_profiles FOR UPDATE
   TO authenticated
@@ -113,6 +117,7 @@ CREATE POLICY "Allow admin users to update person_profiles"
     )
   );
 
+DROP POLICY IF EXISTS "Allow admin users to delete person_profiles" ON public.person_profiles;
 CREATE POLICY "Allow admin users to delete person_profiles"
   ON public.person_profiles FOR DELETE
   TO authenticated
@@ -126,6 +131,7 @@ CREATE POLICY "Allow admin users to delete person_profiles"
     )
   );
 
+DROP POLICY IF EXISTS "Allow admin users to insert person_profile_name_aliases" ON public.person_profile_name_aliases;
 CREATE POLICY "Allow admin users to insert person_profile_name_aliases"
   ON public.person_profile_name_aliases FOR INSERT
   TO authenticated
@@ -139,6 +145,7 @@ CREATE POLICY "Allow admin users to insert person_profile_name_aliases"
     )
   );
 
+DROP POLICY IF EXISTS "Allow admin users to update person_profile_name_aliases" ON public.person_profile_name_aliases;
 CREATE POLICY "Allow admin users to update person_profile_name_aliases"
   ON public.person_profile_name_aliases FOR UPDATE
   TO authenticated
@@ -161,6 +168,7 @@ CREATE POLICY "Allow admin users to update person_profile_name_aliases"
     )
   );
 
+DROP POLICY IF EXISTS "Allow admin users to delete person_profile_name_aliases" ON public.person_profile_name_aliases;
 CREATE POLICY "Allow admin users to delete person_profile_name_aliases"
   ON public.person_profile_name_aliases FOR DELETE
   TO authenticated

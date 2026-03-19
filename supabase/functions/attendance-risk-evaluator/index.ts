@@ -1,5 +1,6 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { importPKCS8, SignJWT } from 'https://esm.sh/jose@5.9.6'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,6 +12,7 @@ const APP_SETTINGS_DEFAULTS = {
   attendance_risk_notifications_enabled: false,
   attendance_risk_email_enabled: true,
   attendance_risk_in_app_enabled: true,
+  attendance_risk_push_enabled: false,
   attendance_risk_run_hour: 10,
 }
 
@@ -18,18 +20,26 @@ const uniqueValues = <T,>(items: T[] = []) => [...new Set(items.filter(Boolean))
 
 const cleanValue = (value: unknown) => (typeof value === 'string' ? value.trim() : '')
 
+const limitDebugStrings = (items: string[] = [], limit = 8) => uniqueValues(items.map((item) => cleanValue(item)).filter(Boolean)).slice(0, limit)
+
 const normalizeName = (value: unknown) => cleanValue(value).replace(/\s+/g, ' ').toLowerCase()
 
 const pad = (value: number | string) => String(value).padStart(2, '0')
 
 const parseDateOnly = (value: string) => {
-  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (!match) return null
   return {
     year: Number(match[1]),
     month: Number(match[2]),
     day: Number(match[3]),
   }
+}
+
+const normalizeDateOnly = (value: string) => {
+  const parts = parseDateOnly(value)
+  if (!parts) return ''
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`
 }
 
 const dateOnlyToUtcDate = (value: string) => {
@@ -100,8 +110,107 @@ const normalizeMeetingTime = (value: unknown) => {
 }
 
 const buildMeetingTimestamp = (date: string, time: unknown) => {
-  if (!date) return null
-  return `${date}T${normalizeMeetingTime(time)}`
+  const dateOnly = normalizeDateOnly(date)
+  if (!dateOnly) return null
+  return `${dateOnly}T${normalizeMeetingTime(time)}`
+}
+
+const buildRawAttendanceRiskCandidates = ({
+  meetings,
+  attendeeRows,
+  alertDate,
+  windowStartDate,
+}: {
+  meetings: Array<{ id: string, date: string, time: string | null, leader_name: string | null }>
+  attendeeRows: Array<{ meeting_id: string, name: string }>
+  alertDate: string
+  windowStartDate: string
+}) => {
+  const meetingsById = new Map(meetings.map((meeting) => [meeting.id, meeting]))
+  const rawSubjectMap = new Map<string, {
+    subject_key: string
+    person_profile_id: null
+    normalized_name: string
+    display_name: string
+    latest_meeting_at: string | null
+    latest_meeting_date: string | null
+    has_today_participation: boolean
+  }>()
+
+  const recordRawParticipation = ({
+    rawName,
+    meetingDate,
+    meetingTime,
+  }: {
+    rawName: string
+    meetingDate: string
+    meetingTime: string | null
+  }) => {
+    const displayName = cleanValue(rawName)
+    const normalizedName = normalizeName(displayName)
+    const normalizedMeetingDate = normalizeDateOnly(meetingDate)
+    if (!displayName || !normalizedName) return
+    if (!normalizedMeetingDate || normalizedMeetingDate < windowStartDate || normalizedMeetingDate > alertDate) return
+
+    const subjectKey = `name:${normalizedName}`
+    if (!rawSubjectMap.has(subjectKey)) {
+      rawSubjectMap.set(subjectKey, {
+        subject_key: subjectKey,
+        person_profile_id: null,
+        normalized_name: normalizedName,
+        display_name: displayName,
+        latest_meeting_at: null,
+        latest_meeting_date: null,
+        has_today_participation: false,
+      })
+    }
+
+    const subject = rawSubjectMap.get(subjectKey)!
+    const timestamp = buildMeetingTimestamp(normalizedMeetingDate, meetingTime)
+    if (!subject.latest_meeting_at || (timestamp && new Date(timestamp).getTime() > new Date(subject.latest_meeting_at).getTime())) {
+      subject.latest_meeting_at = timestamp
+      subject.latest_meeting_date = normalizedMeetingDate
+    }
+
+    if (normalizedMeetingDate === alertDate) {
+      subject.has_today_participation = true
+    }
+  }
+
+  meetings.forEach((meeting) => {
+    if (cleanValue(meeting.leader_name)) {
+      recordRawParticipation({
+        rawName: cleanValue(meeting.leader_name),
+        meetingDate: meeting.date,
+        meetingTime: meeting.time,
+      })
+    }
+  })
+
+  attendeeRows.forEach((row) => {
+    const meeting = meetingsById.get(row.meeting_id)
+    if (!meeting) return
+
+    recordRawParticipation({
+      rawName: cleanValue(row.name),
+      meetingDate: meeting.date,
+      meetingTime: meeting.time,
+    })
+  })
+
+  return [...rawSubjectMap.values()]
+    .filter((subject) => subject.latest_meeting_date && !subject.has_today_participation)
+    .map((subject) => ({
+      subject_key: subject.subject_key,
+      person_profile_id: null,
+      normalized_name: subject.normalized_name,
+      display_name: subject.display_name,
+      days_without_meeting: diffDaysBetweenDateOnly(subject.latest_meeting_date!, alertDate),
+      latest_meeting_at: subject.latest_meeting_at,
+      latest_meeting_date: subject.latest_meeting_date,
+    }))
+    .filter((alert) => alert.days_without_meeting >= 1)
+    .sort((left, right) => right.days_without_meeting - left.days_without_meeting || left.display_name.localeCompare(right.display_name))
 }
 
 const fetchAllPages = async <T,>(queryFactory: () => any, pageSize = 1000): Promise<T[]> => {
@@ -290,6 +399,66 @@ const sendMailerSendEmail = async ({
   }
 }
 
+const formatPkcs8Pem = (value: string) => {
+  const normalized = cleanValue(value)
+  if (!normalized) return ''
+  if (normalized.includes('BEGIN PRIVATE KEY')) return normalized
+
+  const wrapped = normalized.replace(/\s+/g, '').match(/.{1,64}/g)?.join('\n') || normalized
+  return `-----BEGIN PRIVATE KEY-----\n${wrapped}\n-----END PRIVATE KEY-----`
+}
+
+const getPushAudience = (endpoint: string) => {
+  const url = new URL(endpoint)
+  return `${url.protocol}//${url.host}`
+}
+
+const buildPushTopic = (alertDate: string) => `attendance-risk-${alertDate}`
+
+const sendAttendanceRiskPush = async ({
+  endpoint,
+  alertDate,
+  vapidPublicKey,
+  vapidPrivateKey,
+  vapidSubject,
+}: {
+  endpoint: string
+  alertDate: string
+  vapidPublicKey: string
+  vapidPrivateKey: string
+  vapidSubject: string
+}) => {
+  const audience = getPushAudience(endpoint)
+  const privateKey = await importPKCS8(formatPkcs8Pem(vapidPrivateKey), 'ES256')
+  const token = await new SignJWT({})
+    .setProtectedHeader({ alg: 'ES256', typ: 'JWT' })
+    .setAudience(audience)
+    .setSubject(vapidSubject)
+    .setExpirationTime('12h')
+    .sign(privateKey)
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      Authorization: `vapid t=${token}, k=${vapidPublicKey}`,
+      TTL: '600',
+      Urgency: 'high',
+      Topic: buildPushTopic(alertDate),
+      'Content-Length': '0',
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(errorText || `Push delivery failed with ${response.status}`)
+  }
+
+  return {
+    statusCode: response.status,
+    providerMessageId: response.headers.get('location') || buildPushTopic(alertDate),
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -307,10 +476,11 @@ serve(async (req) => {
     const forceRun = Boolean(payload?.forceRun)
     const requestedAlertDate = cleanValue(payload?.alertDate)
     const requestedSendEmails = payload?.sendEmails !== false
+    const requestedSendNotifications = payload?.sendNotifications !== false
 
     const { data: settingsRow, error: settingsError } = await supabaseAdmin
       .from('app_settings')
-      .select('timezone, attendance_risk_notifications_enabled, attendance_risk_email_enabled, attendance_risk_in_app_enabled, attendance_risk_run_hour')
+      .select('timezone, attendance_risk_notifications_enabled, attendance_risk_email_enabled, attendance_risk_in_app_enabled, attendance_risk_push_enabled, attendance_risk_run_hour')
       .eq('id', 1)
       .maybeSingle()
 
@@ -383,7 +553,7 @@ serve(async (req) => {
       fetchAllPages<{ id: string, date: string, time: string | null, leader_id: string | null, leader_name: string | null }>(() => supabaseAdmin
         .from('meetings')
         .select('id, date, time, leader_id, leader_name')
-        .eq('is_draft', false)
+        .not('is_draft', 'is', true)
         .is('deleted_at', null)
         .gte('date', windowStartDate)
         .lte('date', alertDate)
@@ -524,20 +694,21 @@ serve(async (req) => {
     }
 
     meetings.forEach((meeting) => {
-      if (!meeting.date) return
+      const normalizedMeetingDate = normalizeDateOnly(meeting.date)
+      if (!normalizedMeetingDate) return
 
       if (meeting.leader_id && leaderMap.has(meeting.leader_id)) {
         const leader = leaderMap.get(meeting.leader_id)
         recordParticipation({
           rawName: cleanValue(leader?.name) || cleanValue(meeting.leader_name),
           profileId: leader?.person_profile_id || null,
-          meetingDate: meeting.date,
+          meetingDate: normalizedMeetingDate,
           meetingTime: meeting.time,
         })
       } else if (cleanValue(meeting.leader_name)) {
         recordParticipation({
           rawName: cleanValue(meeting.leader_name),
-          meetingDate: meeting.date,
+          meetingDate: normalizedMeetingDate,
           meetingTime: meeting.time,
         })
       }
@@ -546,12 +717,13 @@ serve(async (req) => {
     attendeeRows.forEach((row) => {
       const meeting = meetingsById.get(row.meeting_id)
       if (!meeting) return
-      if (!meeting.date || meeting.date < windowStartDate || meeting.date > alertDate) return
+      const normalizedMeetingDate = normalizeDateOnly(meeting.date)
+      if (!normalizedMeetingDate || normalizedMeetingDate < windowStartDate || normalizedMeetingDate > alertDate) return
       if (!cleanValue(row.name)) return
 
       recordParticipation({
         rawName: cleanValue(row.name),
-        meetingDate: meeting.date,
+        meetingDate: normalizedMeetingDate,
         meetingTime: meeting.time,
       })
     })
@@ -572,14 +744,57 @@ serve(async (req) => {
       .filter((alert) => alert.days_without_meeting >= 1)
       .sort((left, right) => right.days_without_meeting - left.days_without_meeting || left.display_name.localeCompare(right.display_name))
 
+    const fallbackRawCandidates = candidateAlerts.length === 0
+      ? buildRawAttendanceRiskCandidates({
+          meetings,
+          attendeeRows,
+          alertDate,
+          windowStartDate,
+        })
+      : []
+
+    const effectiveCandidateAlerts = fallbackRawCandidates.length > 0 ? fallbackRawCandidates : candidateAlerts
+    const todaySubjects = [...subjectMap.values()].filter((subject) => subject.hasTodayParticipation)
+    const debugSummary = {
+      forceRun,
+      featureEnabled: Boolean(settings.attendance_risk_notifications_enabled),
+      notificationsEnabled: requestedSendNotifications,
+      emailEnabled: Boolean(settings.attendance_risk_notifications_enabled && settings.attendance_risk_email_enabled && requestedSendEmails && requestedSendNotifications),
+      pushEnabled: Boolean(settings.attendance_risk_notifications_enabled && settings.attendance_risk_push_enabled && requestedSendNotifications),
+      timeZone,
+      alertDate,
+      windowStartDate,
+      meetingsInWindow: meetings.length,
+      meetingsOnAlertDate: meetings.filter((meeting) => normalizeDateOnly(meeting.date) === alertDate).length,
+      attendeeRowsInWindow: attendeeRows.length,
+      uniqueSubjects: subjectMap.size,
+      subjectsWithTodayParticipation: todaySubjects.length,
+      candidateCountBeforeFallback: candidateAlerts.length,
+      fallbackRawCandidateCount: fallbackRawCandidates.length,
+      effectiveCandidateCount: effectiveCandidateAlerts.length,
+      sampleMeetingDates: limitDebugStrings(meetings.map((meeting) => normalizeDateOnly(meeting.date) || meeting.date)),
+      sampleLeaderNames: limitDebugStrings(meetings.map((meeting) => cleanValue(meeting.leader_name))),
+      sampleTodaySubjects: todaySubjects.slice(0, 8).map((subject) => ({
+        display_name: subject.displayName,
+        latest_meeting_date: subject.latestMeetingDate,
+        subject_key: subject.subjectKey,
+      })),
+      sampleCandidates: effectiveCandidateAlerts.slice(0, 8).map((candidate) => ({
+        display_name: candidate.display_name,
+        latest_meeting_date: candidate.latest_meeting_date,
+        days_without_meeting: candidate.days_without_meeting,
+        subject_key: candidate.subject_key,
+      })),
+    }
+
     const existingAlertMap = new Map(existingAlerts.map((alert) => [alert.subject_key, alert]))
-    const candidateSubjectKeys = new Set(candidateAlerts.map((alert) => alert.subject_key))
+    const candidateSubjectKeys = new Set(effectiveCandidateAlerts.map((alert) => alert.subject_key))
 
     const inserts = []
     const updates = []
     const resolves = []
 
-    candidateAlerts.forEach((candidate) => {
+    effectiveCandidateAlerts.forEach((candidate) => {
       const existing = existingAlertMap.get(candidate.subject_key)
       if (!existing) {
         inserts.push({
@@ -626,18 +841,20 @@ serve(async (req) => {
     }
 
     for (const updateRow of updates) {
+      const { id, ...updatePayload } = updateRow
       const { error } = await supabaseAdmin
         .from('meeting_attendance_risk_alerts')
-        .update(updateRow)
-        .eq('id', updateRow.id)
+        .update(updatePayload)
+        .eq('id', id)
       if (error) throw error
     }
 
     for (const resolvedRow of resolves) {
+      const { id, ...resolvedPayload } = resolvedRow
       const { error } = await supabaseAdmin
         .from('meeting_attendance_risk_alerts')
-        .update(resolvedRow)
-        .eq('id', resolvedRow.id)
+        .update(resolvedPayload)
+        .eq('id', id)
       if (error) throw error
     }
 
@@ -651,8 +868,10 @@ serve(async (req) => {
     if (persistedAlertsError) throw persistedAlertsError
 
     let emailDeliveryCount = 0
-    const emailEnabled = Boolean(settings.attendance_risk_notifications_enabled && settings.attendance_risk_email_enabled && requestedSendEmails)
-    const openAlerts = (persistedAlerts || []).filter((alert) => alert.status === 'open' || alert.status === 'acked')
+    let pushDeliveryCount = 0
+    const emailEnabled = Boolean(settings.attendance_risk_notifications_enabled && settings.attendance_risk_email_enabled && requestedSendEmails && requestedSendNotifications)
+    const pushEnabled = Boolean(settings.attendance_risk_notifications_enabled && settings.attendance_risk_push_enabled && requestedSendNotifications)
+    const openAlerts = (persistedAlerts || []).filter((alert) => alert.status === 'open')
 
     if (emailEnabled && openAlerts.length > 0 && admins.length > 0) {
       const mailerSendApiKey = cleanValue(Deno.env.get('MAILERSEND_API_KEY'))
@@ -755,6 +974,121 @@ serve(async (req) => {
       }
     }
 
+    if (pushEnabled && openAlerts.length > 0) {
+      const vapidPublicKey = cleanValue(Deno.env.get('VAPID_PUBLIC_KEY'))
+      const vapidPrivateKey = cleanValue(Deno.env.get('VAPID_PRIVATE_KEY'))
+      const vapidSubject = cleanValue(Deno.env.get('VAPID_SUBJECT')) || 'mailto:support@example.com'
+
+      const [subscriptions, activeUsers, existingPushDeliveries] = await Promise.all([
+        fetchAllPages<{ id: string, user_id: string, endpoint: string, device_name_hint: string | null }>(() => supabaseAdmin
+          .from('user_push_subscriptions')
+          .select('id, user_id, endpoint, device_name_hint')),
+        fetchAllPages<{ id: string }>(() => supabaseAdmin
+          .from('users')
+          .select('id')
+          .is('deleted_at', null)),
+        fetchAllPages<{ status: string, metadata: Record<string, unknown> | null }>(() => supabaseAdmin
+          .from('meeting_attendance_risk_deliveries')
+          .select('status, metadata')
+          .eq('channel', 'push')
+          .eq('delivery_scope', 'digest')
+          .contains('metadata', { alert_date: alertDate })),
+      ])
+
+      const activeUserIds = new Set(activeUsers.map((row) => row.id))
+      const sentSubscriptionIds = new Set(existingPushDeliveries
+        .filter((delivery) => delivery.status === 'sent')
+        .map((delivery) => cleanValue(delivery.metadata?.subscription_id))
+        .filter(Boolean))
+
+      const eligibleSubscriptions = subscriptions
+        .filter((subscription) => activeUserIds.has(subscription.user_id))
+        .filter((subscription) => !sentSubscriptionIds.has(subscription.id))
+
+      const pushDeliveryRecords = []
+      const alertIds = openAlerts.map((alert) => alert.id)
+
+      for (const subscription of eligibleSubscriptions) {
+        const recordBase = {
+          alert_id: null,
+          delivery_scope: 'digest',
+          channel: 'push',
+          recipient_user_id: subscription.user_id,
+          recipient_email_snapshot: null,
+          metadata: {
+            alert_date: alertDate,
+            alert_ids: alertIds,
+            alert_count: alertIds.length,
+            subscription_id: subscription.id,
+            device_name_hint: cleanValue(subscription.device_name_hint) || null,
+          },
+        }
+
+        if (!vapidPublicKey || !vapidPrivateKey) {
+          pushDeliveryRecords.push({
+            ...recordBase,
+            status: 'skipped',
+            metadata: {
+              ...recordBase.metadata,
+              reason: 'missing_vapid_configuration',
+            },
+          })
+          continue
+        }
+
+        try {
+          const delivery = await sendAttendanceRiskPush({
+            endpoint: subscription.endpoint,
+            alertDate,
+            vapidPublicKey,
+            vapidPrivateKey,
+            vapidSubject,
+          })
+
+          pushDeliveryRecords.push({
+            ...recordBase,
+            provider_message_id: delivery.providerMessageId,
+            status: 'sent',
+            sent_at: now.toISOString(),
+            metadata: {
+              ...recordBase.metadata,
+              status_code: delivery.statusCode,
+            },
+          })
+          pushDeliveryCount += 1
+        } catch (deliveryError) {
+          const errorMessage = deliveryError instanceof Error ? deliveryError.message : 'unknown_push_delivery_error'
+
+          pushDeliveryRecords.push({
+            ...recordBase,
+            status: errorMessage.includes('410') || errorMessage.includes('404') ? 'failed' : 'failed',
+            metadata: {
+              ...recordBase.metadata,
+              reason: errorMessage,
+            },
+          })
+
+          if (errorMessage.includes('410') || errorMessage.includes('404')) {
+            const { error: cleanupError } = await supabaseAdmin
+              .from('user_push_subscriptions')
+              .delete()
+              .eq('id', subscription.id)
+
+            if (cleanupError) {
+              console.error('Failed to cleanup stale push subscription:', cleanupError)
+            }
+          }
+        }
+      }
+
+      if (pushDeliveryRecords.length > 0) {
+        const { error: pushDeliveriesError } = await supabaseAdmin
+          .from('meeting_attendance_risk_deliveries')
+          .insert(pushDeliveryRecords)
+        if (pushDeliveriesError) throw pushDeliveriesError
+      }
+    }
+
     await insertAuditEvent({
       supabaseAdmin,
       actorUserId: auth.actorUserId,
@@ -765,10 +1099,13 @@ serve(async (req) => {
         created_count: inserts.length,
         updated_count: updates.length,
         resolved_count: resolves.length,
-        open_count: candidateAlerts.length,
+        open_count: effectiveCandidateAlerts.length,
         email_delivery_count: emailDeliveryCount,
+        push_delivery_count: pushDeliveryCount,
         evaluation_run_id: evaluationRunId,
         auth_mode: auth.mode,
+        used_raw_fallback: fallbackRawCandidates.length > 0,
+        debug_summary: debugSummary,
       },
     })
 
@@ -779,8 +1116,11 @@ serve(async (req) => {
       createdCount: inserts.length,
       updatedCount: updates.length,
       resolvedCount: resolves.length,
-      openCount: candidateAlerts.length,
+      openCount: effectiveCandidateAlerts.length,
       emailDeliveryCount,
+      pushDeliveryCount,
+      usedRawFallback: fallbackRawCandidates.length > 0,
+      debug: debugSummary,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

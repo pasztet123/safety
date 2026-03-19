@@ -8,6 +8,9 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       manifest: {
         name: 'Safety Meetings App',
@@ -29,11 +32,13 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,jpeg}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api/]
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
       }
     })
   ],

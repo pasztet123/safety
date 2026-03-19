@@ -16,7 +16,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  NEW.updated_at :=find . -type f \( -name '*.js' -o -name '*.jsx' -o -name '*.css' -o -name '*.ts' -o -name '*.sql' -o -name '*.html' \) -not -path './node_modules/*' -print0 | xargs -0 wc -l timezone('utc'::text, now());
+  NEW.updated_at := timezone('utc'::text, now());
   NEW.updated_by := auth.uid();
   RETURN NEW;
 END;
