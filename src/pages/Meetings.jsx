@@ -17,14 +17,124 @@ import {
 import { NEW_TAB_LINK_PROPS } from '../lib/navigation'
 import ExportProgress from '../components/ExportProgress'
 import ApproveDraftsModal from '../components/ApproveDraftsModal'
-import { formatDateOnly, getDateTimeSortKey } from '../lib/dateTime'
+import { formatDateOnly, getCurrentDateInputValue, getDateTimeSortKey } from '../lib/dateTime'
 import './Meetings.css'
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500, 1000]
 const MEETINGS_PAGE_SIZE_STORAGE_KEY = 'meetings:page-size'
 const DRAFTS_PAGE_SIZE_STORAGE_KEY = 'meetings:drafts-page-size'
 const MEETINGS_EXPORT_CHUNK_STORAGE_KEY = 'meetings:export-chunk-size'
+const MEETINGS_LIST_EXPORT_FIELDS_STORAGE_KEY = 'meetings:list-export-fields'
+const MEETINGS_LIST_VIEW_FIELDS_STORAGE_KEY = 'meetings:list-view-fields'
 const SERVER_FILTER_DEBOUNCE_MS = 350
+
+const getDefaultMeetingsDateRange = () => {
+  const today = new Date()
+  const oneYearAgo = new Date(today)
+  oneYearAgo.setFullYear(today.getFullYear() - 1)
+
+  return {
+    dateFrom: getCurrentDateInputValue({ value: oneYearAgo }),
+    dateTo: getCurrentDateInputValue({ value: today }),
+  }
+}
+
+const getMeetingsDateRangeFromAnchor = (anchorDateValue) => {
+  if (!anchorDateValue) return getDefaultMeetingsDateRange()
+
+  const anchorDate = new Date(`${anchorDateValue}T12:00:00`)
+  if (Number.isNaN(anchorDate.getTime())) return getDefaultMeetingsDateRange()
+
+  const oneYearAgo = new Date(anchorDate)
+  oneYearAgo.setFullYear(anchorDate.getFullYear() - 1)
+
+  return {
+    dateFrom: getCurrentDateInputValue({ value: oneYearAgo }),
+    dateTo: getCurrentDateInputValue({ value: anchorDate }),
+  }
+}
+
+const MEETING_LIST_EXPORT_FIELDS = [
+  { key: 'topic', label: 'Topic', defaultChecked: true },
+  { key: 'date', label: 'Meeting date', defaultChecked: true },
+  { key: 'time', label: 'Meeting time', defaultChecked: true },
+  { key: 'project', label: 'Project', defaultChecked: true },
+  { key: 'trade', label: 'Trade', defaultChecked: true },
+  { key: 'leader', label: 'Leader', defaultChecked: true },
+  { key: 'attendees', label: 'Attendees', defaultChecked: true },
+  { key: 'attendee_count', label: 'Attendee count', defaultChecked: true },
+  { key: 'self_training', label: 'Self-training status', defaultChecked: true },
+  { key: 'checklists', label: 'Checklists', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', defaultChecked: false },
+]
+
+const MEETING_LIST_VIEW_FIELDS = [
+  { key: 'topic', label: 'Topic', defaultChecked: true },
+  { key: 'date', label: 'Meeting date', defaultChecked: true },
+  { key: 'time', label: 'Meeting time', defaultChecked: true },
+  { key: 'project', label: 'Project', defaultChecked: true },
+  { key: 'address', label: 'Address', defaultChecked: true },
+  { key: 'leader', label: 'Leader', defaultChecked: true },
+  { key: 'trade', label: 'Trade', defaultChecked: true },
+  { key: 'attendees', label: 'Attendees', defaultChecked: true },
+  { key: 'attendee_count', label: 'Attendee count', defaultChecked: true },
+  { key: 'self_training', label: 'Self-training status', defaultChecked: true },
+  { key: 'checklists', label: 'Checklists', defaultChecked: true },
+  { key: 'photos', label: 'Photos', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', defaultChecked: false },
+]
+
+const getDefaultMeetingExportFields = () => Object.fromEntries(
+  MEETING_LIST_EXPORT_FIELDS.map(field => [field.key, field.defaultChecked !== false]),
+)
+
+const getDefaultMeetingViewFields = () => Object.fromEntries(
+  MEETING_LIST_VIEW_FIELDS.map(field => [field.key, field.defaultChecked !== false]),
+)
+
+const getStoredMeetingExportFields = () => {
+  if (typeof window === 'undefined') return getDefaultMeetingExportFields()
+
+  try {
+    const rawValue = window.localStorage.getItem(MEETINGS_LIST_EXPORT_FIELDS_STORAGE_KEY)
+    if (!rawValue) return getDefaultMeetingExportFields()
+
+    const parsedValue = JSON.parse(rawValue)
+    if (!parsedValue || typeof parsedValue !== 'object') return getDefaultMeetingExportFields()
+
+    return {
+      ...getDefaultMeetingExportFields(),
+      ...parsedValue,
+    }
+  } catch (error) {
+    return getDefaultMeetingExportFields()
+  }
+}
+
+const getStoredMeetingViewFields = () => {
+  if (typeof window === 'undefined') return getDefaultMeetingViewFields()
+
+  try {
+    const rawValue = window.localStorage.getItem(MEETINGS_LIST_VIEW_FIELDS_STORAGE_KEY)
+    if (!rawValue) return getDefaultMeetingViewFields()
+
+    const parsedValue = JSON.parse(rawValue)
+    if (!parsedValue || typeof parsedValue !== 'object') return getDefaultMeetingViewFields()
+
+    return {
+      ...getDefaultMeetingViewFields(),
+      ...parsedValue,
+    }
+  } catch (error) {
+    return getDefaultMeetingViewFields()
+  }
+}
 
 const normalizeText = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '')
 
@@ -219,9 +329,35 @@ const FilterField = ({ label, span = '', children }) => (
   </div>
 )
 
+const MeetingExportFieldToggle = ({ label, checked, onChange }) => (
+  <label className="meeting-export-field-toggle">
+    <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+    <span>{label}</span>
+  </label>
+)
+
+const formatAuditDateTime = (value) => {
+  if (!value) return '—'
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+
+  return parsed.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export default function Meetings() {
   const navigate = useNavigate()
   const cancelExportRef = useRef(false)
+  const initialMeetingsDateRangeRef = useRef(getDefaultMeetingsDateRange())
+  const meetingDateRangeTouchedRef = useRef(false)
+  const meetingsRequestIdRef = useRef(0)
+  const [defaultMeetingsDateRange, setDefaultMeetingsDateRange] = useState(initialMeetingsDateRangeRef.current)
   const [meetings, setMeetings] = useState([])
   const [meetingTotalCount, setMeetingTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -243,11 +379,14 @@ export default function Meetings() {
   const [filterLocation, setFilterLocation] = useState('')
   const [filterTimeRange, setFilterTimeRange] = useState('')
   const [filterSelfTraining, setFilterSelfTraining] = useState('all')
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState(initialMeetingsDateRangeRef.current.dateFrom)
+  const [filterDateTo, setFilterDateTo] = useState(initialMeetingsDateRangeRef.current.dateTo)
   const [sortBy, setSortBy] = useState('newest')
   const [meetingPageSize, setMeetingPageSize] = useState(() => getStoredPageSize(MEETINGS_PAGE_SIZE_STORAGE_KEY, 50))
   const [exportChunkSize, setExportChunkSize] = useState(() => getStoredOption(MEETINGS_EXPORT_CHUNK_STORAGE_KEY, MEETING_CHUNK_SIZE_OPTIONS, DEFAULT_MEETING_CHUNK_SIZE))
+  const [meetingListExportFields, setMeetingListExportFields] = useState(() => getStoredMeetingExportFields())
+  const [meetingListViewFields, setMeetingListViewFields] = useState(() => getStoredMeetingViewFields())
+  const [meetingsFiltersReady, setMeetingsFiltersReady] = useState(false)
   const [selectedMeetingIds, setSelectedMeetingIds] = useState(new Set())
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 
@@ -287,7 +426,18 @@ export default function Meetings() {
   }, [meetings, searchText, sortBy])
 
   const filtersActive = Boolean(
-    searchText || filterTrade || filterPerson || filterLeader || filterProject || filterTopic || filterLocation || filterTimeRange || filterDateFrom || filterDateTo || filterSelfTraining !== 'all' || sortBy !== 'newest'
+    searchText
+    || filterTrade
+    || filterPerson
+    || filterLeader
+    || filterProject
+    || filterTopic
+    || filterLocation
+    || filterTimeRange
+    || filterSelfTraining !== 'all'
+    || sortBy !== 'newest'
+    || filterDateFrom !== defaultMeetingsDateRange.dateFrom
+    || filterDateTo !== defaultMeetingsDateRange.dateTo
   )
 
   const [draftMeetings, setDraftMeetings] = useState([])
@@ -377,9 +527,48 @@ export default function Meetings() {
   const meetingTotalPages = Math.max(1, Math.ceil(meetingTotalCount / meetingPageSize))
   const pagedMeetings = filteredMeetings
 
+  async function initializeMeetingsPage() {
+    setMeetingsFiltersReady(false)
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const user = session?.user || null
+
+      if (user) {
+        const { data } = await supabase
+          .from('users')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single()
+
+        setIsAdmin(data?.is_admin || false)
+      } else {
+        setIsAdmin(false)
+      }
+
+      const metadata = await loadMeetingMeta()
+
+      await fetchMeetings({
+        filters: {
+          ...meetingQueryFilters,
+          dateFrom: meetingDateRangeTouchedRef.current ? filterDateFrom : metadata.defaultRange.dateFrom,
+          dateTo: meetingDateRangeTouchedRef.current ? filterDateTo : metadata.defaultRange.dateTo,
+        },
+        leaderLookups: metadata.leaderLookups,
+      })
+
+      setMeetingsFiltersReady(true)
+    } catch (error) {
+      console.error('Failed to initialize meetings page:', error)
+      setIsAdmin(false)
+      setMeetingsFiltersReady(true)
+    }
+  }
+
   useEffect(() => {
-    checkAdmin()
-    loadMeetingMeta()
+    initializeMeetingsPage()
+
+    return undefined
   }, [])
 
   // Load drafts once we know we're admin
@@ -391,8 +580,9 @@ export default function Meetings() {
   }, [isAdmin])
 
   useEffect(() => {
+    if (!meetingsFiltersReady) return
     fetchMeetings()
-  }, [meetingPage, meetingPageSize, meetingQueryFilters, meetingLeaderLookups])
+  }, [meetingPage, meetingPageSize, meetingQueryFilters, meetingLeaderLookups, meetingsFiltersReady])
 
   // Reset meeting page when server-side filters change
   useEffect(() => { setMeetingPage(1) }, [filterTrade, debouncedFilterPerson, debouncedFilterLeader, filterProject, debouncedFilterTopic, debouncedFilterLocation, filterTimeRange, filterSelfTraining, filterDateFrom, filterDateTo, sortBy, meetingPageSize])
@@ -414,6 +604,14 @@ export default function Meetings() {
   }, [exportChunkSize])
   useEffect(() => {
     if (typeof window === 'undefined') return
+    window.localStorage.setItem(MEETINGS_LIST_EXPORT_FIELDS_STORAGE_KEY, JSON.stringify(meetingListExportFields))
+  }, [meetingListExportFields])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(MEETINGS_LIST_VIEW_FIELDS_STORAGE_KEY, JSON.stringify(meetingListViewFields))
+  }, [meetingListViewFields])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
     window.localStorage.setItem(DRAFTS_PAGE_SIZE_STORAGE_KEY, String(draftPageSize))
   }, [draftPageSize])
   useEffect(() => {
@@ -424,34 +622,77 @@ export default function Meetings() {
     })
   }, [meetings])
 
-  const checkAdmin = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) {
-      const { data } = await supabase
-        .from('users')
-        .select('is_admin')
-        .eq('id', user.id)
-        .single()
-      
-      setIsAdmin(data?.is_admin || false)
-    }
-  }
-
   const loadMeetingMeta = async () => {
+    const fallbackRange = getDefaultMeetingsDateRange()
+    let nextDefaultRange = fallbackRange
+    let nextLeaderLookups = { leaders: [], involvedPersons: [] }
+
     try {
-      const [options, leadersRes, involvedRes] = await Promise.all([
+      try {
+        const { data: latestMeetings } = await supabase
+          .from('meetings')
+          .select('date, time')
+          .is('deleted_at', null)
+          .eq('is_draft', false)
+          .order('date', { ascending: false })
+          .order('time', { ascending: false })
+          .limit(1)
+
+        const latestMeetingDate = latestMeetings?.[0]?.date || ''
+        if (latestMeetingDate) {
+          nextDefaultRange = getMeetingsDateRangeFromAnchor(latestMeetingDate)
+        }
+      } catch (error) {
+        console.error('Failed to resolve default meetings date range:', error)
+      }
+
+      setDefaultMeetingsDateRange(nextDefaultRange)
+
+      if (!meetingDateRangeTouchedRef.current) {
+        setFilterDateFrom(nextDefaultRange.dateFrom)
+        setFilterDateTo(nextDefaultRange.dateTo)
+      }
+
+      const [optionsResult, leadersResult, involvedResult] = await Promise.allSettled([
         fetchMeetingFilterOptions(),
         supabase.from('leaders').select('id, name, default_signature_url').order('name'),
         supabase.from('involved_persons').select('id, name, leader_id, default_signature_url').order('name'),
       ])
 
-      setMeetingFilterOptions(options)
-      setMeetingLeaderLookups({
-        leaders: leadersRes.data || [],
-        involvedPersons: involvedRes.data || [],
-      })
+      if (optionsResult.status === 'fulfilled') {
+        setMeetingFilterOptions(optionsResult.value)
+      } else {
+        console.error('Failed to load meeting filter options:', optionsResult.reason)
+        setMeetingFilterOptions({ projects: [], trades: [], attendees: [], leaders: [] })
+      }
+
+      nextLeaderLookups = {
+        leaders: leadersResult.status === 'fulfilled' ? (leadersResult.value.data || []) : [],
+        involvedPersons: involvedResult.status === 'fulfilled' ? (involvedResult.value.data || []) : [],
+      }
+
+      setMeetingLeaderLookups(nextLeaderLookups)
+
+      if (leadersResult.status === 'rejected') {
+        console.error('Failed to load meeting leaders:', leadersResult.reason)
+      }
+
+      if (involvedResult.status === 'rejected') {
+        console.error('Failed to load involved persons:', involvedResult.reason)
+      }
     } catch (error) {
       console.error('Failed to load meeting filter metadata:', error)
+      setDefaultMeetingsDateRange(fallbackRange)
+
+      if (!meetingDateRangeTouchedRef.current) {
+        setFilterDateFrom(fallbackRange.dateFrom)
+        setFilterDateTo(fallbackRange.dateTo)
+      }
+    }
+
+    return {
+      defaultRange: nextDefaultRange,
+      leaderLookups: nextLeaderLookups,
     }
   }
 
@@ -495,26 +736,34 @@ export default function Meetings() {
     setEditTrades(tr || [])
   }
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = async ({ filters = meetingQueryFilters, page = meetingPage, pageSize = meetingPageSize, leaderLookups = meetingLeaderLookups } = {}) => {
+    const requestId = ++meetingsRequestIdRef.current
     setLoading(true)
+
     try {
-      const { rows, count } = await fetchMeetingsWindow(meetingQueryFilters, {
-        page: meetingPage,
-        pageSize: meetingPageSize,
+      const { rows, count } = await fetchMeetingsWindow(filters, {
+        page,
+        pageSize,
       })
+
+      if (requestId !== meetingsRequestIdRef.current) return
 
       const resolvedMeetings = rows.map((meeting) => applyResolvedMeetingLeader({
         meeting,
-        leaders: meetingLeaderLookups.leaders || [],
-        involvedPersons: meetingLeaderLookups.involvedPersons || [],
+        leaders: leaderLookups.leaders || [],
+        involvedPersons: leaderLookups.involvedPersons || [],
       }))
 
-      setMeetings(resolvedMeetings)
+      const meetingsWithAuditUsers = await attachAuditUsers(resolvedMeetings)
+
+      setMeetings(meetingsWithAuditUsers)
       setMeetingTotalCount(count)
     } catch (error) {
+      if (requestId !== meetingsRequestIdRef.current) return
       setMeetings([])
       setMeetingTotalCount(0)
     } finally {
+      if (requestId !== meetingsRequestIdRef.current) return
       setHasLoadedOnce(true)
       setLoading(false)
     }
@@ -1089,6 +1338,26 @@ export default function Meetings() {
     return parts.join(' · ')
   }
 
+  const attachAuditUsers = async (records) => {
+    const userIds = [...new Set(records.flatMap(record => [record?.created_by, record?.updated_by]).filter(Boolean))]
+    if (!userIds.length) return records
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .in('id', userIds)
+
+    const userMap = new Map((users || []).map(user => [user.id, user.name || user.email || user.id]))
+
+    return records.map(record => ({
+      ...record,
+      created_by_label: record.created_by ? (userMap.get(record.created_by) || record.created_by) : '',
+      updated_by_label: record.updated_by ? (userMap.get(record.updated_by) || record.updated_by) : '',
+    }))
+  }
+
+  const isVisibleInList = (key) => meetingListViewFields[key] ?? true
+
   const handleExportListPDF = async () => {
     if (!meetingTotalCount) return
     if (meetingTotalCount > MEETING_SINGLE_PDF_MAX_RECORDS) {
@@ -1099,7 +1368,10 @@ export default function Meetings() {
     setExportListLoading(true)
     try {
       const meetingsForExport = await fetchMeetingsFull(meetingQueryFilters)
-      await downloadMeetingListPDF(meetingsForExport, 'Meetings & Safety Surveys Report', buildMeetingExportScopeLabel() || `${meetingTotalCount} meetings`)
+      const meetingsWithAudit = await attachAuditUsers(meetingsForExport)
+      await downloadMeetingListPDF(meetingsWithAudit, 'Meetings Report', buildMeetingExportScopeLabel() || `${meetingTotalCount} meetings`, {
+        fields: meetingListExportFields,
+      })
     } catch (e) { console.error(e) }
     finally { setExportListLoading(false) }
   }
@@ -1113,12 +1385,13 @@ export default function Meetings() {
       await downloadChunkedMeetingListPDFZIP({
         totalCount: meetingTotalCount,
         chunkSize: exportChunkSize,
-        title: 'Meetings & Safety Surveys Report',
+        title: 'Meetings Report',
         subtitle: buildMeetingExportScopeLabel() || `${meetingTotalCount} meetings`,
+        fields: meetingListExportFields,
         shouldCancel: () => cancelExportRef.current,
         getChunk: async ({ offset, limit }) => {
           const { rows } = await fetchMeetingExportChunk(meetingQueryFilters, { offset, limit })
-          return rows
+          return attachAuditUsers(rows)
         },
         onProgress: ({ done, total, label }) => {
           setZipProgress({ visible: true, done, total, label })
@@ -1174,8 +1447,8 @@ export default function Meetings() {
     setFilterLocation('')
     setFilterTimeRange('')
     setFilterSelfTraining('all')
-    setFilterDateFrom('')
-    setFilterDateTo('')
+    setFilterDateFrom(defaultMeetingsDateRange.dateFrom)
+    setFilterDateTo(defaultMeetingsDateRange.dateTo)
     setSortBy('newest')
   }
 
@@ -1289,7 +1562,7 @@ export default function Meetings() {
       )}
 
       <div className="page-header">
-        <h2 className="page-title">Meetings & Safety Surveys</h2>
+        <h2 className="page-title">Meetings</h2>
         <div style={{ display: 'flex', gap: '8px' }}>
           {isAdmin && (
             <Link className="btn btn-secondary" to="/bulk-import">
@@ -1610,13 +1883,92 @@ export default function Meetings() {
       <div className="filter-bar meetings-filter-bar">
         <div className="filter-grid filter-grid--top">
           <FilterField label="Loaded-page search">
-            <input
-              className="filter-search-input"
-              type="text"
-              placeholder="Quick search inside loaded results..."
-              value={searchText}
-              onChange={e => setSearchText(e.target.value)}
-            />
+            <div className="meetings-search-stack">
+              <input
+                className="filter-search-input meetings-search-input"
+                type="text"
+                placeholder="Quick search inside loaded results..."
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+              />
+              {isAdmin && meetingTotalCount > 0 && (
+                <div className="meetings-settings-row">
+                  <details className="meetings-settings-dropdown">
+                    <summary className="meetings-settings-trigger">
+                      <span className="meetings-settings-trigger-label">Export PDF settings</span>
+                      <span className="meetings-settings-trigger-icon" aria-hidden="true">
+                        <svg viewBox="0 0 12 8" fill="none">
+                          <path d="M1 1.25 6 6.25 11 1.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    </summary>
+                    <div className="meetings-settings-panel">
+                      <div className="meetings-settings-panel-header">
+                        <span className="meetings-settings-panel-title">List PDF fields</span>
+                        <button
+                          type="button"
+                          className="filter-clear-btn"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            setMeetingListExportFields(getDefaultMeetingExportFields())
+                          }}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      <div className="meetings-settings-panel-grid">
+                        {MEETING_LIST_EXPORT_FIELDS.map(field => (
+                          <MeetingExportFieldToggle
+                            key={field.key}
+                            label={field.label}
+                            checked={Boolean(meetingListExportFields[field.key])}
+                            onChange={(checked) => setMeetingListExportFields(prev => ({ ...prev, [field.key]: checked }))}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+
+                  <details className="meetings-settings-dropdown">
+                    <summary className="meetings-settings-trigger">
+                      <span className="meetings-settings-trigger-label">List view settings</span>
+                      <span className="meetings-settings-trigger-icon" aria-hidden="true">
+                        <svg viewBox="0 0 12 8" fill="none">
+                          <path d="M1 1.25 6 6.25 11 1.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                    </summary>
+                    <div className="meetings-settings-panel">
+                      <div className="meetings-settings-panel-header">
+                        <span className="meetings-settings-panel-title">Visible fields on list</span>
+                        <button
+                          type="button"
+                          className="filter-clear-btn"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            setMeetingListViewFields(getDefaultMeetingViewFields())
+                          }}
+                        >
+                          Reset
+                        </button>
+                      </div>
+                      <div className="meetings-settings-panel-grid">
+                        {MEETING_LIST_VIEW_FIELDS.map(field => (
+                          <MeetingExportFieldToggle
+                            key={field.key}
+                            label={field.label}
+                            checked={Boolean(meetingListViewFields[field.key])}
+                            onChange={(checked) => setMeetingListViewFields(prev => ({ ...prev, [field.key]: checked }))}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              )}
+            </div>
           </FilterField>
           <FilterField label="Topic keyword">
             <input
@@ -1659,15 +2011,15 @@ export default function Meetings() {
               {meetingFilterOptions.leaders.map(leader => <option key={leader} value={leader} />)}
             </datalist>
           </FilterField>
+        </div>
+
+        <div className="filter-grid filter-grid--bottom">
           <FilterField label="Project">
             <select value={filterProject} onChange={e => setFilterProject(e.target.value)} className="filter-select">
               <option value="">All projects</option>
               {meetingFilterOptions.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
           </FilterField>
-        </div>
-
-        <div className="filter-grid filter-grid--bottom">
           <FilterField label="Address">
             <input
               className="meetings-filter-input"
@@ -1678,10 +2030,26 @@ export default function Meetings() {
             />
           </FilterField>
           <FilterField label="Date from">
-            <input className="meetings-filter-input meetings-filter-input--date" type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)} />
+            <input
+              className="meetings-filter-input meetings-filter-input--date"
+              type="date"
+              value={filterDateFrom}
+              onChange={e => {
+                meetingDateRangeTouchedRef.current = true
+                setFilterDateFrom(e.target.value)
+              }}
+            />
           </FilterField>
           <FilterField label="Date to">
-            <input className="meetings-filter-input meetings-filter-input--date" type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)} />
+            <input
+              className="meetings-filter-input meetings-filter-input--date"
+              type="date"
+              value={filterDateTo}
+              onChange={e => {
+                meetingDateRangeTouchedRef.current = true
+                setFilterDateTo(e.target.value)
+              }}
+            />
           </FilterField>
           <FilterField label="Time range">
             <select value={filterTimeRange} onChange={e => setFilterTimeRange(e.target.value)} className="filter-select">
@@ -1791,6 +2159,13 @@ export default function Meetings() {
         {pagedMeetings.length === 0 ? (
           <div className="empty-state">
             <p>{meetingTotalCount === 0 ? 'No meetings recorded for the selected filters.' : 'No loaded-page matches for the current quick search.'}</p>
+            {filtersActive && (
+              <div className="empty-state-actions">
+                <button className="btn btn-secondary" onClick={resetMeetingFilters}>
+                  Clear filters
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           pagedMeetings.map((meeting) => (
@@ -1809,13 +2184,27 @@ export default function Meetings() {
               <div className="meeting-row-body">
                 <div className="meeting-row-top">
                   <div className="meeting-row-heading">
-                    <h3 className="meeting-row-topic">{meeting.topic}</h3>
-                    <div className="meeting-row-meta">
-                      <span>{formatMeetingDate(meeting.date)}</span>
-                      {meeting.time && <><span className="meta-sep">•</span><span>{meeting.time}</span></>}
-                      {meeting.project?.name && <><span className="meta-sep">•</span><span>{meeting.project.name}</span></>}
-                      {meeting.location && <><span className="meta-sep">•</span><span>{meeting.location}</span></>}
-                    </div>
+                    {isVisibleInList('topic') && <h3 className="meeting-row-topic">{meeting.topic}</h3>}
+                    {[
+                      isVisibleInList('date') ? formatMeetingDate(meeting.date) : '',
+                      isVisibleInList('time') && meeting.time ? meeting.time : '',
+                      isVisibleInList('project') && meeting.project?.name ? meeting.project.name : '',
+                      isVisibleInList('address') && meeting.location ? meeting.location : '',
+                    ].filter(Boolean).length > 0 && (
+                      <div className="meeting-row-meta">
+                        {[
+                          isVisibleInList('date') ? formatMeetingDate(meeting.date) : '',
+                          isVisibleInList('time') && meeting.time ? meeting.time : '',
+                          isVisibleInList('project') && meeting.project?.name ? meeting.project.name : '',
+                          isVisibleInList('address') && meeting.location ? meeting.location : '',
+                        ].filter(Boolean).map((value, index) => (
+                          <React.Fragment key={`${meeting.id}-meta-${index}`}>
+                            {index > 0 && <span className="meta-sep">•</span>}
+                            <span>{value}</span>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="meeting-row-actions">
@@ -1852,24 +2241,47 @@ export default function Meetings() {
                   </div>
                 </div>
 
-                <div className="meeting-row-chips">
-                  {meeting.leader_name && <span className="meeting-chip meeting-chip--leader">Leader: {meeting.leader_name}</span>}
-                  {meeting.trade && <span className="meeting-chip">Trade: {meeting.trade}</span>}
-                  <span className="meeting-chip">Attendees: {meeting.attendees?.length ?? 0}</span>
-                  {meeting.checklists?.length > 0 && <span className="meeting-chip">Checklists: {meeting.checklists.length}</span>}
-                  {meeting.photos?.length > 0 && <span className="meeting-chip">Photos: {meeting.photos.length}</span>}
-                  {meeting.is_self_training && <span className="meeting-chip">Self-training</span>}
-                </div>
+                {[
+                  isVisibleInList('leader') && meeting.leader_name,
+                  isVisibleInList('trade') && meeting.trade,
+                  isVisibleInList('attendee_count'),
+                  isVisibleInList('checklists') && meeting.checklists?.length > 0,
+                  isVisibleInList('photos') && meeting.photos?.length > 0,
+                  isVisibleInList('self_training') && meeting.is_self_training,
+                ].some(Boolean) && (
+                  <div className="meeting-row-chips">
+                    {isVisibleInList('leader') && meeting.leader_name && <span className="meeting-chip meeting-chip--leader">Leader: {meeting.leader_name}</span>}
+                    {isVisibleInList('trade') && meeting.trade && <span className="meeting-chip">Trade: {meeting.trade}</span>}
+                    {isVisibleInList('attendee_count') && <span className="meeting-chip">Attendees: {meeting.attendees?.length ?? 0}</span>}
+                    {isVisibleInList('checklists') && meeting.checklists?.length > 0 && <span className="meeting-chip">Checklists: {meeting.checklists.length}</span>}
+                    {isVisibleInList('photos') && meeting.photos?.length > 0 && <span className="meeting-chip">Photos: {meeting.photos.length}</span>}
+                    {isVisibleInList('self_training') && meeting.is_self_training && <span className="meeting-chip">Self-training</span>}
+                  </div>
+                )}
 
-                {meeting.attendees?.length > 0 && (
+                {isVisibleInList('attendees') && meeting.attendees?.length > 0 && (
                   <div className="meeting-row-summary">
                     <strong>Attendees:</strong> {summarizeList(meeting.attendees.map(attendee => attendee.name), 4)}
                   </div>
                 )}
 
-                {meeting.checklists?.length > 0 && (
+                {isVisibleInList('checklists') && meeting.checklists?.length > 0 && (
                   <div className="meeting-row-summary meeting-row-summary--muted">
                     <strong>Checklists:</strong> {summarizeList(meeting.checklists.map(checklist => checklist.name), 3)}
+                  </div>
+                )}
+
+                {[
+                  isVisibleInList('created_at') && meeting.created_at,
+                  isVisibleInList('updated_at') && meeting.updated_at,
+                  isVisibleInList('created_by') && (meeting.created_by_label || meeting.created_by),
+                  isVisibleInList('updated_by') && (meeting.updated_by_label || meeting.updated_by),
+                ].some(Boolean) && (
+                  <div className="meeting-row-summary meeting-row-summary--muted">
+                    {isVisibleInList('created_at') && meeting.created_at && <span className="meeting-audit-item"><strong>Date added:</strong> {formatAuditDateTime(meeting.created_at)}</span>}
+                    {isVisibleInList('updated_at') && meeting.updated_at && <span className="meeting-audit-item"><strong>Last edited date:</strong> {formatAuditDateTime(meeting.updated_at)}</span>}
+                    {isVisibleInList('created_by') && (meeting.created_by_label || meeting.created_by) && <span className="meeting-audit-item"><strong>Created by:</strong> {meeting.created_by_label || meeting.created_by}</span>}
+                    {isVisibleInList('updated_by') && (meeting.updated_by_label || meeting.updated_by) && <span className="meeting-audit-item"><strong>Edited by:</strong> {meeting.updated_by_label || meeting.updated_by}</span>}
                   </div>
                 )}
               </div>

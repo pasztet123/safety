@@ -1,0 +1,211 @@
+.attendance-risk-panel {
+  background: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.attendance-risk-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.attendance-risk-copy {
+  margin: 8px 0 0 0;
+  max-width: 760px;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.attendance-risk-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.attendance-risk-setting-pill {
+  min-width: 110px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+}
+
+.attendance-risk-setting-pill span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.attendance-risk-setting-pill strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.attendance-risk-summary-banner,
+.attendance-risk-error,
+.attendance-risk-empty-state {
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.attendance-risk-summary-banner {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.attendance-risk-error {
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.attendance-risk-empty-state {
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.attendance-risk-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.attendance-risk-toolbar-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.attendance-risk-toolbar-field input {
+  min-width: 180px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.attendance-risk-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attendance-risk-status-pill {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.attendance-risk-status-pill strong {
+  margin-left: 6px;
+}
+
+.attendance-risk-status-pill.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.attendance-risk-table-wrap {
+  overflow-x: auto;
+}
+
+.attendance-risk-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.attendance-risk-table th,
+.attendance-risk-table td {
+  vertical-align: top;
+}
+
+.attendance-risk-person-cell,
+.attendance-risk-metric-cell,
+.attendance-risk-last-seen {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.attendance-risk-person-cell span,
+.attendance-risk-metric-cell span,
+.attendance-risk-last-seen span,
+.attendance-risk-status-meta,
+.attendance-risk-note-text,
+.attendance-risk-action-placeholder {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.attendance-risk-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.attendance-risk-status-badge.status-open {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.attendance-risk-status-badge.status-acked {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.attendance-risk-status-badge.status-resolved {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.attendance-risk-note-input {
+  width: 100%;
+  min-width: 220px;
+  resize: vertical;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+@media (max-width: 900px) {
+  .attendance-risk-hero,
+  .attendance-risk-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .attendance-risk-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .attendance-risk-note-input {
+    min-width: 160px;
+  }
+}

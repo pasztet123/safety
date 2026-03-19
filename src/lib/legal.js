@@ -7,6 +7,7 @@ export const MEETING_TOPIC_ATTESTATION_CLAUSE = 'Organizer of this toolbox meeti
 export const BULK_MEETING_TOPIC_ATTESTATION_CLAUSE = 'Organizers of the toolbox meetings attest that the trainings delivered during those meetings were materially consistent with the selected safety topics. The training content does not need to match the topic descriptions word-for-word, provided that the purpose of each training, its jobsite-specific focus, and the hazards, issues, or safety problems discussed substantially align with the selected topic for the relevant meeting.'
 
 export const JURISDICTION_WARNING_MESSAGE = 'Before accepting this meeting, you must ensure that your actions comply with the laws and recordkeeping requirements applicable in your jurisdiction.'
+export const SAFETY_SURVEY_JURISDICTION_WARNING_MESSAGE = 'Before accepting this safety survey, you must ensure that your actions comply with the laws and recordkeeping requirements applicable in your jurisdiction.'
 
 export const getMeetingTopicAttestationClause = ({ plural = false } = {}) => (
   plural ? BULK_MEETING_TOPIC_ATTESTATION_CLAUSE : MEETING_TOPIC_ATTESTATION_CLAUSE

@@ -8,6 +8,10 @@ const APP_SETTINGS_EVENT = 'app-settings-updated'
 
 const DEFAULT_APP_SETTINGS = {
   timezone: DEFAULT_APP_TIMEZONE,
+  attendance_risk_notifications_enabled: false,
+  attendance_risk_email_enabled: true,
+  attendance_risk_in_app_enabled: true,
+  attendance_risk_run_hour: 10,
 }
 
 const FALLBACK_TIMEZONE_OPTIONS = [
@@ -108,7 +112,7 @@ export const fetchAppSettings = async ({ force = false } = {}) => {
   inFlightAppSettingsRequest = (async () => {
     const { data, error } = await supabase
       .from('app_settings')
-      .select('timezone')
+      .select('timezone, attendance_risk_notifications_enabled, attendance_risk_email_enabled, attendance_risk_in_app_enabled, attendance_risk_run_hour')
       .eq('id', 1)
       .maybeSingle()
 
@@ -143,8 +147,14 @@ export const saveAppSettings = async (updates) => {
     .upsert({
       id: 1,
       timezone: nextSettings.timezone || DEFAULT_APP_TIMEZONE,
+      attendance_risk_notifications_enabled: Boolean(nextSettings.attendance_risk_notifications_enabled),
+      attendance_risk_email_enabled: Boolean(nextSettings.attendance_risk_email_enabled),
+      attendance_risk_in_app_enabled: Boolean(nextSettings.attendance_risk_in_app_enabled),
+      attendance_risk_run_hour: Number.isFinite(Number(nextSettings.attendance_risk_run_hour))
+        ? Math.min(23, Math.max(0, Number(nextSettings.attendance_risk_run_hour)))
+        : DEFAULT_APP_SETTINGS.attendance_risk_run_hour,
     })
-    .select('timezone')
+    .select('timezone, attendance_risk_notifications_enabled, attendance_risk_email_enabled, attendance_risk_in_app_enabled, attendance_risk_run_hour')
     .single()
 
   if (error) throw error

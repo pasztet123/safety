@@ -218,7 +218,8 @@ const fetchLimitedRows = async (queryFactory, limit) => {
 }
 
 const ENTITY_LABELS = {
-  meetings: 'Meetings & Safety Surveys',
+  meetings: 'Meetings',
+  safety_surveys: 'Safety Surveys',
   incidents: 'Incidents',
   corrective_actions: 'Corrective Actions',
   checklist_completions: 'Checklist Completions',
@@ -229,9 +230,15 @@ const ENTITY_LABELS = {
 const HISTORY_SOURCES = [
   {
     key: 'meetings',
-    label: 'Meetings & Safety Surveys',
+    label: 'Meetings',
     table: 'meeting_history',
     idColumn: 'meeting_id',
+  },
+  {
+    key: 'safety_surveys',
+    label: 'Safety Surveys',
+    table: 'safety_survey_history',
+    idColumn: 'safety_survey_id',
   },
   {
     key: 'incidents',
@@ -270,6 +277,10 @@ const summarizeAuditEvent = (event) => {
     return [metadata.type_name, metadata.employee_name].filter(Boolean).join(' - ') || 'Incident record'
   }
 
+  if (event.table_name === 'safety_surveys') {
+    return metadata.survey_title || metadata.project_address || metadata.responsible_person_name || 'Safety survey record'
+  }
+
   if (event.table_name === 'corrective_actions') {
     return metadata.description || 'Corrective action record'
   }
@@ -289,7 +300,11 @@ const summarizeHistoryRecord = (entry, checklistNames) => {
   const snapshot = entry.row_after || entry.row_before || {}
 
   if (entry.entity === 'meetings') {
-    return snapshot.topic || 'Meeting & safety survey'
+    return snapshot.topic || 'Meeting'
+  }
+
+  if (entry.entity === 'safety_surveys') {
+    return snapshot.survey_title || snapshot.project_address || snapshot.responsible_person_name || 'Safety survey'
   }
 
   if (entry.entity === 'incidents') {
@@ -533,7 +548,8 @@ export default function SystemRecords() {
             onChange={(event) => setEntityFilter(event.target.value)}
           >
             <option value="all">All entities</option>
-            <option value="meetings">Meetings & Safety Surveys</option>
+            <option value="meetings">Meetings</option>
+            <option value="safety_surveys">Safety Surveys</option>
             <option value="incidents">Incidents</option>
             <option value="corrective_actions">Corrective Actions</option>
             <option value="checklist_completions">Checklist Completions</option>

@@ -60,7 +60,7 @@ const formatDate = (value) => {
 const metricCards = (metrics) => [
   { key: 'total', label: 'Filtered events', value: metrics.totalEvents, tone: 'primary' },
   { key: 'meetings', label: 'Meetings', value: metrics.meetings, tone: 'meetings' },
-  { key: 'checklists', label: 'Checklists', value: metrics.checklists, tone: 'checklistCompletions' },
+  { key: 'checklists', label: 'Safety Checklists', value: metrics.checklists, tone: 'checklistCompletions' },
   { key: 'incidents', label: 'Incidents', value: metrics.incidents, tone: 'incidents' },
   { key: 'coverage', label: 'Coverage', value: `${metrics.coverageRate}%`, tone: 'success' },
   { key: 'gap', label: 'Longest gap', value: `${metrics.longestGapDays}d`, tone: 'warning' },

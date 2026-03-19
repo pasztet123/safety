@@ -7,9 +7,11 @@ import {
   downloadChunkedMeetingListPDFZIP,
   downloadMeetingListPDF,
   downloadMeetingsAsZIP,
+  downloadSafetySurveyListPDF,
   downloadSafetyTopicsBrochurePDF,
   downloadIncidentListPDF,
   downloadCorrectiveActionsListPDF,
+  downloadDisciplinaryActionsListPDF,
   downloadChecklistHistoryPDF,
 } from '../lib/pdfBulkGenerator'
 import {
@@ -18,8 +20,10 @@ import {
   MEETING_SINGLE_PDF_MAX_RECORDS,
   fetchMeetingExportChunk,
   fetchMeetingsFull,
+  fetchSafetySurveysFull,
   fetchIncidentsFull,
   fetchCorrectiveActionsFull,
+  fetchDisciplinaryActionsFull,
   fetchChecklistCompletionsFull,
   fetchPersons,
   fetchIncidentsList,
@@ -27,6 +31,82 @@ import {
   downloadCSVsAsZIP,
 } from '../lib/exportHelpers'
 import './ExportPanel.css'
+
+const buildFieldState = (fields) => Object.fromEntries(fields.map(field => [field.key, field.defaultChecked !== false]))
+
+const MEETING_EXPORT_FIELDS = [
+  { key: 'topic', label: 'Topic', description: 'Meeting topic or safety survey title' },
+  { key: 'date', label: 'Meeting date', description: 'Business meeting date', defaultChecked: true },
+  { key: 'time', label: 'Meeting time', description: 'Scheduled meeting time', defaultChecked: true },
+  { key: 'project', label: 'Project', description: 'Project name', defaultChecked: true },
+  { key: 'trade', label: 'Trade', description: 'Assigned trade', defaultChecked: true },
+  { key: 'leader', label: 'Worker performing the meeting', description: 'Meeting leader / presenter', defaultChecked: true },
+  { key: 'attendees', label: 'Attendees', description: 'List of attendee names', defaultChecked: true },
+  { key: 'attendee_count', label: 'Attendee count', description: 'Total attendance count', defaultChecked: true },
+  { key: 'self_training', label: 'Self-training status', description: 'Whether the meeting was self-training', defaultChecked: true },
+  { key: 'checklists', label: 'Checklists', description: 'Attached checklists', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', description: 'Record creation timestamp', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', description: 'Record update timestamp', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', description: 'User who created the record', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', description: 'User who last edited the record', defaultChecked: false },
+]
+
+const INCIDENT_EXPORT_FIELDS = [
+  { key: 'type_name', label: 'Type', description: 'Incident classification', defaultChecked: true },
+  { key: 'date', label: 'Incident date', description: 'Business incident date', defaultChecked: true },
+  { key: 'time', label: 'Incident time', description: 'Business incident time', defaultChecked: true },
+  { key: 'project', label: 'Project', description: 'Project name', defaultChecked: true },
+  { key: 'severity', label: 'Severity', description: 'Incident severity', defaultChecked: true },
+  { key: 'employee_name', label: 'Worker', description: 'Impacted worker', defaultChecked: true },
+  { key: 'reporter_name', label: 'Reporter', description: 'Reporter name', defaultChecked: true },
+  { key: 'location', label: 'Location', description: 'Incident location', defaultChecked: true },
+  { key: 'details', label: 'Details', description: 'Incident narrative', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', description: 'Record creation timestamp', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', description: 'Record update timestamp', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', description: 'User who created the record', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', description: 'User who last edited the record', defaultChecked: false },
+]
+
+const CORRECTIVE_ACTION_EXPORT_FIELDS = [
+  { key: 'description', label: 'Description', description: 'Action description', defaultChecked: true },
+  { key: 'status', label: 'Status', description: 'Open or completed', defaultChecked: true },
+  { key: 'responsible_person', label: 'Assigned to', description: 'Responsible person', defaultChecked: true },
+  { key: 'due_date', label: 'Due date', description: 'Target due date', defaultChecked: true },
+  { key: 'completed_date', label: 'Completed date', description: 'Completion date', defaultChecked: true },
+  { key: 'incident', label: 'Incident', description: 'Linked incident reference', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', description: 'Record creation timestamp', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', description: 'Record update timestamp', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', description: 'User who created the record', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', description: 'User who last edited the record', defaultChecked: false },
+]
+
+const DISCIPLINARY_ACTION_EXPORT_FIELDS = [
+  { key: 'action_type', label: 'Action type', description: 'Disciplinary action classification', defaultChecked: true },
+  { key: 'violation_type', label: 'Violation type', description: 'Linked safety violation type', defaultChecked: true },
+  { key: 'project', label: 'Project', description: 'Project name from linked incident', defaultChecked: true },
+  { key: 'incident_date', label: 'Incident date', description: 'Original incident date', defaultChecked: true },
+  { key: 'action_date', label: 'Action date', description: 'Business action date', defaultChecked: true },
+  { key: 'action_time', label: 'Action time', description: 'Business action time', defaultChecked: true },
+  { key: 'recipient', label: 'Recipient', description: 'Disciplined person', defaultChecked: true },
+  { key: 'leader', label: 'Worker performing the meeting', description: 'Responsible leader', defaultChecked: true },
+  { key: 'notes', label: 'Notes', description: 'Action notes', defaultChecked: true },
+  { key: 'created_at', label: 'Date added', description: 'Record creation timestamp', defaultChecked: false },
+  { key: 'updated_at', label: 'Last edited date', description: 'Record update timestamp', defaultChecked: false },
+  { key: 'created_by', label: 'Created by', description: 'User who created the record', defaultChecked: false },
+  { key: 'updated_by', label: 'Edited by', description: 'User who last edited the record', defaultChecked: false },
+]
+
+const SAFETY_SURVEY_EXPORT_FIELDS = [
+  { key: 'survey_title', label: 'Survey title', description: 'Short declared survey title', defaultChecked: true },
+  { key: 'survey_date', label: 'Survey date', description: 'Declared survey date', defaultChecked: true },
+  { key: 'survey_time', label: 'Survey time', description: 'Declared survey time', defaultChecked: true },
+  { key: 'project', label: 'Project', description: 'Project name', defaultChecked: true },
+  { key: 'address', label: 'Address', description: 'Address snapshot stored on the survey', defaultChecked: true },
+  { key: 'responsible_person', label: 'Responsible person', description: 'Assigned responsible person', defaultChecked: true },
+  { key: 'hazards', label: 'Hazards observed', description: 'Declared hazards summary', defaultChecked: true },
+  { key: 'recommendations', label: 'Recommendations', description: 'Declared follow-up notes', defaultChecked: true },
+  { key: 'compliance', label: 'Compliance status', description: 'Completion and follow-up flags', defaultChecked: true },
+]
 
 // ─── Section skeleton ─────────────────────────────────────────────────────────
 function ExportSection({ title, children }) {
@@ -62,6 +142,29 @@ function ProjectSelect({ value, onChange, projects, allLabel = 'All projects' })
         <option value="">{allLabel}</option>
         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
       </select>
+    </div>
+  )
+}
+
+function ExportFieldSettings({ label = 'Fields in export', fields, selected, onToggle }) {
+  return (
+    <div className="ep-csv-opts ep-export-fields">
+      <label className="ep-csv-label">{label}</label>
+      <div className="ep-checkboxes ep-checkboxes--grid">
+        {fields.map(({ key, label: fieldLabel, description }) => (
+          <label key={key} className="ep-checkbox-row ep-checkbox-row--field">
+            <input
+              type="checkbox"
+              checked={Boolean(selected[key])}
+              onChange={e => onToggle(key, e.target.checked)}
+            />
+            <span className="ep-checkbox-copy">
+              <span className="ep-checkbox-label ep-checkbox-label--plain">{fieldLabel}</span>
+              <span className="ep-checkbox-desc">{description}</span>
+            </span>
+          </label>
+        ))}
+      </div>
     </div>
   )
 }
@@ -117,6 +220,18 @@ export default function ExportPanel() {
   const [aDateTo, setADateTo]     = useState('')
   const [aStatus, setAStatus]     = useState('all')
 
+  // ── Disciplinary Actions filters ──────────────────────────────────────────
+  const [dDateFrom, setDDateFrom] = useState('')
+  const [dDateTo, setDDateTo]     = useState('')
+
+  // ── Safety Surveys filters ───────────────────────────────────────────────
+  const [sDateFrom, setSDateFrom] = useState('')
+  const [sDateTo, setSDateTo] = useState('')
+  const [sProject, setSProject] = useState('')
+  const [sResponsible, setSResponsible] = useState('')
+  const [sAddress, setSAddress] = useState('')
+  const [sComplianceMode, setSComplianceMode] = useState('all')
+
   // ── Checklist History filters ──────────────────────────────────────────────
   const [clDateFrom, setClDateFrom] = useState('')
   const [clDateTo, setClDateTo]     = useState('')
@@ -130,6 +245,11 @@ export default function ExportPanel() {
   const [csvOpts, setCsvOpts] = useState({
     meetings: true, incidents: true, corrective_actions: true, statistics: true, attendance: true,
   })
+  const [meetingExportFields, setMeetingExportFields] = useState(() => buildFieldState(MEETING_EXPORT_FIELDS))
+  const [incidentExportFields, setIncidentExportFields] = useState(() => buildFieldState(INCIDENT_EXPORT_FIELDS))
+  const [correctiveExportFields, setCorrectiveExportFields] = useState(() => buildFieldState(CORRECTIVE_ACTION_EXPORT_FIELDS))
+  const [disciplinaryExportFields, setDisciplinaryExportFields] = useState(() => buildFieldState(DISCIPLINARY_ACTION_EXPORT_FIELDS))
+  const [safetySurveyExportFields, setSafetySurveyExportFields] = useState(() => buildFieldState(SAFETY_SURVEY_EXPORT_FIELDS))
 
   // ── Load meta data ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -173,6 +293,28 @@ export default function ExportPanel() {
 
   // ── Utility: build readable filter summary ─────────────────────────────────
   const filterDesc = (parts) => parts.filter(Boolean).join(' · ') || 'All records'
+
+  const toggleField = (setter) => (key, checked) => {
+    setter(prev => ({ ...prev, [key]: checked }))
+  }
+
+  const attachAuditUsers = async (records) => {
+    const ids = [...new Set(records.flatMap(record => [record?.created_by, record?.updated_by]).filter(Boolean))]
+    if (!ids.length) return records
+
+    const { data: users } = await supabase
+      .from('users')
+      .select('id, name, email')
+      .in('id', ids)
+
+    const userMap = new Map((users || []).map(user => [user.id, user.name || user.email || user.id]))
+
+    return records.map(record => ({
+      ...record,
+      created_by_label: record.created_by ? (userMap.get(record.created_by) || record.created_by) : '',
+      updated_by_label: record.updated_by ? (userMap.get(record.updated_by) || record.updated_by) : '',
+    }))
+  }
 
   const buildMeetingFilters = () => ({
     dateFrom: mDateFrom,
@@ -229,8 +371,11 @@ export default function ExportPanel() {
 
     const meetings = await fetchMeetingsFull(filters)
     if (!meetings.length) { alert('No meetings found for the selected filters.'); return }
+    const meetingsWithAudit = await attachAuditUsers(meetings)
     setProgress(p => ({ ...p, label: `Building PDF for ${meetings.length} meetings…` }))
-    await downloadMeetingListPDF(meetings, 'Meetings & Safety Surveys Report', buildMeetingFilterDescription())
+    await downloadMeetingListPDF(meetingsWithAudit, 'Meetings Report', buildMeetingFilterDescription(), {
+      fields: meetingExportFields,
+    })
   })
 
   const handleMeetingChunkedListPDF = () => {
@@ -246,8 +391,9 @@ export default function ExportPanel() {
         await downloadChunkedMeetingListPDFZIP({
           totalCount: count,
           chunkSize: mChunkSize,
-          title: 'Meetings & Safety Surveys Report',
+          title: 'Meetings Report',
           subtitle: buildMeetingFilterDescription(),
+          fields: meetingExportFields,
           shouldCancel: () => cancelRef.current,
           getChunk: async ({ offset, limit }) => {
             const { rows } = await fetchMeetingExportChunk(filters, { offset, limit })
@@ -322,10 +468,13 @@ export default function ExportPanel() {
     const filters = { dateFrom: iDateFrom, dateTo: iDateTo, projectId: iProject, severity: iSeverity }
     const incidents = await fetchIncidentsFull(filters)
     if (!incidents.length) { alert('No incidents found for the selected filters.'); return }
+    const incidentsWithAudit = await attachAuditUsers(incidents)
     setProgress(p => ({ ...p, label: `Building PDF for ${incidents.length} incidents…` }))
     const projectName = iProject ? projects.find(p => p.id === iProject)?.name : ''
     const parts = [iDateFrom && iDateTo ? `${iDateFrom} – ${iDateTo}` : '', projectName, iSeverity ? SEV_LABELS[iSeverity] : '']
-    await downloadIncidentListPDF(incidents, 'Incidents Report', filterDesc(parts))
+    await downloadIncidentListPDF(incidentsWithAudit, 'Incidents Report', filterDesc(parts), {
+      fields: incidentExportFields,
+    })
   })
 
   // ── Corrective Actions ─────────────────────────────────────────────────────
@@ -337,9 +486,85 @@ export default function ExportPanel() {
       fetchIncidentsList(),
     ])
     if (!actions.length) { alert('No corrective actions found for the selected filters.'); return }
+    const actionsWithAudit = await attachAuditUsers(actions)
     setProgress(p => ({ ...p, label: `Building PDF for ${actions.length} actions…` }))
     const parts = [aDateFrom && aDateTo ? `${aDateFrom} – ${aDateTo}` : '', aStatus !== 'all' ? aStatus : '']
-    await downloadCorrectiveActionsListPDF(actions, persons, incidents, 'Corrective Actions Report', filterDesc(parts))
+    await downloadCorrectiveActionsListPDF(actionsWithAudit, persons, incidents, 'Corrective Actions Report', filterDesc(parts), {
+      fields: correctiveExportFields,
+    })
+  })
+
+  // ── Disciplinary Actions ───────────────────────────────────────────────────
+  const handleDisciplinaryActions = () => runExport('Fetching disciplinary actions…', async () => {
+    const filters = { dateFrom: dDateFrom, dateTo: dDateTo }
+    const [actions, persons, leaders, incidents] = await Promise.all([
+      fetchDisciplinaryActionsFull(filters),
+      fetchPersons(),
+      supabase.from('leaders').select('id, name').order('name').then(result => result.data || []),
+      supabase
+        .from('incidents')
+        .select('id, type_name, date, employee_name, safety_violation_type, project:projects(name)')
+        .is('deleted_at', null)
+        .eq('type_name', 'Safety violation')
+        .then(result => result.data || []),
+    ])
+
+    if (!actions.length) { alert('No disciplinary actions found for the selected filters.'); return }
+    const actionsWithAudit = await attachAuditUsers(actions)
+    setProgress(p => ({ ...p, label: `Building PDF for ${actions.length} disciplinary actions…` }))
+    const parts = [dDateFrom && dDateTo ? `${dDateFrom} – ${dDateTo}` : (dDateFrom ? `from ${dDateFrom}` : (dDateTo ? `to ${dDateTo}` : ''))]
+    await downloadDisciplinaryActionsListPDF(
+      actionsWithAudit,
+      persons,
+      leaders,
+      incidents,
+      'Disciplinary Actions Report',
+      filterDesc(parts),
+      { fields: disciplinaryExportFields },
+    )
+  })
+
+  // ── Safety Surveys ────────────────────────────────────────────────────────
+  const handleSafetySurveys = () => runExport('Fetching safety surveys…', async () => {
+    const filters = {
+      dateFrom: sDateFrom,
+      dateTo: sDateTo,
+      projectId: sProject,
+      responsiblePerson: sResponsible,
+      address: sAddress,
+      complianceMode: sComplianceMode,
+      sortBy: 'newest',
+    }
+
+    const surveys = await fetchSafetySurveysFull(filters)
+    if (!surveys.length) { alert('No safety surveys found for the selected filters.'); return }
+
+    const projectName = sProject ? projects.find(project => project.id === sProject)?.name : ''
+    const parts = [
+      sDateFrom && sDateTo ? `${sDateFrom} – ${sDateTo}` : (sDateFrom ? `from ${sDateFrom}` : (sDateTo ? `to ${sDateTo}` : '')),
+      projectName,
+      sResponsible ? `Responsible: ${sResponsible}` : '',
+      sAddress ? `Address: ${sAddress}` : '',
+      sComplianceMode === 'documented' ? 'Survey complete only' : '',
+      sComplianceMode === 'follow-up' ? 'Follow-up required only' : '',
+    ]
+
+    const mappedSurveys = surveys.map((survey) => ({
+      ...survey,
+      project_name: survey.project?.name || '',
+      hazards_summary: survey.hazards_observed || '',
+      recommendations_summary: survey.recommendations || '',
+      compliance_summary: [
+        survey.compliance_documented ? 'Survey complete' : '',
+        survey.compliance_follow_up_required ? 'Follow-up required' : '',
+      ].filter(Boolean).join(' · '),
+      export_fields: safetySurveyExportFields,
+    }))
+
+    setProgress(progress => ({ ...progress, label: `Building PDF for ${mappedSurveys.length} safety surveys…` }))
+    await downloadSafetySurveyListPDF(mappedSurveys, 'Safety Surveys Report', filterDesc(parts), {
+      fields: safetySurveyExportFields,
+    })
   })
 
   // ── Checklist History ──────────────────────────────────────────────────────
@@ -385,11 +610,11 @@ export default function ExportPanel() {
       </div>
 
       {/* ══════════════════════════════════════════════════════
-          1. MEETINGS & SAFETY SURVEYS
+          1. MEETINGS
       ══════════════════════════════════════════════════════ */}
-      <ExportSection title="Meetings & Safety Surveys">
+      <ExportSection title="Meetings">
         <p className="ep-desc">
-          Export a list PDF of all meetings and safety surveys, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
+          Export a list PDF of meetings, optionally filtered by date, project, worker performing the meeting, worker, trade, or topic.
           For large result sets, use chunked list export to split the report into smaller PDF files packed into one ZIP.
         </p>
 
@@ -489,6 +714,13 @@ export default function ExportPanel() {
           The <strong>List PDF</strong> is best for smaller result sets. <strong>Chunked List ZIP</strong> splits a large result into multiple list PDFs.
           The <strong>Individual ZIP</strong> generates one full PDF per meeting and processes large exports in batches.
         </div>
+
+        <ExportFieldSettings
+          label="Fields in list PDF"
+          fields={MEETING_EXPORT_FIELDS}
+          selected={meetingExportFields}
+          onToggle={toggleField(setMeetingExportFields)}
+        />
       </ExportSection>
 
       {/* ══════════════════════════════════════════════════════
@@ -537,7 +769,51 @@ export default function ExportPanel() {
       </ExportSection>
 
       {/* ══════════════════════════════════════════════════════
-          3. INCIDENTS
+          3. SAFETY SURVEYS
+      ══════════════════════════════════════════════════════ */}
+      <ExportSection title="Safety Surveys">
+        <p className="ep-desc">Export declared safety survey dates, address snapshots, responsible person, hazards, recommendations, and compliance status. Audit logs stay only in the database.</p>
+
+        <div className="ep-filters">
+          <DateRange from={sDateFrom} to={sDateTo} onFrom={setSDateFrom} onTo={setSDateTo} />
+          <ProjectSelect value={sProject} onChange={setSProject} projects={projects} />
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Responsible person</label>
+            <input className="ep-input" placeholder="Responsible person name..." value={sResponsible} onChange={e => setSResponsible(e.target.value)} />
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Address</label>
+            <input className="ep-input" placeholder="Address contains..." value={sAddress} onChange={e => setSAddress(e.target.value)} />
+          </div>
+
+          <div className="ep-filter-group">
+            <label className="ep-label">Compliance</label>
+            <select className="ep-select" value={sComplianceMode} onChange={e => setSComplianceMode(e.target.value)}>
+              <option value="all">All records</option>
+              <option value="documented">Survey complete</option>
+              <option value="follow-up">Follow-up required</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="ep-actions">
+          <button className="btn btn-primary ep-btn" onClick={handleSafetySurveys}>
+            Download Safety Surveys PDF
+          </button>
+        </div>
+
+        <ExportFieldSettings
+          label="Declared fields in list PDF"
+          fields={SAFETY_SURVEY_EXPORT_FIELDS}
+          selected={safetySurveyExportFields}
+          onToggle={toggleField(setSafetySurveyExportFields)}
+        />
+      </ExportSection>
+
+      {/* ══════════════════════════════════════════════════════
+          4. INCIDENTS
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Incidents">
         <p className="ep-desc">Export a PDF report listing all incident records with classification, personnel, and details.</p>
@@ -560,10 +836,17 @@ export default function ExportPanel() {
             Download Incidents PDF
           </button>
         </div>
+
+        <ExportFieldSettings
+          label="Fields in list PDF"
+          fields={INCIDENT_EXPORT_FIELDS}
+          selected={incidentExportFields}
+          onToggle={toggleField(setIncidentExportFields)}
+        />
       </ExportSection>
 
-      {/* ══════════════════════════════════════════════════════
-          4. CORRECTIVE ACTIONS
+        {/* ══════════════════════════════════════════════════════
+          5. CORRECTIVE ACTIONS
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Corrective Actions">
         <p className="ep-desc">Export a PDF listing all corrective actions with status, assignee, and due dates.</p>
@@ -586,10 +869,41 @@ export default function ExportPanel() {
             Download Actions PDF
           </button>
         </div>
+
+        <ExportFieldSettings
+          label="Fields in list PDF"
+          fields={CORRECTIVE_ACTION_EXPORT_FIELDS}
+          selected={correctiveExportFields}
+          onToggle={toggleField(setCorrectiveExportFields)}
+        />
       </ExportSection>
 
-      {/* ══════════════════════════════════════════════════════
-          5. CHECKLIST HISTORY
+        {/* ══════════════════════════════════════════════════════
+          6. DISCIPLINARY ACTIONS
+      ══════════════════════════════════════════════════════ */}
+      <ExportSection title="Disciplinary Actions">
+        <p className="ep-desc">Export a PDF listing disciplinary actions with linked violation context, recipient, and responsible worker performing the meeting.</p>
+
+        <div className="ep-filters">
+          <DateRange from={dDateFrom} to={dDateTo} onFrom={setDDateFrom} onTo={setDDateTo} />
+        </div>
+
+        <div className="ep-actions">
+          <button className="btn btn-primary ep-btn" onClick={handleDisciplinaryActions}>
+            Download Disciplinary PDF
+          </button>
+        </div>
+
+        <ExportFieldSettings
+          label="Fields in list PDF"
+          fields={DISCIPLINARY_ACTION_EXPORT_FIELDS}
+          selected={disciplinaryExportFields}
+          onToggle={toggleField(setDisciplinaryExportFields)}
+        />
+      </ExportSection>
+
+        {/* ══════════════════════════════════════════════════════
+          7. CHECKLIST HISTORY
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Checklist History">
         <p className="ep-desc">Export completed checklist records — what was inspected, by whom, and when.</p>
@@ -611,8 +925,8 @@ export default function ExportPanel() {
         </div>
       </ExportSection>
 
-      {/* ══════════════════════════════════════════════════════
-          6. CSV / SPREADSHEET EXPORT
+        {/* ══════════════════════════════════════════════════════
+          8. CSV / SPREADSHEET EXPORT
       ══════════════════════════════════════════════════════ */}
       <ExportSection title="Spreadsheet Export (CSV)">
         <p className="ep-desc">

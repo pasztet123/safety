@@ -130,7 +130,7 @@ export default function ChecklistHistory() {
             </button>
           )}
           <button className="btn btn-secondary" onClick={() => navigate('/checklists')}>
-            Back to Checklists
+            Back to Safety Checklists
           </button>
         </div>
       </div>

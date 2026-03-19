@@ -200,7 +200,7 @@ export default function Checklists() {
   return (
     <div>
       <div className="page-header">
-        <h2 className="page-title">Checklists</h2>
+        <h2 className="page-title">Safety Checklists</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <Link className="btn btn-secondary" to="/checklist-history">
             View History
@@ -214,7 +214,7 @@ export default function Checklists() {
       <div className="filters-section" style={{ marginBottom: '24px' }}>
         {/* Search Bar */}
         <div style={{ marginBottom: '16px' }}>
-          <label className="form-label">Search Checklists:</label>
+          <label className="form-label">Search Safety Checklists:</label>
           <input
             type="text"
             className="form-input"
@@ -263,7 +263,7 @@ export default function Checklists() {
 
       {(searchTerm || selectedCategory !== 'All' || selectedTrade !== 'All') && (
         <div style={{ marginBottom: '16px', color: '#666', fontSize: '14px' }}>
-          Showing {filteredChecklists.length} of {checklists.length} checklists
+          Showing {filteredChecklists.length} of {checklists.length} safety checklists
         </div>
       )}
 
@@ -276,7 +276,7 @@ export default function Checklists() {
       <div className="checklists-grid">
         {filteredChecklists.length === 0 ? (
           <div className="empty-state">
-            <p>No checklists found{searchTerm ? ' matching your search' : selectedCategory !== 'All' || selectedTrade !== 'All' ? ' with selected filters' : ''}.</p>
+            <p>No safety checklists found{searchTerm ? ' matching your search' : selectedCategory !== 'All' || selectedTrade !== 'All' ? ' with selected filters' : ''}.</p>
           </div>
         ) : (
           paginatedChecklists.map((checklist) => (

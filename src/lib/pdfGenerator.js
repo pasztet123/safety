@@ -6,6 +6,8 @@ import { LEGAL_CONFIRMATION_CLAUSE, getMeetingTopicAttestationClause } from './l
 import { generateClientUuid } from './compliance'
 import { formatDateOnly, formatDateTimeInTimeZone, normalizeDateOnlyValue } from './dateTime'
 import { normalizeIncidentPhotos } from './incidentPhotos'
+import { normalizeSafetySurveySections } from './safetySurveySections'
+import { normalizeSafetySurveyPhotos } from './safetySurveyPhotos'
 
 // ─── Brand ───────────────────────────────────────────────────────────────────
 export const ACCENT   = '#E53935'
@@ -273,6 +275,13 @@ export const BASE_CSS = `
   .pdf-text{font-size:13px;color:${PRIMARY};line-height:1.7;white-space:pre-wrap;
             background:#f8f8f8;border-radius:6px;padding:12px 14px}
 
+  /* photo grids */
+  .pdf-photo-pages{display:flex;flex-direction:column;gap:16px}
+  .pdf-photo-page{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .pdf-photo-card{border:1px solid ${BORDER};border-radius:8px;padding:8px;background:#fff;break-inside:avoid}
+  .pdf-photo-frame{position:relative;width:100%;padding-top:75%;overflow:hidden;border-radius:6px;background:#f8f8f8}
+  .pdf-photo-frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center center;display:block}
+
   /* checklist items */
   .pdf-item{display:flex;align-items:flex-start;gap:10px;padding:8px 12px;
             border-bottom:1px solid ${BORDER}}
@@ -380,6 +389,25 @@ export const field = (label, value) => {
 
 export const section = (title, content) =>
   `<div class="pdf-section"><div class="pdf-section-title">${title}</div>${content}</div>`
+
+const chunkArray = (items, chunkSize) => {
+  const chunks = []
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize))
+  }
+  return chunks
+}
+
+export const renderPhotoGridHtml = (photos = [], options = {}) => {
+  const { pageSize = 6 } = options
+  if (!Array.isArray(photos) || photos.length === 0) return ''
+
+  return `<div class="pdf-photo-pages">${chunkArray(photos, pageSize).map((pagePhotos) => (
+    `<div class="pdf-photo-page">${pagePhotos.map((photo) => (
+      `<div class="pdf-photo-card"><div class="pdf-photo-frame"><img src="${photo.photo_url}" crossorigin="anonymous" /></div></div>`
+    )).join('')}</div>`
+  )).join('')}</div>`
+}
 
 // ─── loadImage (for cross-origin images in html2canvas) ─────────────────────
 
@@ -505,7 +533,7 @@ export const buildMeetingHTMLForExport = (meeting, exportMeta = null) => {
 
 export const generateMeetingPDF = async (meeting) => {
   const confirmed = await confirmEvidencePdfExport({
-    title: 'This export contains a meeting and safety survey record.',
+    title: 'This export contains a meeting record.',
     details: `${meeting.topic || 'Safety meeting'}${meeting.date ? ` · ${formatDateOnly(meeting.date, { locale: 'en-US', fallback: meeting.date })}` : ''}`,
   })
   if (!confirmed) return
@@ -623,6 +651,92 @@ export const generateIncidentPDF = async (incident) => {
       ${incident.notes ? section('Additional Notes', `<div class="pdf-text">${incident.notes}</div>`) : ''}
       ${incidentPhotos.length > 0 ? section(incidentPhotos.length === 1 ? 'Photo' : 'Photos', photoHTML) : ''}
       ${section('Signature', sigHTML)}
+    </div>
+    ${footer(exportMeta)}
+  `)
+
+  await renderHTMLtoPDF(html, fileName)
+}
+
+// ─── Safety Survey PDF ───────────────────────────────────────────────────────
+
+export const generateSafetySurveyPDF = async (survey) => {
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains a safety survey record.',
+    details: `${survey.survey_title || survey.project_address || 'Safety survey'}${survey.survey_date ? ` · ${formatDateOnly(survey.survey_date, { locale: 'en-US', fallback: survey.survey_date })}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const photoRows = survey.photos?.length ? survey.photos : normalizeSafetySurveyPhotos(survey)
+  const sections = survey.sections?.length ? survey.sections : normalizeSafetySurveySections(survey)
+  const dateStr = survey.survey_date
+    ? formatDateOnly(survey.survey_date, { locale: 'en-US', options: { year: 'numeric', month: 'long', day: 'numeric' }, fallback: survey.survey_date })
+    : ''
+  const fileName = `safety-survey-${normalizeDateOnlyValue(survey.survey_date, { fallback: 'nodate' })}-${(survey.survey_title || survey.project_address || 'record').replace(/\s+/g, '-').toLowerCase()}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.safety_survey',
+    tableName: 'safety_surveys',
+    recordId: survey.id || null,
+    fileName,
+    metadata: {
+      safety_survey_id: survey.id || null,
+      survey_title: survey.survey_title || null,
+      survey_date: survey.survey_date || null,
+      project_address: survey.project_address || null,
+      responsible_person_name: survey.responsible_person_name || null,
+    },
+  })
+
+  const photoHtml = renderPhotoGridHtml(photoRows)
+
+  const sectionHtml = sections.length > 0
+    ? sections.map((sectionRow) => {
+      const sectionPhotos = sectionRow.photos || []
+      const sectionPhotoHtml = sectionPhotos.length > 0
+        ? `<div style="margin-top:12px">${renderPhotoGridHtml(sectionPhotos)}</div>`
+        : ''
+
+      return section(sectionRow.category_label || 'Category', `
+        ${sectionRow.notes ? `<div class="pdf-text">${escapeHtml(sectionRow.notes)}</div>` : '<div class="pdf-text" style="color:#6b7280">No category notes added.</div>'}
+        ${sectionPhotoHtml}
+      `)
+    }).join('')
+    : ''
+
+  const signatureHtml = survey.signature_url
+    ? `${pdfLegalClause()}<div style="margin-top:8px"><img src="${survey.signature_url}" crossorigin="anonymous" style="max-height:60px;max-width:200px;object-fit:contain;border:1px solid ${BORDER};border-radius:6px;padding:4px;background:#fff" /></div>`
+    : `${pdfLegalClause()}<div class="pdf-sig-block"><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Responsible person signature</div></div><div><div class="pdf-sig-line"></div><div class="pdf-sig-caption">Date</div></div></div>`
+
+  const html = baseHTML(`
+    <div class="pdf-header" style="background:#0f4c5c">
+      <div class="pdf-header-type">Safety Survey</div>
+      <div class="pdf-header-title">${escapeHtml(survey.survey_title || 'Safety Survey')}</div>
+      <div class="pdf-header-sub">${escapeHtml([dateStr, survey.survey_time ? String(survey.survey_time).slice(0, 5) : '', survey.project?.name || '', survey.project_address || ''].filter(Boolean).join(' · '))}</div>
+    </div>
+    ${exportSummary(exportMeta)}
+    <div class="pdf-body">
+      ${section('Survey Information', `
+        <div class="pdf-fields">
+          ${field('Project', survey.project?.name || '')}
+          ${field('Address', survey.project_address || '')}
+          ${field('Survey date', dateStr)}
+          ${field('Survey time', survey.survey_time ? String(survey.survey_time).slice(0, 5) : '')}
+          ${field('Responsible person', survey.responsible_person_name || '')}
+          ${field('Survey area / detail', survey.location || '')}
+        </div>
+      `)}
+      ${section('Compliance', `
+        <div class="pdf-fields">
+          ${field('Survey complete', survey.compliance_documented ? 'Yes' : 'No')}
+          ${field('Follow-up required', survey.compliance_follow_up_required ? 'Yes' : 'No')}
+        </div>
+      `)}
+      ${survey.survey_notes ? section('Survey Notes', `<div class="pdf-text">${escapeHtml(survey.survey_notes)}</div>`) : ''}
+      ${survey.hazards_observed ? section('Hazards Observed', `<div class="pdf-text">${escapeHtml(survey.hazards_observed)}</div>`) : ''}
+      ${survey.recommendations ? section('Recommendations / Actions', `<div class="pdf-text">${escapeHtml(survey.recommendations)}</div>`) : ''}
+      ${sectionHtml ? section('Categorized Findings', sectionHtml) : ''}
+      ${photoRows.length > 0 ? section(photoRows.length === 1 ? 'General Photo' : 'General Photos', photoHtml) : ''}
+      ${section('Responsible Person Signature', signatureHtml)}
     </div>
     ${footer(exportMeta)}
   `)

@@ -121,13 +121,20 @@ const readingTime = (text) => {
   return `${Math.max(1, Math.ceil(text.trim().split(/\s+/).length / 200))} min read`
 }
 
+const ACCIDENT_TYPE_NAME = 'Accident (injury)'
+
+const calculateDaysSince = (dateValue) => {
+  if (!dateValue) return null
+  return Math.floor((Date.now() - new Date(dateValue).getTime()) / 86400000)
+}
+
 export default function MainMenu() {
   const navigate = useNavigate()
   const [isAdmin, setIsAdmin] = useState(false)
   const [toolboxReminder, setToolboxReminder] = useState(null)
   const [showToolboxReminder, setShowToolboxReminder] = useState(false)
   const [stats, setStats] = useState({
-    meetings: '—', daysSafe: '—', checklists: '—', openActions: '—', todayMeetings: 0,
+    meetings: '—', daysSafe: '—', openActions: '—', completedActions: '—', workersAndSubsCount: '—', todayMeetings: 0,
   })
   const [extraStats, setExtraStats] = useState({
     overdueActions: 0, thisMonthMeetings: 0, recentIncidents: 0, disciplinaryActions: 0,
@@ -157,26 +164,42 @@ export default function MainMenu() {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
 
     const fetchStats = async () => {
-      const { data, error } = await supabase.rpc('get_dashboard_stats').maybeSingle()
+      const [rpcResult, lastAccidentResult, completedActionsResult, workersAndSubsResult] = await Promise.all([
+        supabase.rpc('get_dashboard_stats').maybeSingle(),
+        supabase
+          .from('incidents')
+          .select('date')
+          .is('deleted_at', null)
+          .eq('type_name', ACCIDENT_TYPE_NAME)
+          .order('date', { ascending: false })
+          .limit(1),
+        supabase.from('corrective_actions').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+        supabase.from('involved_persons').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      ])
+
+      const { data, error } = rpcResult
+      const lastAccidentDate = lastAccidentResult.data?.[0]?.date || null
+      const daysSafe = calculateDaysSince(lastAccidentDate)
+      const completedActions = completedActionsResult.count ?? '—'
+      const workersAndSubsCount = workersAndSubsResult.count ?? '—'
+
       if (error || !data) {
-        const [m, c, i, a, t] = await Promise.all([
+        const [m, a, t] = await Promise.all([
           supabase.from('meetings').select('id', { count: 'exact', head: true }),
-          supabase.from('checklist_completions').select('id', { count: 'exact', head: true }),
-          supabase.from('incidents').select('date').is('deleted_at', null).order('date', { ascending: false }).limit(1),
           supabase.from('corrective_actions').select('id', { count: 'exact', head: true }).eq('status', 'open'),
           supabase.from('meetings').select('id', { count: 'exact', head: true }).eq('date', today),
         ])
-        const lastIncident = i.data?.[0]?.date
-        let daysSafe = '—'
-        if (lastIncident) {
-          daysSafe = Math.floor((Date.now() - new Date(lastIncident).getTime()) / 86400000)
-        }
         setStats({
-          meetings: m.count ?? '—', checklists: c.count ?? '—',
-          daysSafe, openActions: a.count ?? '—', todayMeetings: t.count ?? 0,
+          meetings: m.count ?? '—',
+          daysSafe, openActions: a.count ?? '—', completedActions, workersAndSubsCount, todayMeetings: t.count ?? 0,
         })
       } else {
-        setStats(data)
+        setStats({
+          ...data,
+          daysSafe,
+          completedActions,
+          workersAndSubsCount,
+        })
       }
     }
 
@@ -282,8 +305,9 @@ export default function MainMenu() {
 
   const menuItems = [
     { title: 'Projects',           subtitle: 'Active & archived jobs',     path: '/projects',           icon: <FolderIcon /> },
-    { title: 'Meetings & Safety Surveys',   subtitle: 'Safety talks & sign-ins',    path: '/meetings',           icon: <ClipboardIcon />,
+    { title: 'Meetings',           subtitle: 'Safety talks & sign-ins',    path: '/meetings',           icon: <ClipboardIcon />,
       badge: extraStats.thisMonthMeetings > 0 ? `${extraStats.thisMonthMeetings} this month` : null, badgeVariant: 'info' },
+    { title: 'Safety Surveys',     subtitle: 'Field notes, hazards & photos', path: '/safety-surveys',   icon: <ChecklistIcon /> },
     { title: 'Safety Topics',      subtitle: 'Training material library',  path: '/safety-topics',      icon: <BookIcon /> },
     { title: 'Incidents',          subtitle: 'Reports & investigations',   path: '/incidents',          icon: <AlertIcon />,
       badge: extraStats.recentIncidents > 0 ? `${extraStats.recentIncidents} in 30d` : null, badgeVariant: 'danger' },
@@ -292,21 +316,31 @@ export default function MainMenu() {
       badgeVariant: extraStats.overdueActions > 0 ? 'warning' : 'muted' },
     { title: 'Disciplinary Actions', subtitle: 'Violations & consequences', path: '/disciplinary-actions', icon: <ShieldCheckIcon />,
       badge: extraStats.disciplinaryActions > 0 ? `${extraStats.disciplinaryActions} recorded` : null, badgeVariant: 'danger' },
-    { title: 'Checklists',         subtitle: 'Inspection & compliance',    path: '/checklists',         icon: <ChecklistIcon /> },
+    { title: 'Safety Checklists',  subtitle: 'Inspection & compliance',    path: '/checklists',         icon: <ChecklistIcon /> },
     { title: 'People',             subtitle: 'Worker & meeting performer profiles',   path: '/people',             icon: <PeopleIcon /> },
     { title: 'User Manual',        subtitle: 'Complete operating guide',   path: '/user-manual',        icon: <ManualIcon /> },
     { title: 'Admin Panel',        subtitle: 'Users & settings',           path: '/admin',              icon: <SettingsIcon /> },
     { title: 'Export',             subtitle: 'PDF reports & CSV files',    path: '/export',             icon: <ExportIcon /> },
   ]
 
+  const noAccidentsRecorded = stats.daysSafe === null
+  const hasAccidentHistory = typeof stats.daysSafe === 'number'
+  const daysWithoutAccidentValue = noAccidentsRecorded ? 'Perfect' : stats.daysSafe
+  const daysWithoutAccidentSublabel = noAccidentsRecorded
+    ? 'Congratulations - no accidents have been recorded.'
+    : hasAccidentHistory && stats.daysSafe < 7
+      ? 'Recent accident on record'
+      : 'Keep the streak going'
+  const daysWithoutAccidentAccent = hasAccidentHistory && stats.daysSafe < 7 ? 'danger' : 'success'
+
   const statCards = [
     {
       key: 'daysSafe',
-      value: stats.daysSafe,
-      label: 'Days Without Incident',
-      sublabel: typeof stats.daysSafe === 'number' && stats.daysSafe < 7 ? 'Recent incident on record' : 'Keep the streak going',
+      value: daysWithoutAccidentValue,
+      label: 'Days Without Accident',
+      sublabel: daysWithoutAccidentSublabel,
       icon: <ShieldIcon />,
-      accent: typeof stats.daysSafe === 'number' && stats.daysSafe < 7 ? 'danger' : 'success',
+      accent: daysWithoutAccidentAccent,
       path: '/incidents',
     },
     {
@@ -319,21 +353,21 @@ export default function MainMenu() {
       path: '/meetings',
     },
     {
-      key: 'checklists',
-      value: stats.checklists,
-      label: 'Completed Checklists',
-      sublabel: 'Total inspections',
-      icon: <ListCheckIcon />,
+      key: 'workersAndSubsCount',
+      value: stats.workersAndSubsCount,
+      label: 'Workers & Subs',
+      sublabel: 'Active workers and subcontractors',
+      icon: <PeopleIcon />,
       accent: 'info',
-      path: '/checklists',
+      path: '/people',
     },
     {
-      key: 'openActions',
-      value: stats.openActions,
-      label: 'Open Corrective Actions',
-      sublabel: extraStats.overdueActions > 0 ? `${extraStats.overdueActions} overdue` : 'All within deadline',
+      key: 'completedActions',
+      value: stats.completedActions,
+      label: 'Completed Corrective Actions',
+      sublabel: stats.completedActions > 0 ? 'Resolved items total' : 'No completed items yet',
       icon: <WrenchSmallIcon />,
-      accent: extraStats.overdueActions > 0 ? 'danger' : stats.openActions > 0 ? 'warning' : 'success',
+      accent: stats.completedActions > 0 ? 'success' : 'info',
       path: '/corrective-actions',
     },
   ]
@@ -356,11 +390,11 @@ export default function MainMenu() {
                 ×
               </button>
             </div>
-            <h3 className="toolbox-reminder-title">A new meeting and safety survey is due for {toolboxReminder.displayName}.</h3>
+            <h3 className="toolbox-reminder-title">A new meeting is due for {toolboxReminder.displayName}.</h3>
             <p className="toolbox-reminder-copy">
               {toolboxReminder.latestMeetingAt
-                ? `The last non-deleted meeting and safety survey linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${formatDateTimeInTimeZone(toolboxReminder.latestMeetingAt, { locale: 'en-US', options: { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }, fallback: toolboxReminder.latestMeetingAt })}.`
-                : 'No previous non-deleted meeting and safety survey was found for this linked user.'}
+                ? `The last non-deleted meeting linked to this user was ${formatElapsedSince(toolboxReminder.latestMeetingAt)} ago, on ${formatDateTimeInTimeZone(toolboxReminder.latestMeetingAt, { locale: 'en-US', options: { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }, fallback: toolboxReminder.latestMeetingAt })}.`
+                : 'No previous non-deleted meeting was found for this linked user.'}
             </p>
             <div className="toolbox-reminder-stats">
               <div className="toolbox-reminder-stat">
@@ -378,7 +412,7 @@ export default function MainMenu() {
                 dismissToolboxReminder()
                 navigate('/meetings/new')
               }}>
-                Schedule Meeting & Safety Survey
+                Schedule Meeting
               </button>
             </div>
           </div>
@@ -415,12 +449,15 @@ export default function MainMenu() {
               {extraStats.overdueActions > 0 && ` · ${extraStats.overdueActions} overdue`}
             </button>
           )}
-          {typeof stats.daysSafe === 'number' && stats.daysSafe < 14 && (
+          {hasAccidentHistory && stats.daysSafe < 14 && (
             <button className="focus-pill focus-pill--danger" onClick={() => navigate('/incidents')}>
-              Last incident {stats.daysSafe}d ago
+              Last accident {stats.daysSafe}d ago
             </button>
           )}
-          {typeof stats.daysSafe === 'number' && stats.daysSafe >= 14 && stats.openActions === 0 && (
+          {noAccidentsRecorded && (
+            <span className="focus-pill focus-pill--success">Congratulations - no accidents recorded</span>
+          )}
+          {hasAccidentHistory && stats.daysSafe >= 14 && stats.openActions === 0 && (
             <span className="focus-pill focus-pill--success">✓ All clear</span>
           )}
         </div>

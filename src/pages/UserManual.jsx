@@ -187,12 +187,12 @@ const guideSections = [
   },
   {
     id: 'checklists',
-    title: 'Checklists',
+    title: 'Safety Checklists',
     shortDescription: 'Run inspections and compliance tasks with item tracking, notes, photos, and signatures.',
     route: '/checklists',
     access: 'mixed',
     purpose:
-      'Use Checklists to perform structured inspections, verify completion of required items, and preserve evidence such as notes, photos, signer identity, and signature capture.',
+      'Use Safety Checklists to perform structured inspections, verify completion of required items, and preserve evidence such as notes, photos, signer identity, and signature capture.',
     outcomes: [
       'Convert recurring inspection routines into repeatable, auditable workflows.',
       'Show progress, item-level completion, and completion history.',
@@ -212,7 +212,7 @@ const guideSections = [
       {
         title: 'Create or update a checklist template',
         steps: [
-          'Open Checklists and start a new template or open an existing one for editing.',
+          'Open Safety Checklists and start a new template or open an existing one for editing.',
           'Enter the checklist name, description, category, and trade tags. Trade tags improve smart matching elsewhere in the app.',
           'Add checklist items one by one, using the section header option when you need a visual divider instead of a checkable step.',
           'Reorder the items into the inspection sequence you want the field team to follow.',
@@ -237,7 +237,7 @@ const guideSections = [
       'The person completing or signing the checklist is responsible for truthful documentation.',
     ],
     includeInHandbook: true,
-    pdfExportLabel: 'Export Checklists guide',
+    pdfExportLabel: 'Export Safety Checklists guide',
   },
   {
     id: 'incidents',

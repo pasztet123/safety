@@ -13,8 +13,10 @@ import {
 } from '../lib/personProfiles'
 import SignaturePad from '../components/SignaturePad'
 import AdminAnalyticsDashboard from '../components/AdminAnalyticsDashboard'
+import AttendanceRiskAlertsPanel from '../components/AttendanceRiskAlertsPanel'
 import { formatDateOnly, formatDateTimeInTimeZone } from '../lib/dateTime'
 import { formatTimeZoneLabel, getTimeZoneOptions, saveAppSettings, useAppSettings } from '../lib/appSettings'
+import { formatAttendanceRiskRunHourLabel } from '../lib/attendanceRisk'
 import './AdminPanel.css'
 
 const ADMIN_TABS = [
@@ -25,6 +27,7 @@ const ADMIN_TABS = [
   { key: 'involved-persons', label: 'Workers & Subs' },
   { key: 'companies', label: 'Companies' },
   { key: 'topic-checklists', label: 'Topic Checklists' },
+  { key: 'attendance-risk', label: 'Attendance Risk' },
   { key: 'settings', label: 'Settings' },
   { key: 'analytics', label: 'Analytics' },
 ]
@@ -136,6 +139,11 @@ export default function AdminPanel() {
   const [settingsTradesSaving, setSettingsTradesSaving] = useState(false)
   const [settingsTimezoneDraft, setSettingsTimezoneDraft] = useState('America/Chicago')
   const [settingsTimezoneSaving, setSettingsTimezoneSaving] = useState(false)
+  const [attendanceRiskEnabledDraft, setAttendanceRiskEnabledDraft] = useState(false)
+  const [attendanceRiskEmailDraft, setAttendanceRiskEmailDraft] = useState(true)
+  const [attendanceRiskInAppDraft, setAttendanceRiskInAppDraft] = useState(true)
+  const [attendanceRiskRunHourDraft, setAttendanceRiskRunHourDraft] = useState(10)
+  const [attendanceRiskSettingsSaving, setAttendanceRiskSettingsSaving] = useState(false)
   const [meetings, setMeetings] = useState([])
   const [incidents, setIncidents] = useState([])
   const [users, setUsers] = useState([])
@@ -183,6 +191,10 @@ export default function AdminPanel() {
 
   useEffect(() => {
     setSettingsTimezoneDraft(appSettings.timezone || 'America/Chicago')
+    setAttendanceRiskEnabledDraft(Boolean(appSettings.attendance_risk_notifications_enabled))
+    setAttendanceRiskEmailDraft(Boolean(appSettings.attendance_risk_email_enabled))
+    setAttendanceRiskInAppDraft(Boolean(appSettings.attendance_risk_in_app_enabled))
+    setAttendanceRiskRunHourDraft(Number.isFinite(Number(appSettings.attendance_risk_run_hour)) ? Number(appSettings.attendance_risk_run_hour) : 10)
   }, [appSettings.timezone])
 
   // ── Draft leader migration ──
@@ -568,6 +580,23 @@ export default function AdminPanel() {
     }
   }
 
+  const settingsSaveAttendanceRisk = async () => {
+    setAttendanceRiskSettingsSaving(true)
+    try {
+      await saveAppSettings({
+        attendance_risk_notifications_enabled: attendanceRiskEnabledDraft,
+        attendance_risk_email_enabled: attendanceRiskEmailDraft,
+        attendance_risk_in_app_enabled: attendanceRiskInAppDraft,
+        attendance_risk_run_hour: attendanceRiskRunHourDraft,
+      })
+      alert('Attendance risk settings saved!')
+    } catch (error) {
+      alert(`Error saving attendance risk settings: ${error.message}`)
+    } finally {
+      setAttendanceRiskSettingsSaving(false)
+    }
+  }
+
   const togglePersonLinkSection = (sectionKey) => {
     setPersonLinkSectionOpen((prev) => ({
       ...prev,
@@ -799,6 +828,11 @@ export default function AdminPanel() {
     setLoading(true)
 
     if (activeTab === 'analytics') {
+      setLoading(false)
+      return
+    }
+
+    if (activeTab === 'attendance-risk') {
       setLoading(false)
       return
     }
@@ -1721,6 +1755,8 @@ export default function AdminPanel() {
       ) : (
         <div className="admin-content">
           {activeTab === 'analytics' && <AdminAnalyticsDashboard />}
+
+          {activeTab === 'attendance-risk' && <AttendanceRiskAlertsPanel appSettings={appSettings} />}
 
           {activeTab === 'meetings' && (
             <div className="data-table">
@@ -2922,6 +2958,75 @@ export default function AdminPanel() {
                 <p style={{ margin: '12px 0 0 0', fontSize: '12px', color: '#475569' }}>
                   Current timezone: <strong>{formatTimeZoneLabel(appSettings.timezone)}</strong>
                 </p>
+              </div>
+
+              <div style={{ marginBottom: '40px', padding: '20px', background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '12px' }}>
+                <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 700, color: '#0f172a' }}>Attendance Risk Notifications</h3>
+                <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#475569', maxWidth: '860px' }}>
+                  This feature creates daily risk alerts for workers or subs who attended a toolbox meeting within the last 7 calendar days but do not appear today.
+                  Weekend notification runs are skipped. In-app alerts are available in the Attendance Risk tab; email delivery uses the MailerSend configuration on the backend.
+                </p>
+
+                <div className="admin-settings-grid">
+                  <label className="admin-settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={attendanceRiskEnabledDraft}
+                      onChange={(event) => setAttendanceRiskEnabledDraft(event.target.checked)}
+                    />
+                    <span>Enable attendance risk evaluations</span>
+                  </label>
+
+                  <label className="admin-settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={attendanceRiskInAppDraft}
+                      onChange={(event) => setAttendanceRiskInAppDraft(event.target.checked)}
+                    />
+                    <span>Enable in-app alerting for admins</span>
+                  </label>
+
+                  <label className="admin-settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={attendanceRiskEmailDraft}
+                      onChange={(event) => setAttendanceRiskEmailDraft(event.target.checked)}
+                    />
+                    <span>Enable daily email digest to active admins</span>
+                  </label>
+
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" htmlFor="attendance-risk-run-hour">Run hour</label>
+                    <select
+                      id="attendance-risk-run-hour"
+                      className="form-select"
+                      value={String(attendanceRiskRunHourDraft)}
+                      onChange={(event) => setAttendanceRiskRunHourDraft(Number(event.target.value))}
+                    >
+                      {Array.from({ length: 24 }, (_, hour) => (
+                        <option key={hour} value={hour}>{formatAttendanceRiskRunHourLabel(hour)}</option>
+                      ))}
+                    </select>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+                      Current configured run time: <strong>{formatAttendanceRiskRunHourLabel(appSettings.attendance_risk_run_hour)}</strong> in the global app timezone.
+                    </p>
+                  </div>
+                </div>
+
+                <p style={{ margin: '16px 0 0 0', fontSize: '12px', color: '#64748b' }}>
+                  Mobile push is not wired yet in this repository. The current implementation supports persistent in-app alerts and a MailerSend-based email digest.
+                </p>
+
+                <div style={{ marginTop: '16px' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={settingsSaveAttendanceRisk}
+                    disabled={attendanceRiskSettingsSaving}
+                  >
+                    {attendanceRiskSettingsSaving ? 'Saving…' : 'Save Attendance Risk Settings'}
+                  </button>
+                </div>
               </div>
 
               {/* ── Maintenance ── */}

@@ -7,6 +7,9 @@ import MainMenu from './pages/MainMenu'
 import Meetings from './pages/Meetings'
 import MeetingForm from './pages/MeetingForm'
 import MeetingDetails from './pages/MeetingDetails'
+import SafetySurveys from './pages/SafetySurveys'
+import SafetySurveyForm from './pages/SafetySurveyForm'
+import SafetySurveyDetails from './pages/SafetySurveyDetails'
 import Incidents from './pages/Incidents'
 import IncidentDetails from './pages/IncidentDetails'
 import IncidentForm from './pages/IncidentForm'
@@ -70,6 +73,10 @@ function App() {
           <Route path="/meetings/new" element={<MeetingForm />} />
           <Route path="/meetings/:id" element={<MeetingDetails />} />
           <Route path="/meetings/:id/edit" element={<MeetingForm />} />
+          <Route path="/safety-surveys" element={<SafetySurveys />} />
+          <Route path="/safety-surveys/new" element={<SafetySurveyForm />} />
+          <Route path="/safety-surveys/:id" element={<SafetySurveyDetails />} />
+          <Route path="/safety-surveys/:id/edit" element={<SafetySurveyForm />} />
           <Route path="/safety-topics" element={<SafetyTopics />} />
           <Route path="/corrective-actions" element={<CorrectiveActions />} />
           <Route path="/disciplinary-actions" element={<DisciplinaryActions />} />

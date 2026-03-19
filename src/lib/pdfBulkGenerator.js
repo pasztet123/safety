@@ -48,6 +48,42 @@ const riskPill = (level) => {
   return `<span class="risk-pill ${cls}">${(level||'').toUpperCase()}</span>`
 }
 
+const isEnabled = (fields, key, fallback = true) => fields?.[key] ?? fallback
+
+const fmtAuditDateTime = (value) => {
+  if (!value) return '—'
+  return formatDateTimeInTimeZone(value, {
+    locale: 'en-US',
+    options: {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    },
+    fallback: '—',
+  })
+}
+
+const buildAuditLines = (record, fields) => {
+  const lines = []
+
+  if (isEnabled(fields, 'created_at', false)) {
+    lines.push(`Date added: <strong>${esc(fmtAuditDateTime(record.created_at))}</strong>`)
+  }
+  if (isEnabled(fields, 'updated_at', false)) {
+    lines.push(`Last edited date: <strong>${esc(fmtAuditDateTime(record.updated_at))}</strong>`)
+  }
+  if (isEnabled(fields, 'created_by', false)) {
+    lines.push(`Created by: <strong>${esc(record.created_by_label || record.created_by || '—')}</strong>`)
+  }
+  if (isEnabled(fields, 'updated_by', false)) {
+    lines.push(`Edited by: <strong>${esc(record.updated_by_label || record.updated_by || '—')}</strong>`)
+  }
+
+  return lines.map(line => `<div class="ml-audit-line">${line}</div>`).join('')
+}
+
 // ─── Shared bulk-list CSS (appended to BASE_CSS) ───────────────────────────
 
 const BULK_CSS = `
@@ -76,6 +112,7 @@ const BULK_CSS = `
   .ml-pill--accent{background:#fef2f2;color:${ACCENT}}
   .ml-meta-line{font-size:11px;color:${GRAY};margin-bottom:3px}
   .ml-attendees-line{font-size:11px;color:${PRIMARY};margin-top:4px}
+  .ml-audit-line{font-size:10px;color:${GRAY};margin-top:4px}
 
   /* ── incident / action cards ── */
   .inc-card{padding:14px 0;border-bottom:1px solid ${BORDER}}
@@ -308,18 +345,19 @@ const resolveMeetingZipSource = (source, options = {}) => {
 /**
  * Generates a single PDF listing all provided meetings as compact cards.
  * @param {Array} meetings - basic meeting objects (attendees, project, trade, topic, date, time, leader_name, checklists)
- * @param {string} title - PDF title (e.g. "All Meetings & Safety Surveys")
+ * @param {string} title - PDF title (e.g. "All Meetings")
  * @param {string} [subtitle] - optional subtitle / filter description
  */
-export const generateMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys Report', subtitle = '') => {
+export const generateMeetingListPDF = async (meetings, title = 'Meetings Report', subtitle = '') => {
   return buildMeetingListPDF(meetings, title, subtitle)
 }
 
-const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys Report', subtitle = '', options = {}) => {
+const buildMeetingListPDF = async (meetings, title = 'Meetings Report', subtitle = '', options = {}) => {
   const {
     confirmExport = true,
     fileNameSuffix = '',
     metadata = {},
+    fields = null,
   } = options
 
   if (confirmExport) {
@@ -352,24 +390,32 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
       : ''
     const attendeeNames = (m.attendees || []).map(a => esc(a.name)).filter(Boolean)
     const checklistNames = (m.checklists || []).map(c => esc(c.name)).filter(Boolean)
+    const pills = [
+      isEnabled(fields, 'project') && m.project?.name ? `<span class="ml-pill">${esc(m.project.name)}</span>` : '',
+      isEnabled(fields, 'trade') && m.trade ? `<span class="ml-pill ml-pill--accent">${esc(m.trade)}</span>` : '',
+      isEnabled(fields, 'time') && m.time ? `<span class="ml-pill">${esc(m.time.substring(0,5))}</span>` : '',
+      isEnabled(fields, 'self_training') ? `<span class="ml-pill">${m.is_self_training ? 'Self-training' : 'Led meeting'}</span>` : '',
+    ].filter(Boolean)
+
+    const metaParts = [
+      isEnabled(fields, 'leader') ? `Worker performing the meeting: <strong>${esc(m.leader_name) || '—'}</strong>` : '',
+      isEnabled(fields, 'attendee_count') ? `${attendeeNames.length} attendee${attendeeNames.length !== 1 ? 's' : ''}` : '',
+    ].filter(Boolean)
 
     return `
       <div class="ml-card">
+        ${isEnabled(fields, 'date') ? `
         <div class="ml-date-col">
           <div class="ml-date-day">${day}</div>
           <div class="ml-date-mon">${mon}</div>
-        </div>
+        </div>` : ''}
         <div class="ml-content">
-          <div class="ml-topic">${esc(m.topic) || 'Safety Meeting'}</div>
-          <div class="ml-pills">
-            ${m.project?.name ? `<span class="ml-pill">${esc(m.project.name)}</span>` : ''}
-            ${m.trade ? `<span class="ml-pill ml-pill--accent">${esc(m.trade)}</span>` : ''}
-            ${m.time ? `<span class="ml-pill">${m.time.substring(0,5)}</span>` : ''}
-          </div>
-          <div class="ml-meta-line">Worker performing the meeting: <strong>${esc(m.leader_name) || '—'}</strong>
-            &nbsp;·&nbsp; ${attendeeNames.length} attendee${attendeeNames.length !== 1 ? 's' : ''}</div>
-          ${attendeeNames.length > 0 ? `<div class="ml-attendees-line">${attendeeNames.join(', ')}</div>` : ''}
-          ${checklistNames.length > 0 ? `<div class="ml-meta-line" style="margin-top:3px">Checklists: ${checklistNames.join(', ')}</div>` : ''}
+          ${isEnabled(fields, 'topic') ? `<div class="ml-topic">${esc(m.topic) || 'Safety Meeting'}</div>` : ''}
+          ${pills.length > 0 ? `<div class="ml-pills">${pills.join('')}</div>` : ''}
+          ${metaParts.length > 0 ? `<div class="ml-meta-line">${metaParts.join('&nbsp;·&nbsp;')}</div>` : ''}
+          ${isEnabled(fields, 'attendees') && attendeeNames.length > 0 ? `<div class="ml-attendees-line">${attendeeNames.join(', ')}</div>` : ''}
+          ${isEnabled(fields, 'checklists') && checklistNames.length > 0 ? `<div class="ml-meta-line" style="margin-top:3px">Checklists: ${checklistNames.join(', ')}</div>` : ''}
+          ${buildAuditLines(m, fields)}
         </div>
       </div>
     `
@@ -377,7 +423,7 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
 
   const html = bulkBaseHTML(`
     <div class="ml-header">
-      <div class="ml-header-eyebrow">Export — Meetings & Safety Surveys</div>
+      <div class="ml-header-eyebrow">Export — Meetings</div>
       <div class="ml-header-title">${esc(title)}</div>
       <div class="ml-header-sub">${subtitle ? esc(subtitle) + ' · ' : ''}Generated ${todayStr()}</div>
     </div>
@@ -395,8 +441,8 @@ const buildMeetingListPDF = async (meetings, title = 'Meetings & Safety Surveys 
 }
 
 /** Same as generateMeetingListPDF but also saves the file immediately. */
-export const downloadMeetingListPDF = async (meetings, title, subtitle) => {
-  const result = await buildMeetingListPDF(meetings, title, subtitle)
+export const downloadMeetingListPDF = async (meetings, title, subtitle, options = {}) => {
+  const result = await buildMeetingListPDF(meetings, title, subtitle, options)
   if (!result?.buffer || !result?.filename) return
   const { buffer, filename } = result
   saveAs(new Blob([buffer], { type: 'application/pdf' }), filename)
@@ -406,8 +452,9 @@ export const downloadChunkedMeetingListPDFZIP = async ({
   totalCount,
   chunkSize,
   getChunk,
-  title = 'Meetings & Safety Surveys Report',
+  title = 'Meetings Report',
   subtitle = '',
+  fields = null,
   onProgress = () => {},
   shouldCancel = () => false,
 }) => {
@@ -450,6 +497,7 @@ export const downloadChunkedMeetingListPDFZIP = async ({
 
     const result = await buildMeetingListPDF(meetings || [], title, chunkSubtitle, {
       confirmExport: false,
+      fields,
       fileNameSuffix: `part-${String(chunkIndex + 1).padStart(2, '0')}`,
       metadata: {
         chunk_index: chunkIndex + 1,
@@ -694,6 +742,7 @@ const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subti
     fileNameSuffix = '',
     metadata = {},
     fileNameBase = 'incidents-report',
+    fields = null,
   } = options
 
   if (confirmExport) {
@@ -727,17 +776,25 @@ const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subti
   const cardsHTML = incidents.map(inc => `
     <div class="inc-card">
       <div class="inc-top">
-        <div class="inc-type">${esc(inc.type_name) || 'Incident'}</div>
-        <div class="inc-date">${fmtDateShort(inc.date)}</div>
+        ${isEnabled(fields, 'type_name') ? `<div class="inc-type">${esc(inc.type_name) || 'Incident'}</div>` : ''}
+        ${(isEnabled(fields, 'date') || isEnabled(fields, 'time')) ? `<div class="inc-date">${[
+          isEnabled(fields, 'date') ? fmtDateShort(inc.date) : '',
+          isEnabled(fields, 'time') && inc.time ? esc(String(inc.time).slice(0, 5)) : '',
+        ].filter(Boolean).join(' · ')}</div>` : ''}
       </div>
       <div class="inc-pills">
-        ${inc.severity ? SEV_PILL(inc.severity) : ''}
+        ${isEnabled(fields, 'severity') && inc.severity ? SEV_PILL(inc.severity) : ''}
         ${inc.osha_recordable ? '<span class="osha-pill">OSHA Recordable</span>' : ''}
-        ${inc.project?.name ? `<span class="inc-pill">${esc(inc.project.name)}</span>` : ''}
+        ${isEnabled(fields, 'project') && inc.project?.name ? `<span class="inc-pill">${esc(inc.project.name)}</span>` : ''}
       </div>
-      ${inc.employee_name ? `<div class="inc-detail">Worker: <strong>${esc(inc.employee_name)}</strong>${inc.reporter_name ? ' · Reporter: ' + esc(inc.reporter_name) : ''}</div>` : ''}
-      ${inc.location ? `<div class="inc-detail">Location: ${esc(inc.location)}</div>` : ''}
-      ${inc.details ? `<div class="inc-detail" style="margin-top:4px;font-style:italic">${esc(inc.details.substring(0,160))}${inc.details.length>160?'…':''}</div>` : ''}
+      ${(isEnabled(fields, 'employee_name') && inc.employee_name) || (isEnabled(fields, 'reporter_name') && inc.reporter_name)
+        ? `<div class="inc-detail">${[
+          isEnabled(fields, 'employee_name') && inc.employee_name ? `Worker: <strong>${esc(inc.employee_name)}</strong>` : '',
+          isEnabled(fields, 'reporter_name') && inc.reporter_name ? `Reporter: ${esc(inc.reporter_name)}` : '',
+        ].filter(Boolean).join(' · ')}</div>` : ''}
+      ${isEnabled(fields, 'location') && inc.location ? `<div class="inc-detail">Location: ${esc(inc.location)}</div>` : ''}
+      ${isEnabled(fields, 'details') && inc.details ? `<div class="inc-detail" style="margin-top:4px;font-style:italic">${esc(inc.details.substring(0,160))}${inc.details.length>160?'…':''}</div>` : ''}
+      ${buildAuditLines(inc, fields)}
     </div>
   `).join('')
 
@@ -759,8 +816,8 @@ const buildIncidentListPDF = async (incidents, title = 'Incidents Report', subti
   return { buffer: buf, filename }
 }
 
-export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '') => {
-  const result = await buildIncidentListPDF(incidents, title, subtitle)
+export const downloadIncidentListPDF = async (incidents, title = 'Incidents Report', subtitle = '', options = {}) => {
+  const result = await buildIncidentListPDF(incidents, title, subtitle, options)
   if (!result?.buffer || !result?.filename) return
   saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
 }
@@ -829,6 +886,7 @@ const buildCorrectiveActionsListPDF = async (actions, persons = [], incidents = 
     fileNameSuffix = '',
     metadata = {},
     fileNameBase = 'corrective-actions',
+    fields = null,
   } = options
 
   if (confirmExport) {
@@ -859,18 +917,21 @@ const buildCorrectiveActionsListPDF = async (actions, persons = [], incidents = 
     const inc = act.incident_id ? incidentMap[act.incident_id] : null
     const person = act.responsible_person_id ? personMap[act.responsible_person_id] : null
     const isComplete = act.status === 'completed'
+    const metaParts = [
+      isEnabled(fields, 'responsible_person') && person ? `Assigned to: <strong>${esc(person)}</strong>` : '',
+      isEnabled(fields, 'due_date') && act.due_date ? `Due: ${fmtDateShort(act.due_date)}` : '',
+      isEnabled(fields, 'completed_date') && isComplete && (act.declared_completion_date || act.completion_date)
+        ? `Completed: ${fmtDateShort(act.declared_completion_date || act.completion_date)}`
+        : '',
+      isEnabled(fields, 'incident') && inc ? `Incident: ${esc(inc.type_name||(inc.id||''))} (${fmtDateShort(inc.date)})` : '',
+    ].filter(Boolean)
+
     return `
       <div class="act-card">
-        <div class="act-desc">${esc(act.description)}</div>
-        <div style="margin-bottom:4px">
-          <span class="${isComplete ? 'act-status-completed' : 'act-status-open'}">${isComplete ? 'Completed' : 'Open'}</span>
-        </div>
-        <div class="act-meta">
-          ${person ? `Assigned to: <strong>${esc(person)}</strong> · ` : ''}
-          ${act.due_date ? `Due: ${fmtDateShort(act.due_date)}` : ''}
-          ${isComplete && (act.declared_completion_date || act.completion_date) ? ` · Completed: ${fmtDateShort(act.declared_completion_date || act.completion_date)}` : ''}
-          ${inc ? ` · Incident: ${esc(inc.type_name||(inc.id||''))} (${fmtDateShort(inc.date)})` : ''}
-        </div>
+        ${isEnabled(fields, 'description') ? `<div class="act-desc">${esc(act.description)}</div>` : ''}
+        ${isEnabled(fields, 'status') ? `<div style="margin-bottom:4px"><span class="${isComplete ? 'act-status-completed' : 'act-status-open'}">${isComplete ? 'Completed' : 'Open'}</span></div>` : ''}
+        ${metaParts.length > 0 ? `<div class="act-meta">${metaParts.join(' · ')}</div>` : ''}
+        ${buildAuditLines(act, fields)}
       </div>
     `
   }).join('')
@@ -893,8 +954,8 @@ const buildCorrectiveActionsListPDF = async (actions, persons = [], incidents = 
   return { buffer: buf, filename }
 }
 
-export const downloadCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '') => {
-  const result = await buildCorrectiveActionsListPDF(actions, persons, incidents, title, subtitle)
+export const downloadCorrectiveActionsListPDF = async (actions, persons = [], incidents = [], title = 'Corrective Actions Report', subtitle = '', options = {}) => {
+  const result = await buildCorrectiveActionsListPDF(actions, persons, incidents, title, subtitle, options)
   if (!result?.buffer || !result?.filename) return
   saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
 }
@@ -975,6 +1036,7 @@ const buildDisciplinaryActionsListPDF = async (
     fileNameSuffix = '',
     metadata = {},
     fileNameBase = 'disciplinary-actions',
+    fields = null,
   } = options
 
   if (confirmExport) {
@@ -1006,21 +1068,25 @@ const buildDisciplinaryActionsListPDF = async (
     const incident = action.incident_id ? incidentMap[action.incident_id] : null
     const recipient = action.recipient_person_id ? personMap[action.recipient_person_id] : null
     const leader = action.responsible_leader_id ? leaderMap[action.responsible_leader_id] : null
+    const contextParts = [
+      isEnabled(fields, 'violation_type') ? `Violation: <strong>${esc(incident?.safety_violation_type || '—')}</strong>` : '',
+      isEnabled(fields, 'project') && incident?.project?.name ? `Project: <strong>${esc(incident.project.name)}</strong>` : '',
+      isEnabled(fields, 'incident_date') && incident?.date ? `Incident: ${fmtDateShort(incident.date)}` : '',
+      isEnabled(fields, 'action_date') && action.action_date ? `Action date: ${fmtDateShort(action.action_date)}` : '',
+      isEnabled(fields, 'action_time') && action.action_time ? `Time: ${esc(String(action.action_time).slice(0, 5))}` : '',
+    ].filter(Boolean)
+    const peopleParts = [
+      isEnabled(fields, 'recipient') ? `Recipient: <strong>${esc(recipient || '—')}</strong>` : '',
+      isEnabled(fields, 'leader') && leader ? `Worker performing the meeting: <strong>${esc(leader)}</strong>` : '',
+    ].filter(Boolean)
+
     return `
       <div class="act-card">
-        <div class="act-desc">${esc(action.action_type)}</div>
-        <div class="act-meta">
-          ${incident?.safety_violation_type ? `Violation: <strong>${esc(incident.safety_violation_type)}</strong>` : 'Violation: —'}
-          ${incident?.project?.name ? ` · Project: <strong>${esc(incident.project.name)}</strong>` : ''}
-          ${incident?.date ? ` · Incident: ${fmtDateShort(incident.date)}` : ''}
-          ${action.action_date ? ` · Action date: ${fmtDateShort(action.action_date)}` : ''}
-          ${action.action_time ? ` · Time: ${esc(String(action.action_time).slice(0, 5))}` : ''}
-        </div>
-        <div class="act-meta">
-          ${recipient ? `Recipient: <strong>${esc(recipient)}</strong>` : 'Recipient: —'}
-          ${leader ? ` · Worker performing the meeting: <strong>${esc(leader)}</strong>` : ''}
-        </div>
-        ${action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}
+        ${isEnabled(fields, 'action_type') ? `<div class="act-desc">${esc(action.action_type)}</div>` : ''}
+        ${contextParts.length > 0 ? `<div class="act-meta">${contextParts.join(' · ')}</div>` : ''}
+        ${peopleParts.length > 0 ? `<div class="act-meta">${peopleParts.join(' · ')}</div>` : ''}
+        ${isEnabled(fields, 'notes') && action.action_notes ? `<div class="inc-detail" style="margin-top:6px;font-style:italic">${esc(action.action_notes)}</div>` : ''}
+        ${buildAuditLines(action, fields)}
       </div>
     `
   }).join('')
@@ -1049,9 +1115,10 @@ export const downloadDisciplinaryActionsListPDF = async (
   leaders = [],
   incidents = [],
   title = 'Disciplinary Actions Report',
-  subtitle = ''
+  subtitle = '',
+  options = {}
 ) => {
-  const result = await buildDisciplinaryActionsListPDF(actions, persons, leaders, incidents, title, subtitle)
+  const result = await buildDisciplinaryActionsListPDF(actions, persons, leaders, incidents, title, subtitle, options)
   if (!result?.buffer || !result?.filename) return
   saveAs(new Blob([result.buffer], { type: 'application/pdf' }), result.filename)
 }
@@ -1125,6 +1192,83 @@ export const downloadDisciplinaryActionsAsZIP = async (
       },
     ),
   })
+}
+
+// ─── Safety Surveys List PDF ─────────────────────────────────────────────────
+
+export const downloadSafetySurveyListPDF = async (surveys, title = 'Safety Surveys Report', subtitle = '', options = {}) => {
+  const { fields = null } = options
+  const confirmed = await confirmEvidencePdfExport({
+    title: 'This export contains safety survey records.',
+    details: `${surveys.length} survey${surveys.length === 1 ? '' : 's'}${subtitle ? ` · ${subtitle}` : ''}`,
+  })
+  if (!confirmed) return
+
+  const dateStr = getCurrentDateInputValue()
+  const filename = `safety-surveys-${dateStr}.pdf`
+  const exportMeta = await createPdfExportContext({
+    eventType: 'pdf_export.safety_surveys_list',
+    fileName: filename,
+    metadata: {
+      report_title: title,
+      report_subtitle: subtitle || null,
+      record_count: surveys.length,
+    },
+  })
+
+  const cardsHTML = surveys.map((survey) => {
+    const surveyFields = survey.export_fields || fields
+    const dateParts = getDateOnlyParts(survey.survey_date)
+    const day = dateParts ? String(dateParts.day).padStart(2, '0') : '??'
+    const mon = survey.survey_date
+      ? formatDateOnly(survey.survey_date, { locale: 'en-US', options: { month: 'short', year: '2-digit' }, fallback: '' }).toUpperCase()
+      : ''
+    const metaParts = [
+      (surveyFields?.project ?? true) && survey.project?.name ? `<strong>${esc(survey.project.name)}</strong>` : '',
+      (surveyFields?.responsible_person ?? true) && survey.responsible_person_name ? `Responsible: <strong>${esc(survey.responsible_person_name)}</strong>` : '',
+      (surveyFields?.survey_time ?? true) && survey.survey_time ? esc(String(survey.survey_time).slice(0, 5)) : '',
+    ].filter(Boolean)
+
+    const statusParts = [
+      (surveyFields?.compliance ?? true) && survey.compliance_documented ? '<span class="ml-pill">Survey complete</span>' : '',
+      (surveyFields?.compliance ?? true) && survey.compliance_follow_up_required ? '<span class="ml-pill ml-pill--accent">Follow-up required</span>' : '',
+    ].filter(Boolean)
+
+    return `
+      <div class="ml-card">
+        ${(surveyFields?.survey_date ?? true) ? `<div class="ml-date-col">
+          <div class="ml-date-day">${day}</div>
+          <div class="ml-date-mon">${mon}</div>
+        </div>` : ''}
+        <div class="ml-content">
+          ${(surveyFields?.survey_title ?? true) ? `<div class="ml-topic">${esc(survey.survey_title || survey.project_address || 'Safety Survey')}</div>` : ''}
+          ${(surveyFields?.address ?? true) && survey.project_address ? `<div class="ml-meta-line">${esc(survey.project_address)}</div>` : ''}
+          ${metaParts.length > 0 ? `<div class="ml-meta-line">${metaParts.join('&nbsp;·&nbsp;')}</div>` : ''}
+          ${statusParts.length > 0 ? `<div class="ml-pills">${statusParts.join('')}</div>` : ''}
+          ${survey.safety_survey_sections?.length ? `<div class="ml-meta-line">Categories: ${esc(survey.safety_survey_sections.slice(0, 3).map(section => section.category_label).join(', '))}${survey.safety_survey_sections.length > 3 ? ` +${survey.safety_survey_sections.length - 3}` : ''}</div>` : ''}
+          ${(surveyFields?.hazards ?? true) && survey.hazards_observed ? `<div class="ml-meta-line" style="margin-top:4px">Hazards: ${esc(survey.hazards_observed.substring(0, 180))}${survey.hazards_observed.length > 180 ? '…' : ''}</div>` : ''}
+          ${(surveyFields?.recommendations ?? true) && survey.recommendations ? `<div class="ml-meta-line">Recommendations: ${esc(survey.recommendations.substring(0, 180))}${survey.recommendations.length > 180 ? '…' : ''}</div>` : ''}
+        </div>
+      </div>
+    `
+  }).join('')
+
+  const html = bulkBaseHTML(`
+    <div class="ml-header" style="background:#0f4c5c">
+      <div class="ml-header-eyebrow">Export — Safety Surveys</div>
+      <div class="ml-header-title">${esc(title)}</div>
+      <div class="ml-header-sub">${subtitle ? `${esc(subtitle)} · ` : ''}Generated ${todayStr()}</div>
+    </div>
+    ${exportSummary(exportMeta)}
+    <div class="ml-body">
+      <div class="ml-count-bar">${surveys.length} survey${surveys.length !== 1 ? 's' : ''}</div>
+      ${cardsHTML || '<p style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0">No safety surveys found.</p>'}
+    </div>
+    ${footer(exportMeta)}
+  `)
+
+  const buf = await renderHTMLtoPDFBuffer(html)
+  saveAs(new Blob([buf], { type: 'application/pdf' }), filename)
 }
 
 // ─── Checklist History List PDF ───────────────────────────────────────────────

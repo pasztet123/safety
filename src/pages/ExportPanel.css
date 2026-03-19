@@ -201,6 +201,11 @@
   gap: 8px;
 }
 
+.ep-export-fields {
+  border-top: 1px solid #e5e5e5;
+  padding-top: 16px;
+}
+
 .ep-csv-label {
   font-size: 11px;
   font-weight: 700;
@@ -215,6 +220,12 @@
   gap: 4px;
 }
 
+.ep-checkboxes--grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
 .ep-checkbox-row {
   display: flex;
   align-items: baseline;
@@ -227,6 +238,11 @@
 
 .ep-checkbox-row:hover {
   background: #f9fafb;
+}
+
+.ep-checkbox-row--field {
+  align-items: flex-start;
+  border: 1px solid #e5e7eb;
 }
 
 .ep-checkbox-row input[type="checkbox"] {
@@ -244,6 +260,18 @@
   color: #171717;
   font-family: monospace;
   min-width: 180px;
+}
+
+.ep-checkbox-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ep-checkbox-label--plain {
+  font-family: inherit;
+  min-width: 0;
 }
 
 .ep-checkbox-desc {

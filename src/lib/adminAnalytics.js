@@ -23,7 +23,7 @@ export const ANALYTICS_TYPE_META = {
   checklistCompletions: {
     key: 'checklistCompletions',
     label: 'Checklist Completions',
-    shortLabel: 'Checklists',
+    shortLabel: 'Safety Checklists',
     color: '#3f7d20',
     lightColor: '#ddeecf',
   },

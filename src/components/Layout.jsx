@@ -16,12 +16,28 @@ const NAV_ITEMS = [
     ),
   },
   {
-    title: 'Meetings & Safety Surveys',
+    title: 'Meetings',
     path: '/meetings',
     icon: (
       <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
         <rect x="8" y="2" width="8" height="4" rx="1"/>
+      </svg>
+    ),
+  },
+  {
+    title: 'Safety Surveys',
+    path: '/safety-surveys',
+    icon: (
+      <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 3h6"/>
+        <path d="M9 7h6"/>
+        <path d="M9 11h4"/>
+        <path d="M5 3h1"/>
+        <path d="M5 7h1"/>
+        <path d="M5 11h1"/>
+        <path d="M5 15h14"/>
+        <path d="M5 19h14"/>
       </svg>
     ),
   },
@@ -78,7 +94,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    title: 'Checklists',
+    title: 'Safety Checklists',
     path: '/checklists',
     icon: (
       <svg className="nav-drawer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -286,7 +302,7 @@ export default function Layout({ children, session }) {
           <span className="app-footer-sep">·</span>
           <span className="app-footer-year">© {new Date().getFullYear()}</span>
           <span className="app-footer-sep">·</span>
-          <span className="app-footer-version">v8.12.7</span>
+          <span className="app-footer-version">v9.0.0</span>
         </div>
         <div className="app-footer-disclaimer">
           A.B. Edward Enterprises, Inc. certifies the authenticity of all data contained in this system and assumes full responsibility thereof.

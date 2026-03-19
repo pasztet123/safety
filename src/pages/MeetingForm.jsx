@@ -1336,7 +1336,7 @@ export default function MeetingForm() {
         )}
       </div>
 
-      {/* ── Draft banner ── */}
+              <span className="mf-accordion-title">Safety Checklists</span>
       {isDraft && (
         <div className="mf-draft-banner">
           <div style={{ flex: 1 }}>
@@ -1568,7 +1568,7 @@ export default function MeetingForm() {
           <div className="mf-accordion">
             <button type="button" className="mf-accordion-head"
               onClick={() => setShowChecklistPanel(!showChecklistPanel)}>
-              <span className="mf-accordion-title">Checklists</span>
+              <span className="mf-accordion-title">Safety Checklists</span>
               {selectedChecklists.length > 0 && (
                 <span className="mf-accordion-count">{selectedChecklists.length} selected</span>
               )}

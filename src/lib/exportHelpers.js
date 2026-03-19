@@ -5,6 +5,8 @@
 
 import JSZip from 'jszip'
 import { saveAs } from 'file-saver'
+import { normalizeSafetySurveySections } from './safetySurveySections'
+import { normalizeSafetySurveyPhotos } from './safetySurveyPhotos'
 import { fetchAllPages, fetchByIdsInBatches, supabase } from './supabase'
 
 export const MEETING_SINGLE_PDF_MAX_RECORDS = 250
@@ -489,6 +491,22 @@ export const fetchCorrectiveActionsFull = async (filters = {}) => {
   return data || []
 }
 
+export const fetchDisciplinaryActionsFull = async (filters = {}) => {
+  let q = supabase
+    .from('disciplinary_actions')
+    .select('*')
+    .order('action_date', { ascending: false })
+    .order('action_time', { ascending: false })
+
+  if (filters.dateFrom) q = q.gte('action_date', filters.dateFrom)
+  if (filters.dateTo) q = q.lte('action_date', filters.dateTo)
+
+  const { data, error } = await q
+  if (error) return []
+
+  return data || []
+}
+
 // ─── Fetch supporting lookup data ─────────────────────────────────────────────
 
 export const fetchPersons = async () => {
@@ -551,6 +569,164 @@ export const fetchChecklistCompletionsFull = async (filters = {}) => {
   }
 
   return result
+}
+
+const normalizeSafetySurveyFilters = (filters = {}) => ({
+  dateFrom: normalizeText(filters.dateFrom),
+  dateTo: normalizeText(filters.dateTo),
+  projectId: normalizeText(filters.projectId),
+  responsiblePerson: normalizeText(filters.responsiblePerson),
+  address: normalizeText(filters.address),
+  sortBy: normalizeText(filters.sortBy) || 'newest',
+  complianceMode: normalizeText(filters.complianceMode || 'all') || 'all',
+})
+
+const getSafetySurveyTimestampValue = (survey, field = 'survey-desc') => {
+  const baseValue = field === 'created-asc' || field === 'created-desc'
+    ? survey?.created_at
+    : survey?.survey_date
+
+  if (!baseValue) return 0
+
+  const timeValue = field === 'created-asc' || field === 'created-desc'
+    ? ''
+    : (survey?.survey_time || '00:00')
+
+  const parsed = new Date(`${baseValue}${timeValue ? `T${timeValue}` : ''}`)
+  return Number.isNaN(parsed.getTime()) ? 0 : parsed.getTime()
+}
+
+const sortSafetySurveyRecords = (records, rawSortBy = 'newest') => {
+  const sortBy = normalizeText(rawSortBy) || 'newest'
+  const result = [...records]
+
+  result.sort((left, right) => {
+    switch (sortBy) {
+      case 'date-asc':
+      case 'oldest':
+        return compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'asc')
+      case 'address-asc':
+        return compareText(left?.project_address, right?.project_address, 'asc') || compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'desc')
+      case 'address-desc':
+        return compareText(left?.project_address, right?.project_address, 'desc') || compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'desc')
+      case 'responsible-asc':
+        return compareText(left?.responsible_person_name, right?.responsible_person_name, 'asc') || compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'desc')
+      case 'responsible-desc':
+        return compareText(left?.responsible_person_name, right?.responsible_person_name, 'desc') || compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'desc')
+      case 'created-asc':
+        return compareNumber(getSafetySurveyTimestampValue(left, 'created-asc'), getSafetySurveyTimestampValue(right, 'created-asc'), 'asc')
+      case 'created-desc':
+        return compareNumber(getSafetySurveyTimestampValue(left, 'created-desc'), getSafetySurveyTimestampValue(right, 'created-desc'), 'desc')
+      case 'newest':
+      case 'date-desc':
+      default:
+        return compareNumber(getSafetySurveyTimestampValue(left), getSafetySurveyTimestampValue(right), 'desc')
+    }
+  })
+
+  return result
+}
+
+const applySafetySurveyDirectFilters = (query, rawFilters = {}) => {
+  const filters = normalizeSafetySurveyFilters(rawFilters)
+  let nextQuery = query.is('deleted_at', null)
+
+  if (filters.dateFrom) nextQuery = nextQuery.gte('survey_date', filters.dateFrom)
+  if (filters.dateTo) nextQuery = nextQuery.lte('survey_date', filters.dateTo)
+  if (filters.projectId) nextQuery = nextQuery.eq('project_id', filters.projectId)
+  if (filters.responsiblePerson) nextQuery = nextQuery.ilike('responsible_person_name', `%${filters.responsiblePerson}%`)
+  if (filters.address) nextQuery = nextQuery.ilike('project_address', `%${filters.address}%`)
+  if (filters.complianceMode === 'documented') nextQuery = nextQuery.eq('compliance_documented', true)
+  if (filters.complianceMode === 'follow-up') nextQuery = nextQuery.eq('compliance_follow_up_required', true)
+
+  return nextQuery
+}
+
+const applySafetySurveyServerSort = (query, rawSortBy = 'newest') => {
+  const sortBy = normalizeText(rawSortBy) || 'newest'
+
+  switch (sortBy) {
+    case 'date-asc':
+    case 'oldest':
+      return query.order('survey_date', { ascending: true }).order('survey_time', { ascending: true })
+    case 'address-asc':
+      return query.order('project_address', { ascending: true }).order('survey_date', { ascending: false })
+    case 'address-desc':
+      return query.order('project_address', { ascending: false }).order('survey_date', { ascending: false })
+    case 'responsible-asc':
+      return query.order('responsible_person_name', { ascending: true }).order('survey_date', { ascending: false })
+    case 'responsible-desc':
+      return query.order('responsible_person_name', { ascending: false }).order('survey_date', { ascending: false })
+    case 'created-asc':
+      return query.order('created_at', { ascending: true })
+    case 'created-desc':
+      return query.order('created_at', { ascending: false })
+    case 'newest':
+    case 'date-desc':
+    default:
+      return query.order('survey_date', { ascending: false }).order('survey_time', { ascending: false })
+  }
+}
+
+const normalizeSafetySurveyRecord = (record) => ({
+  ...record,
+  photos: normalizeSafetySurveyPhotos(record),
+  sections: normalizeSafetySurveySections(record),
+})
+
+export const fetchSafetySurveysFull = async (filters = {}) => {
+  try {
+    const data = await fetchAllPages(() => applySafetySurveyServerSort(
+      applySafetySurveyDirectFilters(
+        supabase
+          .from('safety_surveys')
+          .select('*, project:projects(name), safety_survey_photos(photo_url, display_order, survey_section_id), safety_survey_sections(id, category_key, category_label, category_source, notes, display_order)'),
+        filters,
+      ),
+      normalizeSafetySurveyFilters(filters).sortBy,
+    ))
+
+    return sortSafetySurveyRecords((data || []).map(normalizeSafetySurveyRecord), normalizeSafetySurveyFilters(filters).sortBy)
+  } catch (error) {
+    console.error('fetchSafetySurveysFull error:', error)
+    return []
+  }
+}
+
+export const fetchSafetySurveysWindow = async (filters = {}, options = {}) => {
+  const page = Math.max(1, Number(options.page) || 1)
+  const pageSize = Math.max(1, Number(options.pageSize) || 50)
+  const from = (page - 1) * pageSize
+  const to = from + pageSize - 1
+
+  try {
+    const countQuery = applySafetySurveyDirectFilters(
+      supabase.from('safety_surveys').select('id', { count: 'exact', head: true }),
+      filters,
+    )
+
+    const rowsQuery = applySafetySurveyServerSort(
+      applySafetySurveyDirectFilters(
+        supabase
+          .from('safety_surveys')
+          .select('*, project:projects(name), safety_survey_photos(photo_url, display_order, survey_section_id), safety_survey_sections(id, category_key, category_label, category_source, notes, display_order)'),
+        filters,
+      ),
+      normalizeSafetySurveyFilters(filters).sortBy,
+    ).range(from, to)
+
+    const [{ count, error: countError }, { data, error: rowsError }] = await Promise.all([countQuery, rowsQuery])
+    if (countError) throw countError
+    if (rowsError) throw rowsError
+
+    return {
+      rows: sortSafetySurveyRecords((data || []).map(normalizeSafetySurveyRecord), normalizeSafetySurveyFilters(filters).sortBy),
+      count: count || 0,
+    }
+  } catch (error) {
+    console.error('fetchSafetySurveysWindow error:', error)
+    return { rows: [], count: 0 }
+  }
 }
 
 // ─── CSV Builders ─────────────────────────────────────────────────────────────
